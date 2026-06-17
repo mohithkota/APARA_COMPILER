@@ -330,6 +330,17 @@ class CodeGen:
     # ── constant loading ───────────────────────────────────────────────────────
 
     def _load_const(self, reg, value):
+        """
+        Load an arbitrary (up to 64-bit) constant into `reg`.
+
+        $set OVERWRITES the whole register based on whichever field it just wrote —
+        it does NOT merge into bits left by a previous $set to a different field
+        (confirmed on hardware 2026-06-17, see memory/project_set_no_merge_bug.md).
+        So a value needing more than one 16-bit field must be built up via a
+        separate scratch register per extra chunk: $set the chunk, shift it into
+        position, then OR it into `reg`. The recursion bottoms out at a single
+        $set/+ once the remaining (shifted-down) value fits in one field.
+        """
         value = int(value)
         if -512 <= value <= 511:
             self._emit(f"+ {reg} ($i64) {ZERO} {value}")
@@ -337,10 +348,14 @@ class CodeGen:
             self._emit(f"$set {reg} 0 {value}")
         else:
             lo = value & 0xFFFF
-            hi = (value >> 16) & 0xFFFF
+            hi = value >> 16
             self._emit(f"$set {reg} 0 {lo}")
             if hi:
-                self._emit(f"$set {reg} 2 {hi}")
+                scr = self._safe_borrow()
+                self._load_const(scr, hi)
+                self._emit(f"<< {scr} ($i64) {scr} 16")
+                self._emit(f"| {reg} ($i64) {reg} {scr}")
+                self._ra.unborrow(scr)
 
     def _emit_set_const_into(self, value, reg, emit_fn):
         value = int(value)
@@ -431,6 +446,36 @@ class CodeGen:
 
     # ── global variable initialiser ────────────────────────────────────────────
 
+    @staticmethod
+    def _append_const_lines(lines, reg, scratch, value):
+        """
+        Append lines building `value` (up to 64-bit) into `reg`, using `scratch`
+        as a temporary for any chunk beyond the first 16 bits.
+
+        $set OVERWRITES the whole register based on whichever field it just wrote —
+        it does NOT merge into bits set by a previous $set to a different field
+        (confirmed on hardware 2026-06-17, see memory/project_set_no_merge_bug.md).
+        So each additional 16-bit chunk is built in `scratch`, shifted into
+        position, then OR'd into `reg`. Used outside the normal register
+        allocator (startup global-init code), so unlike `_load_const` this can't
+        borrow an arbitrary scratch — `scratch` must be supplied by the caller.
+        """
+        value = int(value)
+        if -512 <= value <= 511:
+            lines += ["||", f"    + {reg} ($i64) {ZERO} {value}", ";"]
+            return
+        mask64 = (1 << 64) - 1
+        uval = value & mask64
+        lines += ["||", f"    $set {reg} 0 {uval & 0xFFFF}", ";"]
+        rest, shift = uval >> 16, 16
+        while rest:
+            chunk = rest & 0xFFFF
+            lines += ["||", f"    $set {scratch} 0 {chunk}", ";"]
+            lines += ["||", f"    << {scratch} ($i64) {scratch} {shift}", ";"]
+            lines += ["||", f"    | {reg} ($i64) {reg} {scratch}", ";"]
+            rest >>= 16
+            shift += 16
+
     def _gen_IRGlobalDecl(self, ir):
         if not ir.init:
             return
@@ -443,23 +488,15 @@ class CodeGen:
             lines = []
             val = int(val)
 
-            if -512 <= val <= 511:
-                lines += ["||", f"    + {_INIT_SCR} ($i64) {ZERO} {val}", ";"]
-            elif 0 <= val <= 65535:
-                lines += ["||", f"    $set {_INIT_SCR} 0 {val}", ";"]
-            else:
-                lo = val & 0xFFFF; hi = (val >> 16) & 0xFFFF
-                lines += ["||", f"    $set {_INIT_SCR} 0 {lo}", ";"]
-                if hi:
-                    lines += ["||", f"    $set {_INIT_SCR} 2 {hi}", ";"]
+            self._append_const_lines(lines, _INIT_SCR, _INIT_SCR2, val)
 
+            # byte_off is a DMEM-relative offset; DMEM is at most 64KB (ISA §1), so it
+            # always fits one $set field — never needs the multi-chunk merge above,
+            # which matters here since _INIT_SCR now holds `val` and can't be clobbered.
             if 0 <= byte_off <= 511:
                 lines += ["||", f"    $st {at} [{GBASE} + {byte_off}] {_INIT_SCR}", ";"]
             else:
-                lo2 = byte_off & 0xFFFF; hi2 = (byte_off >> 16) & 0xFFFF
-                lines += ["||", f"    $set {_INIT_SCR2} 0 {lo2}", ";"]
-                if hi2:
-                    lines += ["||", f"    $set {_INIT_SCR2} 2 {hi2}", ";"]
+                lines += ["||", f"    $set {_INIT_SCR2} 0 {byte_off}", ";"]
                 lines += ["||", f"    $st {at} [{GBASE} + {_INIT_SCR2}] {_INIT_SCR}", ";"]
 
             self._init_code.extend(lines)
@@ -666,7 +703,7 @@ class CodeGen:
         '+':  '+',  '-':  '-',  '*':  '*',  '/':  '/',
         '<<': '<<', '>>': '>>',
         '|':  '|',  '&':  '&',  '^':  '^',
-        '~|': '~|', '~&': '~&', '~^': '~~',
+        '~|': '~|', '~&': '~&', '~^': '~^',
     }
 
     def _gen_IRBinOp(self, ir):

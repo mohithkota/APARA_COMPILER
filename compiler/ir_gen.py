@@ -53,6 +53,17 @@ _VOPS = {'add': '+', 'sub': '-', 'mul': '*'}
 # Populated by IRGenerator._register_struct; allows _type_size to return correct struct sizes.
 _STRUCT_TOTAL: dict = {}
 
+# Populated by IRGenerator.visit_Typedef; allows _type_size to resolve scalar typedef
+# names (e.g. "int64_t") to their real underlying size instead of silently defaulting
+# to 4. pycparser does NOT expand a typedef's structure at its use site — a variable
+# declared "int64_t x;" gets IdentifierType(names=['int64_t']), not the expanded
+# "long long" — so without this table _type_size has no way to know int64_t is 8 bytes.
+# Found 2026-06-17 via a real test failure (test_cast.c): see
+# memory/feedback_elem_size_scalar_bug.md.
+_TYPEDEF_SIZE: dict = {}
+
+_BASE_TYPE_SIZES = {'char':1,'short':2,'int':4,'long':4,'long long':8,'float':4,'double':8}
+
 def _type_size(node):
     if node is None: return 4
     if isinstance(node, A.TypeDecl):  return _type_size(node.type)
@@ -63,7 +74,10 @@ def _type_size(node):
         return esz * dim
     if isinstance(node, A.IdentifierType):
         name = ' '.join(node.names)
-        return {'char':1,'short':2,'int':4,'long':4,'long long':8,'float':4,'double':8}.get(name.replace('unsigned ','').replace('signed ',''), 4)
+        base = name.replace('unsigned ', '').replace('signed ', '')
+        if base in _BASE_TYPE_SIZES: return _BASE_TYPE_SIZES[base]
+        if name in _TYPEDEF_SIZE:    return _TYPEDEF_SIZE[name]
+        return 4
     if isinstance(node, A.Struct):    return _STRUCT_TOTAL.get(node.name or '', 8)
     if isinstance(node, A.Enum):      return 4
     return 4
@@ -440,7 +454,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         for ext in node.ext: self.visit(ext)
 
     def visit_Typedef(self, node):
-        """Register typedef'd struct types so _STRUCT_TOTAL is populated."""
+        """Register typedef'd struct types so _STRUCT_TOTAL is populated, and
+        register every typedef's byte size in _TYPEDEF_SIZE so _type_size can
+        resolve scalar typedef names (e.g. int64_t) instead of defaulting to 4."""
         if isinstance(node.type, A.TypeDecl) and isinstance(node.type.type, A.Struct):
             sn = node.type.type
             # Anonymous struct in typedef: give it the typedef name
@@ -449,6 +465,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if sn.decls:
                 self._register_struct(sn)
                 self._var_struct_type[node.name] = sn.name
+        _TYPEDEF_SIZE[node.name] = _type_size(node.type)
 
     def visit_Decl(self, node):
         if node.name is None:

@@ -2,7 +2,551 @@
 
 ---
 
-## 2026-06-17 — Bundler memory-hazard FIXED; found a second bug ($set doesn't merge) (Latest)
+## 2026-06-17 — STANDALONE INCIDENT REPORT: nested function calls are broken; six causes checked and ruled out compiler-side; needs simulator source (Latest)
+
+**This entry is written to be self-contained — readable cold, without the rest of this file or
+any conversation history.** It documents one evening's investigation into why `test_struct`,
+`test_spill`, and `test_scalar_full` produce wrong results, despite compiling and assembling
+without any error.
+
+### The bug, in one sentence
+**Any C function called from within another function (not `main` itself) returns a garbage
+value instead of its actual return value** — confirmed with the simplest possible repro:
+```c
+int f(void) { return 6; }
+int main() { return f(); }
+```
+This returns garbage (specifically, whatever `main`'s own prologue happened to leave in
+register `$r1` — see below), not `6`.
+
+### Why this matters / scope
+Every test in the 19-program suite that has ever passed either has zero function calls beyond
+`main`, or only calls compiler intrinsics (`__pack`, `__dot_*`, `__cmov_*`, `__vadd_*`, etc. —
+these compile to inline instructions and never emit a real `$call`). `test_struct`,
+`test_spill`, and `test_scalar_full` are the ONLY three tests in the entire suite with a real,
+user-defined nested function call — which is exactly why this was never caught until today's
+full hardware regression. **Do not trust the results of these three tests.** Everything else in
+the suite is unaffected (confirmed via multiple zero-regression full-suite re-runs throughout
+tonight's work).
+
+### Two real bugs found and fixed along the way (kept — both still valid, just insufficient)
+While investigating, found and fixed two genuine, separate bugs in `bundler.py` (the VLIW
+instruction-bundling pass). Both are confirmed correct, cause zero regressions on the rest of
+the suite, and are worth keeping regardless of the unresolved issue below:
+
+1. **Aligner reorders bundle instructions by type.** `mcode_align` does not preserve program
+   order within a bundle — it relocates `$ld`/`$st` to later slots than ALU/`$set`, regardless
+   of what order the compiler emitted them in. Proven by diffing unaligned vs aligned mcode for
+   a function prologue: `$st [SP+0] OLD_FP` / `+FP=SP` (intent: save OLD fp, then update) became
+   `+FP=SP` / `$st [SP+0] FP` (now stores the NEW fp). Fixed by adding `c_mem_reads` tracking in
+   `bundler.py`'s `_pack_bundles`: a non-memory instruction writing a register that an
+   already-bundled memory instruction reads now forces a bundle split.
+2. **Conservative SP+`$call` bundling hazard** (added at explicit request, since the exact
+   phase interaction between an SP-modifying instruction and a co-bundled `$call` was unverified
+   and the pattern is rare/cheap to avoid): `$call` is now never bundled with an instruction
+   that writes `$r27` (SP) — forces a split.
+
+Neither fix resolves the bug described here. Both were verified via full 19(+2)-test regression
+— zero behavioral change to any previously-passing test.
+
+### Six things checked and ruled out, in order, each with its own falsifiable test
+
+**1. Bundle padding.** Per the ISA's quirk that any bundle containing a control-transfer
+instruction must be padded to a full 8 instructions: checked the `.aligned.mcode` for the
+failing bundle directly. It IS correctly padded to 8. Not a padding bug.
+
+**2. Jump-target resolution.** Disassembled the assembled `.obj` (`mcode_disassemble`) and
+confirmed `goto f_epilogue` resolves to the exact bundle containing `f_epilogue`'s real first
+instruction (the SP-restore `+ $r27 = $r0 + $r26`). Not an addressing/jump-target bug.
+
+**3. Bundle shape / instruction ordering within the failing bundle.** The failing bundle inside
+`f` is:
+```
+- $r27 = $r27 - $r1       (SP -= frame size)
++ $r1  = $r0 + 6            (set return value)
+? $r0 == $goto f_epilogue   (unconditional jump)
+```
+Control experiment: forced `main` itself into this exact same 3-instruction shape via
+`int main(){return 6;}` (its own prologue's SP-reduction lands in the same bundle as the
+return-value-set and the jump — same shape, same instructions, different label name only).
+**This works correctly** (`r1=6` at the end). Diffed the two bundles byte-for-byte — identical
+except for the label name (`f_epilogue` vs `main_epilogue`, necessarily different relative
+offsets). So the bundle shape itself, and whatever order the aligner puts its three instructions
+in, is NOT the problem — it works when this exact shape is `main`'s own code.
+
+**4. Caller-save / restore ordering.** There's a known fix from the 28-register-allocator work:
+copy the return value (`$r1`) to its destination temp BEFORE restoring any caller-saved
+registers, because restoring might otherwise clobber `$r1`. Checked whether this fails to
+trigger for an edge case (callee with no arguments, no other live locals at the call site) by
+tracing two minimal cases directly from the generated mcode:
+   - `noop_call.c` (`f` takes no args): there is NO caller-save/restore sequence at all in the
+     generated mcode — zero `$st`/`$ld` between `$call f` and the return. Nothing is live at
+     the call site, so the save list is empty. The "capture" instruction is `+r1=r0+r1`, a
+     self-copy, only because the register allocator happened to assign the call's result temp
+     to `$r1` itself (the first register in a fresh allocator pool). The ordering fix isn't
+     misfiring here — it's simply never invoked.
+   - `get_x_repro.c` (struct-pointer argument forces a real caller-save): the register that gets
+     saved-and-restored is `$r3` (the pointer being passed as the argument) — NOT `$r1`. The
+     capture instruction (`+r4=r0+r1`, reads r1 writes r4) and the restore instruction
+     (`$ld r3 [FP-104]`, writes r3) touch completely disjoint registers. No possible conflict
+     between them regardless of execution order.
+   - In both cases, register-probed `$r1` immediately upon `$call` returning — already wrong in
+     both (`0x328`, `0x7fe8` respectively) — confirming the corruption exists before ANY of this
+     capture/restore code runs at all.
+
+**5. Is the corruption visible from inside the callee, before `$return` even executes?**
+(Hypothesis: if so, that's evidence of a problem visible purely from the callee's own
+instruction stream, independent of anything about RAS or the call-return mechanism externally.)
+Inserted `$halt` directly inside `f`'s epilogue, immediately after the unconditional jump lands
+there, before the `$ld`/`$return` bundle executes. **`$r1 = 0x328` (808) at that exact point** —
+already wrong, confirmed before `$return`/RAS-pop runs at all.
+
+Cross-checked the literal values, not just "both look wrong": in `main`, `$r1` immediately
+*before* `$call f` = `0x328`. Immediately *after* `$call f` returns = `0x328`. Inside `f`'s
+epilogue = `0x328`. **All three are the identical bit pattern** — `$r1` never changes from
+`main`'s own prologue-time value (`$set $r1 0 808`, its frame-size constant) anywhere across the
+entire call.
+
+(Side-note, fully resolved: `test_spill`'s wrong final answer is *also* exactly `0x328`. Checked
+directly — `test_spill`'s `main` independently emits the identical `$set $r1 0 808` in its own
+prologue. Both land on 808 because `72 (min stack-frame floor for ~0 declared locals) + 224
+(caller-save reserve) + 512 (spill reserve) = 808` is the standard frame constant for any
+function with few/no stack-declared locals — true for both, since test_spill's "28 live values"
+during its spilling test are register-held temps, not stack-declared locals. Not a coincidental
+number; the same underlying failure leaving the same literal residue in two different programs.)
+
+**6. Is the failing write specific to something about how the CALLEE's own epilogue code is
+generated — e.g., a scratch register accidentally chosen as `$r1`, clobbering the just-written
+return value before `$return` runs?** Specific, falsifiable hypothesis: that the epilogue's SP
+restoration might need a `$set <reg> 0 <framesize>` + subtract two-step sequence (since
+frame sizes like 808 exceed the ALU's 10-bit signed immediate range, the same reason the
+*prologue's* SP reduction needs this two-step pattern) — and that this might pick `$r1` as
+its scratch register, clobbering the return value that was just written.
+
+Checked directly from generated mcode, three separate real instances (`noop_call.c`'s `f`,
+`get_x_repro.c`'s `get_x`, and `test_spill`'s actual `f01`) — **all three byte-identical**:
+```
+<name>_epilogue:
+||
+    + $r27 ($i64) $r0 $r26      ← SP = FP — a plain REGISTER COPY, no constant involved
+;
+||
+    $ld ($i64) $r26 [$r27 + 0]   ← restore old FP
+    $return
+;
+```
+No `$set` anywhere in any epilogue, in any of the three. The reason: restoring SP only needs
+`SP = FP` (a register-to-register copy), because FP already holds the exact value SP needs to
+become — unlike the *prologue's* SP reduction, which needs to load the frame-size *constant*
+and therefore needs the two-step `$set`+subtract pattern. There is no constant to load in the
+epilogue, hence no scratch register of any kind is ever borrowed there. Cross-checked against
+`_gen_IRFuncEnd` in `codegen.py`: it is a fixed, unconditional 3-instruction emission with zero
+register-allocation logic, so it cannot produce a different pattern for any frame size, ever.
+**Hypothesis not confirmed. No fix applied.**
+
+### What's left standing after all six checks
+Padding ✓ clean. Jump-target resolution ✓ clean. Bundle shape/ordering ✓ clean (proven by a
+working depth-1 control case with byte-identical code). Caller-save/restore ordering ✓ clean
+(checked two different minimal cases). Visible-before-`$return` ✓ confirmed wrong, but not
+attributable to anything in the callee's own code (point 6). Epilogue scratch-register clobber
+✓ clean (no scratch register exists in any epilogue, of any kind).
+
+The one fact every check above converges on: **identical, byte-for-byte generated code is
+correct when executed as the program's first (`apara_start→main`) call, and incorrect when
+executed as a nested (`main→anything`) call.** Nothing in the compiler's output differs between
+these two cases — only the calling context does. Re-confirmed there is zero special-casing of
+the string `"main"` anywhere in `codegen.py`/`ir_gen.py`/`compiler.py`.
+
+### What to check next (needs engine/simulator source — out of reach from the Python/mcode side)
+In `MachineRun.cpp` (or wherever `$call`/`$return`/RAS push-pop is actually implemented):
+does anything beyond PC save/restore happen across a `$call`/`$return` pair — specifically,
+does register-file write-enable, or any register snapshot/restore, get gated by RAS depth in a
+way that would make a register write commit correctly at depth 1 (the outermost call) but not
+commit at depth ≥2 (any nested call)? That is the precise, narrow question this evening's
+investigation has earned: not "is something wrong with calls" (six checks say the Python
+compiler's output is correct), but "why does identical code commit a register write differently
+depending on how many calls deep it's executing."
+
+### Status
+**Unresolved. Pausing here as planned.** Two real, unrelated bugs were found and fixed in
+`bundler.py` along the way (kept, zero regressions, see above) — neither is the cause of this
+issue. `test_struct`/`test_spill`/`test_scalar_full` remain untrustworthy until the question
+above is answered. Everything else in the 19(+2)-program suite is confirmed unaffected and
+unchanged by tonight's work.
+
+---
+
+## 2026-06-17 — r1's write fails INSIDE the callee, before $return; but generated code is byte-identical to a working depth-1 case
+
+Two precise checks, no engine source needed:
+
+**Check 1 — is r1 already wrong inside `f`, before `$return` runs?** Inserted `$halt` directly
+inside `f`'s epilogue, before `$ld`/`$return` execute (right after the unconditional jump from
+`f`'s body lands there). `r1 = 0x328` (808) at that exact point. So `+r1=r0+6` (the return-value
+write, in the same bundle as the jump) never took effect — confirmed BEFORE `$return`/RAS-pop
+even runs, inside `f`'s own execution.
+
+**Check 2 — literal hex values, not characterizations.** In `main` (`noop_call.c`):
+`r1` immediately before `$call f` = `0x328`. `r1` immediately after `$call f` returns = `0x328`.
+Inside `f`'s epilogue (check 1) = `0x328`. **All three are the identical bit pattern** — `r1`
+never changes from `main`'s own prologue-time value, all the way through the call and back.
+
+**Is test_spill's `0x328` the same value or coincidence?** Checked directly: `test_spill`'s
+`main` also emits `$set $r1 0 808` in its own prologue. Traced why both land on 808:
+`72 (frame-size floor for ~0 declared locals) + 224 (caller-save) + 512 (spill reserve) = 808` —
+the standard frame constant for ANY function with few/no stack-declared locals (test_spill's
+main has few real stack locals; its 28 "live values" are register-held temps, not stack slots).
+Not a coincidental number — the same underlying failure (a write to r1 not committing) leaving
+behind the same literal value because both mains' prologues happen to use the same constant.
+
+**But: ruled out this being specific to `f`'s generated code.** Diffed the exact failing bundle
+inside `f` against the identical-shape bundle inside `main_trivial.c`'s `main` (the depth-1
+control case that works) — byte-for-byte identical except for the label name (`f_epilogue` vs
+`main_epilogue`, necessarily different relative offsets). Also confirmed zero special-casing of
+the string `"main"` anywhere in `codegen.py`/`ir_gen.py`/`compiler.py` — `main` and `f` go
+through the exact same codegen path. So identical generated code produces a correct result at
+depth 1 and an incorrect one at depth 2+, with nothing in the instruction stream itself
+differing. This still points at execution context (first `$call` vs a nested one), not at
+anything the compiler generated differently — laid out as evidence for review, not asserted as
+final, since "identical code, different result" is unusual enough to warrant a second opinion
+before fully ruling out something exotic on the generation side.
+
+**Still not fixed. Still do not trust test_struct/test_spill/test_scalar_full.**
+
+---
+
+## 2026-06-17 — Ruled out caller-save/restore ordering bug too — corruption exists the instant $call returns, before ANY post-call codegen runs
+
+Checked the specific hypothesis that the known "copy r1 to dest BEFORE restoring saved registers"
+28-register-allocator fix (see [[project_28reg_allocator]]) might not be triggering for a
+no-argument/no-other-live-locals callee. Traced directly from the generated mcode for both
+minimal repros, no engine source needed:
+
+1. **`noop_call.c`** (`int f(void){return 6;} int main(){return f();}`): there is NO
+   caller-save/restore sequence in the generated mcode at all — zero `$st`/`$ld` between
+   `$call f` and the return. `saved` is empty because nothing is live at that call site. The
+   "capture" is a self-copy (`+r1=r0+r1`) only because the allocator happened to assign the
+   call's result temp to `r1` itself. The ordering fix isn't misfiring — it's not even invoked.
+2. **`get_x_repro.c`** (argument triggers real caller-save): the saved/restored register is `r3`
+   (the pointer being passed as the argument), NOT `r1`. The capture (`+r4=r0+r1`, reads r1
+   writes r4) and the restore (`$ld r3 [FP-104]`, reads FP writes r3) touch completely disjoint
+   registers — no possible conflict between them regardless of bundle/instruction order.
+
+**Then checked the more fundamental thing directly**: in both cases, register-probed `r1`
+immediately upon `$call` returning, before ANY of this capture/restore code executes. **Already
+wrong in both** — `0x328` for `noop_call.c`, `0x7fe8` for `get_x_repro.c` (matching prior
+findings). So the corruption is present at the exact moment control returns from the call,
+before the compiler's own post-call sequencing (capture, restore, or otherwise) has run at all.
+
+**Conclusively rules out**: bundle padding (checked earlier), jump-target resolution (checked
+earlier), bundle-shape/ALU-vs-branch ordering (checked earlier via the `main_trivial.c` control
+case), and now caller-save/restore ordering (checked here, in both the simplest and the
+argument-passing case). The bug is not anywhere in `bundler.py` or `codegen.py`'s call-handling
+logic that's been inspected so far — it is specifically about what register state exists the
+instant a depth-≥2 `$call` returns. This now needs `MachineRun.cpp`'s `$call`/`$return`/RAS
+implementation to go further.
+
+---
+
+## 2026-06-17 — Ruled out compiler-side bundling/addressing bugs for nested calls — isolated to a register-state question at the $call/$return boundary
+
+Two cheap, compiler-side checks before escalating to a hardware question (both came back clean):
+
+1. **Bundle padding**: confirmed the minimal repro's failing bundle (`- $r27=$r27-$r1` / `+$r1=$r0+6`
+   / `?goto f_epilogue`) IS correctly padded to a full 8 instructions in the `.aligned.mcode`,
+   matching the control-transfer quirk. Not a padding bug.
+2. **Jump target resolution**: disassembled the assembled `.obj` and confirmed `goto f_epilogue`
+   resolves exactly to the bundle containing `f_epilogue`'s real content
+   (`+ $r27 ($i64) $r0 $r26`, the SP-restore instruction) — no address mismatch. Not a compiler
+   addressing bug.
+3. **test_scalar_full**: confirmed directly — it DOES call `add3`/`max2`/`fact`, real nested
+   user-function calls, same shape as test_struct/test_spill. Plausible same root cause but not
+   separately proven beyond having the same call shape.
+
+### New, sharper finding: the exact same bundle works at depth 1, fails at depth 2+
+Since the two checks ruled out a compiler bug, ran a control experiment: forced `main` itself
+into the IDENTICAL failing bundle shape via `int main(){return 6;}` (its own prologue's SP
+reduction lands in the same bundle as the return-value-set and the unconditional jump — same
+3-instruction shape as the failing case inside `f`). **This works correctly** (`r1=6`). The
+*only* difference between the working and failing case is call depth: `apara_start→main` (depth
+1) works; `main→f` (depth 2+) doesn't, for an otherwise byte-identical bundle pattern.
+
+Traced register state precisely across the depth-2 call boundary (`main` calling the trivial
+`f(){return 6;}`): immediately after `$call f` returns, `r26` (FP) and `r27` (SP) are BOTH
+correctly restored to main's pre-call values (`0x7ff8`, `0x7cd0` respectively — verified
+correct). But `r1` reads back as `0x328` (808) — exactly the constant `main`'s OWN prologue had
+set in `r1` *before* making the call. It's as if `f`'s write to `r1` (its return value) never
+propagates back to the caller at all, while FP/SP restoration works perfectly.
+
+### Conclusion: not a compiler bug, narrowed to a specific hardware/simulator question
+Padding ✓, jump-target resolution ✓, bundle shape ✓ at depth 1 — the only remaining variable is
+nested call depth itself. This is now a precise question for `MachineRun.cpp` (or wherever
+`$call`/`$return`/RAS handling lives): does anything beyond PC save/restore happen across a
+`$call`/`$return` pair that could cause the return-value register specifically to revert to its
+pre-call value, and why would that depend on call depth (works for apara_start→main, fails for
+main→anything)? Recommend checking RAS push/pop logic and whether register file state is
+snapshotted/restored alongside PC for any depth beyond the outermost call.
+
+**Still not fixed. Still do not trust test_struct/test_spill/test_scalar_full's results.**
+
+---
+
+## 2026-06-17 — Conservative SP+$call bundler fix applied (as requested) — does NOT resolve struct/spill/scalar_full; root cause is deeper than first thought
+
+### The requested fix, applied exactly as scoped
+Added a new hazard case to `bundler.py`: never bundle `$call` together with an instruction that
+modifies SP (`$r27`) — forces a bundle split between them. Conservative, narrow, only fires near
+call sites. **Zero regressions** — re-ran the full 19-test suite (+2 isolated subword tests),
+every previously-passing test (`test_alu/array/subword/ldst/branch/vadd/slice/vreduce/pointer/
+cast/cmov/dot/pack/subword_i8/subword_i16`) still produces the exact same correct value.
+`test_2d`/`test_fsqrt` still crash the aligner, unrelated, untouched (held per instruction).
+
+### But it does NOT fix test_struct / test_spill / test_scalar_full — all three UNCHANGED
+| Test | Before this fix | After | Expected |
+|---|---|---|---|
+| test_struct | 0xa | 0xa (unchanged) | 0 |
+| test_spill | 0x328 | 0x328 (unchanged) | 0x1d1 |
+| test_scalar_full | 0x7ff0 | 0x7ff0 (unchanged) | 0xc |
+
+### Why: the SP+$call bundling was never the actual root cause — found something deeper
+Verified the fix correctly splits the bundle (`$call f` now alone in its own bundle, confirmed in
+the generated mcode) — but re-tested the simplest possible nested call
+(`int f(int x){return x+1;} int main(){return f(5);}`) and it's STILL wrong after the fix.
+Traced further and found an even smaller failing case:
+```c
+int f(void) { return 6; }
+int main() { return f(); }
+```
+This fails too — `f` returns garbage instead of 6. Traced the corruption to INSIDE `f`, in the
+bundle that sets the return value and jumps:
+```
+- $r27 = $r27 - $r1     (SP -= frame size)
++ $r1  = $r0 + 6          (set return value)
+? $r0 == $goto f_epilogue (unconditional jump)
+```
+Register-traced this directly: by the time control reaches `f_epilogue` (immediately after this
+bundle), r1 is ALREADY wrong — the `+r1=6` write did not take effect, even though this is a
+plain ALU write with no memory instruction involved at all. This is a DIFFERENT mechanism than
+the aligner's ALU-vs-MEM slot reordering (see the previous entry below) — here a register write
+co-bundled with an unconditional jump appears not to commit, specifically for a function reached
+via a NESTED call (depth ≥ 2: apara_start→main→f). The exact same "+result; goto epilogue"
+shape is used by `main`'s own return in literally every passing test (depth 1: apara_start→main)
+and works fine there — so it's specific to nested calls, not the pattern in general.
+
+**Not yet fixed. Not yet root-caused to a specific, nameable mechanism** — only empirically
+narrowed down to "write + unconditional jump, same bundle, inside a depth-≥2 call". This is now
+the third open hardware-semantics question alongside `$nop`'s parse failure and (resolved)
+`$pack`'s operand order — needs simulator source inspection, not further guessing from this side.
+Recommend checking how `MachineRun.cpp` (or wherever bundle retirement/writeback is implemented)
+handles register writes in a bundle that also contains a control-transfer instruction, especially
+across a `$call` boundary.
+
+### Bottom line on function calls
+**Do not trust any test with a real (non-intrinsic) nested function call yet.** `test_struct`,
+`test_spill`, `test_scalar_full` remain the only three tests in the suite with this shape, and
+all three are still broken for a reason beyond the two bundler fixes applied so far today.
+
+---
+
+## 2026-06-17 — Major finding: aligner reorders bundle instructions by type (ALU before MEM) — partially fixed, ANY real function call is at risk
+
+### XNOR fix applied, but test_logic blocked by something else
+Applied `'~~' → '~^'` in `_APARA_OP` — confirmed correct and necessary on its own. But `test_logic`
+still fails identically: `$nop` itself doesn't parse, even in total isolation (a file containing
+only `$nop` fails; `$null` in the same harness works). See [[project_nop_parse_bug]]. Unrelated
+to XNOR — a second, separate blocker in the same test.
+
+### The big discovery: the EXTERNAL ALIGNER REORDERS instructions within a bundle
+While tracing `test_struct` (see [[project_call_phase_hazard]] for full detail), found that
+`mcode_align` does not preserve the textual order of instructions within a bundle — it relocates
+`$ld`/`$st` instructions to LATER slots than ALU/`$set` instructions, REGARDLESS of which order
+the compiler wrote them in. Proven by diffing a function's unaligned vs aligned mcode side by
+side: `$st [SP+0] OLD_FP` / `+FP=SP` (intended: save OLD FP, THEN update FP) gets reordered to
+`+FP=SP` / `$st [SP+0] FP` (now stores the NEW FP). **This silently breaks the "VLIW reads all
+operands before any writes" assumption bundler.py was built on, specifically whenever a memory
+instruction is meant to read a register an ALU instruction in the same bundle is about to write.**
+
+**Fixed (partially) in `bundler.py`**: added `c_mem_reads` tracking — a non-memory instruction
+writing a register that an already-bundled memory instruction reads now forces a split. Verified
+this resolves the specific FP-corruption-on-return case (confirmed via register trace: FP is now
+correctly restored to the caller's value after a callee returns). **No regressions** — full 19+2
+test suite re-run, all previously-passing tests still pass; `test_vadd`/`test_slice`/`test_cast`/
+`test_dot`/`test_vreduce`/`test_subword`/`test_pack` (today's other fixes) all still correct.
+`test_scalar_full` improved (`0x3` → `0x7ff0`, an address-shaped value — still wrong, but
+different, suggesting partial progress).
+
+### Still broken: the SIMPLEST POSSIBLE function call still fails
+```c
+int f(int x) { return x + 1; }
+int main() { return f(5); }
+```
+Even with the fix above, this returns `0x328` (808 — main's own frame-size constant, clearly
+stale/never-overwritten) instead of `6`. Traced to a bundle where an SP-reducing ALU instruction
+and `$call` are packed together: `- $r27 = $r27 - $r1` / `+ $r2 = $r0 + 5` / `$call f`. This is a
+DIFFERENT interaction than the memory-phase one just fixed — `$call` itself doesn't count as a
+"memory" instruction in the current model, so today's fix doesn't touch it. Whatever the exact
+mechanism, the simplest possible nested call is not yet reliable.
+
+**`test_spill` independently confirmed to have the identical bundling pattern**
+(`- $r27 = $r27 - $r1` / `$call f01`, same shape) — found by checking its mcode directly, not by
+assuming. Consistent with, but not yet proof of, the same root cause. `test_struct` likely the
+same (it has nested calls throughout). `test_scalar_full`'s remaining failure not yet pinned to
+this specific call site, but its calls (`add3`, `max2`, `fact`) are real function calls too.
+
+### This affects EVERY test with a real (non-intrinsic) function call
+Going back through the suite: every test that's passed so far either has no function calls beyond
+`main`, or only calls compiler intrinsics (`__pack`, `__dot_*`, `__cmov_*`, etc. — these compile to
+inline instructions, never `$call`). `test_struct`/`test_spill`/`test_scalar_full` are the ONLY
+tests in the suite with real `$call`-based user function calls — which is exactly why this has
+never been caught before. **Not a hypothesis: confirmed directly with the 2-line `f(x)=x+1`
+repro above, which has nothing struct/pointer/spill-specific about it at all.**
+
+### Not fixed yet — needs hardware/simulator confirmation before guessing further
+This is now squarely a "what does the simulator actually do" question, the same category as the
+`$pack` operand-order and `$nop` parse issues. Specifically: when a bundle contains an SP-modifying
+ALU instruction together with `$call`, what value of SP does the call/jump mechanism actually use
+— the old or the new? And more generally, is there a complete, authoritative description of the
+bundle's execution phases (which instruction types execute in which order) anywhere in the
+simulator source (e.g. `MachineRun.cpp`, already referenced for the PACK semantics question)?
+Guessing further risks another round of "fixed something, still broken for a different reason."
+
+---
+
+## 2026-06-17 — $set-merge bug FIXED; test_subword/test_cast/test_dot/test_vreduce all resolved
+
+### The fix (codegen.py)
+`_load_const(reg, value)`: for any value needing more than one 16-bit `$set` field, build the
+low 16 bits directly into `reg`, then for each additional chunk — borrow a scratch register via
+`_safe_borrow()`, recursively load that chunk into it, shift it into position, OR it into `reg`,
+unborrow. Recursion naturally handles arbitrary width (not just 32-bit) since each level peels
+off one more 16-bit chunk via `value >> 16`. Also fixes a second latent bug: the old code masked
+`hi = (value >> 16) & 0xFFFF`, silently truncating anything beyond 32 bits even if merging had
+worked correctly.
+
+`_gen_IRGlobalDecl` (startup global-initializer code) needed a separate, non-recursive version
+(`_append_const_lines`, now a static helper) since it runs before any function's register
+allocator exists — it can only use the two dedicated init-scratch registers (`$r30`/`$r31`), not
+borrow arbitrarily. Iterates chunks with an explicit 64-bit mask instead of recursion (avoids an
+infinite loop from Python's sign-extending right-shift on negative values). The DMEM byte-offset
+half of that function doesn't need this at all — DMEM is at most 64KB (ISA §1), so a byte offset
+always fits one `$set` field; that path now just stays single-chunk and reuses `$r31` directly.
+
+Verified against the original minimal repro (`gi=100100; gi=gi+1; if(gi!=100001)...`) and the
+exact `r30` register trace that first proved the bug — now builds correctly and returns success
+on hardware.
+
+### Effect: all 4 originally-blocked tests now resolved
+| Test | Before | After | Expected |
+|---|---|---|---|
+| test_subword | -12 (failed check #12) | **0x1 (full pass)** | 1 |
+| test_dot | 0xf | **0x5a** | 90 |
+| test_vreduce | 0x17 | **0x4c** | 76 |
+| test_cast | 0x78ac9ccd (close but wrong) | **0x78ab9bcd** | 0x78ab9bcd |
+
+`test_cast` needed a SECOND fix beyond the $set bug: probing showed `big` (declared `int64_t`,
+a typedef) was being stored/loaded via `$ld`/`$st ($i32)` instead of `($i64)`, truncating it.
+Root cause: `_type_size`'s `IdentifierType` branch only recognized literal base-type names
+("long long", etc.) — pycparser does NOT expand a typedef to its underlying structure at the use
+site, so `int64_t x;` arrives as `IdentifierType(names=['int64_t'])`, an unrecognized name,
+silently defaulting to 4. This is exactly the "related, not-yet-fixed" half of
+[[feedback_elem_size_scalar_bug]], now confirmed as a real bug via this test and fixed: added a
+module-level `_TYPEDEF_SIZE` dict in `ir_gen.py`, populated by `visit_Typedef` for every typedef
+(`_TYPEDEF_SIZE[node.name] = _type_size(node.type)`), consulted by `_type_size` as a fallback
+after the literal base-type dict. Confirmed fix: `big` now uses `$st`/`$ld ($i64)`, and the full
+expected value `0x78ab9bcd` comes out correct.
+
+Full regression re-run (19 programs + the 2 isolated subword tests): no regressions, all
+previously-passing tests still pass; `test_struct`/`test_spill`/`test_scalar_full` unchanged
+(separate causes, not yet investigated); `test_2d`/`test_fsqrt` still crash the aligner
+(held, untouched, per explicit instruction).
+
+---
+
+## 2026-06-17 — XNOR mnemonic fixed; test_logic blocked by a SEPARATE, new issue: $nop doesn't parse
+
+`codegen.py`'s `_APARA_OP['~^']` was `'~~'`, now `'~^'` — confirmed correct and necessary (the
+literal `~~` symbol has no meaning in the ISA). But `test_logic` still fails to assemble after
+this fix, with the exact same error as before: `test_logic.mcode:46:7: expecting ''u'', found
+''o''` — at `$nop`. **Isolated with a minimal repro: a file containing only `$nop` (nothing
+else) fails the identical way; a file containing only `$null` in the same harness parses fine.**
+So this is a real, separate, confirmed assembler-grammar issue with `$nop` specifically — not
+something the XNOR fix touches, and not something I should guess at (same category as the
+$pack-operand-order and $set-label questions: the ISA doc says `$nop` is valid syntax, but the
+parser doesn't accept it, and that gap can only be resolved by checking the parser source like
+`McodeParser.cpp`, not by guessing alternate spellings). **`__nop()` is only used by test_logic** —
+no other test in the suite touches it. Holding `test_logic` here pending grammar confirmation.
+
+---
+
+## 2026-06-17 — $pack fixed (grammar + bundler hazard); same hazard gap fixed for 6 more instructions
+
+### $pack: two stacked bugs, both now fixed
+1. **Grammar/operand order** (user confirmed via `McodeParser.cpp:570`): real order is
+   `$pack <packed_nbits> <rd> <word_nbits> <rs2>`, not `<rd> <packed_nbits> <word_nbits> <rs2>`
+   like the ISA doc's own example shows. `_gen_IRPack` in `codegen.py` now emits the correct order.
+   This alone fixed the `mcode_align`/`mcode_assemble` crash.
+2. **Bundler hazard**: `bundler.py`'s `_parse_deps` didn't recognize `$pack` *at all* — it has no
+   case for it, so it fell through to "zero reads, zero writes" for hazard-tracking purposes. Since
+   `$pack rs2` implicitly reads BOTH `rs2` and `rs2+1` (the consecutive pair, per `_gen_IRPack`'s
+   `borrow_pair()`), this caused an undetected RAW hazard whenever an adjacent instruction in the
+   same bundle wrote `rs2+1` — exactly what `_gen_IRPack` itself emits (`+ p2 = b` right next to
+   `$pack ... p1`). Root-caused empirically: traced r1/r2 via truncated-mcode-plus-$halt probes,
+   confirmed they held the correct values right up until the bundle boundary, and confirmed `$pack`
+   alone (no co-bundled writes) computes correctly (`0xbeefdead` for `lo=0xbeef,hi=0xdead`) —
+   isolating the corruption to the missing pair-read tracking specifically.
+
+   **Fixed** by adding a `$pack` case to `_parse_deps` that returns `reads={rs2, rs2+1}`,
+   `writes={rd}`.
+
+   `test_pack` now runs end-to-end correctly: r1=`0xdead`. (The test's own comment expected
+   `0xBEEF` — that assumption was backwards per the now-confirmed semantics, "first register →
+   upper bits, last → lower bits"; `0xdead` is the actual correct low-16-bits of `0xbeefdead`.
+   Not a bug, just a stale comment in the test file.)
+
+### Same hazard-tracking gap found in 6 MORE instructions — also fixed
+Auditing why the gap existed for `$pack` revealed `_parse_deps` has NO case at all for
+`$cast`/`$fsqrt`/`$cmov`/`$slice`/`$v`/`$dot`/`$vreduce` — every one of them fell through to
+"zero reads, zero writes," meaning **none of them had any hazard protection** in the bundler.
+Confirmed this directly hit `$cast` too while debugging `test_pack` further (a `$ld` writing `r8`
+and a `$cast` reading `r8` were bundled together, same RAW-hazard shape, r9 came out as 0 instead
+of the loaded value). Added proper read/write tracking for all of them — see `bundler.py` for the
+exact field semantics per instruction (notably: `$cmov`'s `rd` is both read and written;
+`$dot $accumulate`'s `rd` is also read).
+
+### Effect on the regression batch
+Re-ran `test_subword, test_dot, test_struct, test_spill, test_scalar_full, test_vadd, test_vreduce,
+test_slice, test_cast` (the batch from the bundler-memory-hazard fix) plus the full hardware
+regression after this second fix:
+
+| Test | Before this fix | After | Status |
+|---|---|---|---|
+| test_pack | crashed at align/assemble | r1=0xdead | **FIXED** (the explicit ask) |
+| test_vadd | 0x0 | 0x4 | **FIXED** (expected 4) |
+| test_slice | 0x0 | 0xb7 | **FIXED** (expected 183=0xb7) |
+| test_cast | 0x0 | 0x78ab0000 | improved, still wrong (expected 0x78ab9bcd) |
+| test_dot | 0x7ff0 | 0xf | improved, still wrong (expected 0x5a=90) |
+| test_vreduce | 0x20001 | 0x17 | improved, still wrong (expected 0x4c=76) |
+| test_subword | -12 | -12 (unchanged) | still fails check #12 — this is the [[project_set_no_merge_bug|$set merge bug]], untouched by this fix |
+| test_struct | 0xa | 0xa (unchanged) | still unexplained |
+| test_spill | 0x328 | 0x328 (unchanged) | still unexplained |
+| test_scalar_full | 0x3 | 0x3 (unchanged) | still unexplained |
+
+No regressions: test_alu, test_array, test_ldst, test_branch, test_cmov, test_pointer all still
+correct. test_2d and test_fsqrt still crash the aligner with the same pre-existing assertion
+failure (`Calculate_Pad_For_Alignment`) — unrelated to any of today's fixes, not yet diagnosed.
+test_logic (XNOR mnemonic typo) also not yet fixed.
+
+### Status: real progress, more remains
+Two real bugs found+fixed today in `bundler.py` (memory hazard, missing-instruction hazard gap)
+plus the `$pack` grammar fix in `codegen.py`. 3 of 9 originally-failing tests now fully resolved.
+The remaining ones have at least one more distinct cause each: the confirmed `$set`-merge bug
+(test_subword, very likely test_cast/test_dot/test_vreduce too, given the "improved but still
+wrong" pattern suggests SOME of their computation is now right but multi-field constants are
+still corrupted), and fully unexplained issues in test_struct/test_spill/test_scalar_full.
+
+---
+
+## 2026-06-17 — Bundler memory-hazard FIXED; found a second bug ($set doesn't merge)
 
 ### Bundler fix (bundler.py)
 Added memory-address hazard tracking alongside the existing register RAW/WAW/WAR logic.

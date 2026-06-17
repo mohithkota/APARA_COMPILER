@@ -414,7 +414,7 @@ mcode_mem_access_instruction
 mcode_store_instruction
 mcode_instruction
 mcode_branch_instruction
-Parsing Exception: test_2d.mcode:331:1: expecting PARALLEL, found 'fi_7'
+Parsing Exception: test_2d.mcode:341:1: expecting PARALLEL, found 'fi_7'
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
@@ -435,7 +435,7 @@ mcode_mem_access_instruction
 mcode_store_instruction
 mcode_instruction
 mcode_branch_instruction
-Parsing Exception: test_2d.mcode:348:1: expecting PARALLEL, found 'fi_3'
+Parsing Exception: test_2d.mcode:358:1: expecting PARALLEL, found 'fi_3'
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
@@ -1142,164 +1142,185 @@ Info: added pad bundle pad_2__6 with size 2
 Info: added pad bundle pad_4__8 with size 4
 Info:  Bundle id=3 addr=11 pad amount 7
 Info:  Bundle id=4 addr=20 pad amount 0
-Info:  Bundle id=5 addr=28 pad amount 0
+Info: Adding pad bundles to cover size 6
+Info: added pad bundle pad_2__10 with size 2
+Info: added pad bundle pad_4__12 with size 4
+Info:  Bundle id=5 addr=22 pad amount 6
 Info:  Bundle id=6 addr=30 pad amount 0
 Info:  Bundle id=7 addr=38 pad amount 0
+Info:  Bundle id=8 addr=40 pad amount 0
 Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__10 with size 1
-Info:  Bundle id=8 addr=39 pad amount 1
+Info: added pad bundle pad_1__14 with size 1
+Info:  Bundle id=9 addr=41 pad amount 1
 Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__12 with size 4
-Info:  Bundle id=9 addr=3c pad amount 4
-Info:  Bundle id=10 addr=48 pad amount 0
+Info: added pad bundle pad_4__16 with size 4
+Info:  Bundle id=10 addr=44 pad amount 4
 Info:  Bundle id=11 addr=50 pad amount 0
 Info:  Bundle id=12 addr=58 pad amount 0
+Info:  Bundle id=13 addr=60 pad amount 0
 Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__14 with size 1
-Info: added pad bundle pad_2__16 with size 2
-Info: added pad bundle pad_4__18 with size 4
-Info:  Bundle id=13 addr=59 pad amount 7
-Info:  Bundle id=14 addr=68 pad amount 0
+Info: added pad bundle pad_1__18 with size 1
+Info: added pad bundle pad_2__20 with size 2
+Info: added pad bundle pad_4__22 with size 4
+Info:  Bundle id=14 addr=61 pad amount 7
 Info:  Bundle id=15 addr=70 pad amount 0
 Info:  Bundle id=16 addr=78 pad amount 0
-Info:  Bundle id=17 addr=80 pad amount 0
+Info: Adding pad bundles to cover size 6
+Info: added pad bundle pad_2__24 with size 2
+Info: added pad bundle pad_4__26 with size 4
+Info:  Bundle id=17 addr=7a pad amount 6
 Info:  Bundle id=18 addr=88 pad amount 0
 Info:  Bundle id=19 addr=90 pad amount 0
+Info:  Bundle id=20 addr=98 pad amount 0
+Info:  Bundle id=21 addr=a0 pad amount 0
 Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__20 with size 1
-Info:  Bundle id=20 addr=91 pad amount 1
+Info: added pad bundle pad_1__28 with size 1
+Info:  Bundle id=22 addr=a1 pad amount 1
 Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__22 with size 4
-Info:  Bundle id=21 addr=94 pad amount 4
-Info:  Bundle id=22 addr=a0 pad amount 0
-Info:  Bundle id=23 addr=a8 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__24 with size 1
-Info: added pad bundle pad_2__26 with size 2
-Info: added pad bundle pad_4__28 with size 4
-Info:  Bundle id=24 addr=a9 pad amount 7
+Info: added pad bundle pad_4__30 with size 4
+Info:  Bundle id=23 addr=a4 pad amount 4
+Info:  Bundle id=24 addr=b0 pad amount 0
 Info:  Bundle id=25 addr=b8 pad amount 0
-Info:  Bundle id=26 addr=c0 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__32 with size 1
+Info: added pad bundle pad_2__34 with size 2
+Info: added pad bundle pad_4__36 with size 4
+Info:  Bundle id=26 addr=b9 pad amount 7
 Info:  Bundle id=27 addr=c8 pad amount 0
 Info:  Bundle id=28 addr=d0 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__30 with size 1
-Info: added pad bundle pad_2__32 with size 2
-Info: added pad bundle pad_4__34 with size 4
-Info:  Bundle id=29 addr=d1 pad amount 7
-Info:  Bundle id=30 addr=e0 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__36 with size 1
+Info: Adding pad bundles to cover size 6
 Info: added pad bundle pad_2__38 with size 2
 Info: added pad bundle pad_4__40 with size 4
+Info:  Bundle id=29 addr=d2 pad amount 6
+Info:  Bundle id=30 addr=e0 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__42 with size 1
+Info: added pad bundle pad_2__44 with size 2
+Info: added pad bundle pad_4__46 with size 4
 Info:  Bundle id=31 addr=e1 pad amount 7
 Info:  Bundle id=32 addr=f0 pad amount 0
-Info:  Bundle id=33 addr=f8 pad amount 0
-Info: Adding pad bundles to cover size 6
-Info: added pad bundle pad_2__42 with size 2
-Info: added pad bundle pad_4__44 with size 4
-Info:  Bundle id=34 addr=fa pad amount 6
-Info:  Bundle id=35 addr=108 pad amount 0
 Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__46 with size 1
-Info: added pad bundle pad_2__48 with size 2
-Info: added pad bundle pad_4__50 with size 4
-Info:  Bundle id=36 addr=109 pad amount 7
+Info: added pad bundle pad_1__48 with size 1
+Info: added pad bundle pad_2__50 with size 2
+Info: added pad bundle pad_4__52 with size 4
+Info:  Bundle id=33 addr=f1 pad amount 7
+Info:  Bundle id=34 addr=100 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__54 with size 1
+Info: added pad bundle pad_2__56 with size 2
+Info: added pad bundle pad_4__58 with size 4
+Info:  Bundle id=35 addr=101 pad amount 7
+Info:  Bundle id=36 addr=110 pad amount 0
 Info:  Bundle id=37 addr=118 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__52 with size 1
-Info: added pad bundle pad_2__54 with size 2
-Info: added pad bundle pad_4__56 with size 4
-Info:  Bundle id=38 addr=119 pad amount 7
-Info:  Bundle id=39 addr=128 pad amount 0
-Info:  Bundle id=40 addr=130 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__58 with size 1
+Info: Adding pad bundles to cover size 6
 Info: added pad bundle pad_2__60 with size 2
 Info: added pad bundle pad_4__62 with size 4
-Info:  Bundle id=41 addr=131 pad amount 7
-Info:  Bundle id=42 addr=140 pad amount 0
-Info:  Bundle id=43 addr=148 pad amount 0
-Info: Adding pad bundles to cover size 1
+Info:  Bundle id=38 addr=11a pad amount 6
+Info:  Bundle id=39 addr=128 pad amount 0
+Info: Adding pad bundles to cover size 7
 Info: added pad bundle pad_1__64 with size 1
-Info:  Bundle id=44 addr=149 pad amount 1
+Info: added pad bundle pad_2__66 with size 2
+Info: added pad bundle pad_4__68 with size 4
+Info:  Bundle id=40 addr=129 pad amount 7
+Info:  Bundle id=41 addr=138 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__70 with size 1
+Info: added pad bundle pad_2__72 with size 2
+Info: added pad bundle pad_4__74 with size 4
+Info:  Bundle id=42 addr=139 pad amount 7
+Info:  Bundle id=43 addr=148 pad amount 0
+Info:  Bundle id=44 addr=150 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__76 with size 1
+Info: added pad bundle pad_2__78 with size 2
+Info: added pad bundle pad_4__80 with size 4
+Info:  Bundle id=45 addr=151 pad amount 7
+Info:  Bundle id=46 addr=160 pad amount 0
+Info:  Bundle id=47 addr=168 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__82 with size 1
+Info:  Bundle id=48 addr=169 pad amount 1
 Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__66 with size 4
-Info:  Bundle id=45 addr=14c pad amount 4
-Info:  Bundle id=46 addr=158 pad amount 0
-Info:  Bundle id=47 addr=160 pad amount 0
-Info:  Bundle id=48 addr=168 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__68 with size 1
-Info: added pad bundle pad_2__70 with size 2
-Info: added pad bundle pad_4__72 with size 4
-Info:  Bundle id=49 addr=169 pad amount 7
+Info: added pad bundle pad_4__84 with size 4
+Info:  Bundle id=49 addr=16c pad amount 4
 Info:  Bundle id=50 addr=178 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__74 with size 1
-Info: added pad bundle pad_2__76 with size 2
-Info: added pad bundle pad_4__78 with size 4
-Info:  Bundle id=51 addr=179 pad amount 7
-Info:  Bundle id=52 addr=188 pad amount 0
+Info:  Bundle id=51 addr=180 pad amount 0
+Info: Adding pad bundles to cover size 6
+Info: added pad bundle pad_2__86 with size 2
+Info: added pad bundle pad_4__88 with size 4
+Info:  Bundle id=52 addr=182 pad amount 6
 Info:  Bundle id=53 addr=190 pad amount 0
 Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__80 with size 1
-Info: added pad bundle pad_2__82 with size 2
-Info: added pad bundle pad_4__84 with size 4
+Info: added pad bundle pad_1__90 with size 1
+Info: added pad bundle pad_2__92 with size 2
+Info: added pad bundle pad_4__94 with size 4
 Info:  Bundle id=54 addr=191 pad amount 7
 Info:  Bundle id=55 addr=1a0 pad amount 0
-Info:  Bundle id=56 addr=1a8 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__86 with size 1
-Info:  Bundle id=57 addr=1a9 pad amount 1
-Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__88 with size 4
-Info:  Bundle id=58 addr=1ac pad amount 4
-Info:  Bundle id=59 addr=1b8 pad amount 0
-Info:  Bundle id=60 addr=1c0 pad amount 0
-Info:  Bundle id=61 addr=1c8 pad amount 0
-Info:  Bundle id=62 addr=1d0 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__90 with size 1
-Info:  Bundle id=63 addr=1d1 pad amount 1
-Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__92 with size 4
-Info:  Bundle id=64 addr=1d4 pad amount 4
-Info:  Bundle id=65 addr=1e0 pad amount 0
-Info:  Bundle id=66 addr=1e8 pad amount 0
-Info:  Bundle id=67 addr=1f0 pad amount 0
-Info:  Bundle id=68 addr=1f8 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__94 with size 1
-Info:  Bundle id=69 addr=1f9 pad amount 1
-Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__96 with size 4
-Info:  Bundle id=70 addr=1fc pad amount 4
-Info:  Bundle id=71 addr=208 pad amount 0
-Info:  Bundle id=72 addr=210 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__98 with size 1
-Info:  Bundle id=73 addr=211 pad amount 1
-Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__100 with size 4
-Info:  Bundle id=74 addr=214 pad amount 4
-Info:  Bundle id=75 addr=220 pad amount 0
-Info:  Bundle id=76 addr=228 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__102 with size 1
-Info:  Bundle id=77 addr=229 pad amount 1
-Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__104 with size 4
-Info:  Bundle id=78 addr=22c pad amount 4
-Info:  Bundle id=79 addr=238 pad amount 0
-Info:  Bundle id=80 addr=240 pad amount 0
 Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__106 with size 1
-Info: added pad bundle pad_2__108 with size 2
-Info: added pad bundle pad_4__110 with size 4
-Info:  Bundle id=81 addr=241 pad amount 7
-Info:  Bundle id=82 addr=250 pad amount 0
+Info: added pad bundle pad_1__96 with size 1
+Info: added pad bundle pad_2__98 with size 2
+Info: added pad bundle pad_4__100 with size 4
+Info:  Bundle id=56 addr=1a1 pad amount 7
+Info:  Bundle id=57 addr=1b0 pad amount 0
+Info:  Bundle id=58 addr=1b8 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__102 with size 1
+Info: added pad bundle pad_2__104 with size 2
+Info: added pad bundle pad_4__106 with size 4
+Info:  Bundle id=59 addr=1b9 pad amount 7
+Info:  Bundle id=60 addr=1c8 pad amount 0
+Info:  Bundle id=61 addr=1d0 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__108 with size 1
+Info:  Bundle id=62 addr=1d1 pad amount 1
 Info: Adding pad bundles to cover size 4
-Info: added pad bundle pad_4__112 with size 4
+Info: added pad bundle pad_4__110 with size 4
+Info:  Bundle id=63 addr=1d4 pad amount 4
+Info:  Bundle id=64 addr=1e0 pad amount 0
+Info:  Bundle id=65 addr=1e8 pad amount 0
+Info:  Bundle id=66 addr=1f0 pad amount 0
+Info:  Bundle id=67 addr=1f8 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__112 with size 1
+Info:  Bundle id=68 addr=1f9 pad amount 1
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__114 with size 4
+Info:  Bundle id=69 addr=1fc pad amount 4
+Info:  Bundle id=70 addr=208 pad amount 0
+Info:  Bundle id=71 addr=210 pad amount 0
+Info:  Bundle id=72 addr=218 pad amount 0
+Info:  Bundle id=73 addr=220 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__116 with size 1
+Info:  Bundle id=74 addr=221 pad amount 1
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__118 with size 4
+Info:  Bundle id=75 addr=224 pad amount 4
+Info:  Bundle id=76 addr=230 pad amount 0
+Info:  Bundle id=77 addr=238 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__120 with size 1
+Info:  Bundle id=78 addr=239 pad amount 1
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__122 with size 4
+Info:  Bundle id=79 addr=23c pad amount 4
+Info:  Bundle id=80 addr=248 pad amount 0
+Info:  Bundle id=81 addr=250 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__124 with size 1
+Info:  Bundle id=82 addr=251 pad amount 1
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__126 with size 4
 Info:  Bundle id=83 addr=254 pad amount 4
+Info:  Bundle id=84 addr=260 pad amount 0
+Info:  Bundle id=85 addr=268 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__128 with size 1
+Info: added pad bundle pad_2__130 with size 2
+Info: added pad bundle pad_4__132 with size 4
+Info:  Bundle id=86 addr=269 pad amount 7
+Info:  Bundle id=87 addr=278 pad amount 0
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__134 with size 4
+Info:  Bundle id=88 addr=27c pad amount 4
 mcode_align: src/McodeBundle.cpp:222: int McodeInstructionBundle::Calculate_Pad_For_Alignment(uint32_t): Assertion `0' failed.

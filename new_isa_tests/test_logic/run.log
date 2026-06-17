@@ -1,0 +1,20 @@
+Info: pc = 0
+Info: imem file = test_logic.obj
+Info: dmem file = data.map
+Info: results file = probe.result
+Info: Loaded 0 instructions to i-mem
+Info: Loaded 4 words to d-mem
+Info: McodeMachine:: 0x0 = IMEM[0x0]
+Info: McodeMachine:: 0x0 = IMEM[0x1]
+Info: McodeMachine:: 0x0 = IMEM[0x2]
+Info: McodeMachine:: 0x0 = IMEM[0x3]
+Info: McodeMachine:: 0x0 = IMEM[0x4]
+Info: McodeMachine:: 0x0 = IMEM[0x5]
+Info: McodeMachine:: 0x0 = IMEM[0x6]
+Info: McodeMachine:: 0x0 = IMEM[0x7]
+Info: McodeMachine:Run_Machine PC=0x0
+Info: McodeMachine run finished after 0 bundles
+
+Info: McodeMachine:: 0x0 = Get_Register(1)
+
+Error: PostCondition Reg[1] = 0x0, expected 0xdeadbeef (mask=0xffffffffll)

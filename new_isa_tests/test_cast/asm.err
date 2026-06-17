@@ -13,6 +13,8 @@ mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
@@ -29,26 +31,8 @@ mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
@@ -72,7 +56,10 @@ mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
 mcode_instruction
+mcode_set_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
@@ -85,17 +72,6 @@ mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
 mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
 mcode_instruction
@@ -130,22 +106,14 @@ mcode_alu_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
-mcode_instruction
 mcode_instruction
 mcode_instruction
 mcode_instruction
@@ -407,72 +375,57 @@ Info:  Bundle id=1 addr=2 pad amount 0
 Info:  Bundle id=2 addr=4 pad amount 0
 Info:  Bundle id=3 addr=8 pad amount 0
 Info:  Bundle id=4 addr=10 pad amount 0
-Info:  Bundle id=5 addr=11 pad amount 0
-Info:  Bundle id=6 addr=12 pad amount 0
-Info:  Bundle id=7 addr=14 pad amount 0
-Info:  Bundle id=8 addr=18 pad amount 0
-Info:  Bundle id=9 addr=20 pad amount 0
-Info:  Bundle id=10 addr=21 pad amount 0
-Info:  Bundle id=11 addr=22 pad amount 0
-Info:  Bundle id=12 addr=24 pad amount 0
-Info:  Bundle id=13 addr=28 pad amount 0
-Info:  Bundle id=14 addr=30 pad amount 0
-Info:  Bundle id=15 addr=31 pad amount 0
-Info:  Bundle id=16 addr=32 pad amount 0
-Info:  Bundle id=17 addr=34 pad amount 0
-Info:  Bundle id=18 addr=38 pad amount 0
+Info:  Bundle id=5 addr=18 pad amount 0
+Info:  Bundle id=6 addr=20 pad amount 0
+Info:  Bundle id=7 addr=21 pad amount 0
+Info:  Bundle id=8 addr=22 pad amount 0
+Info:  Bundle id=9 addr=24 pad amount 0
+Info:  Bundle id=10 addr=28 pad amount 0
+Info:  Bundle id=11 addr=30 pad amount 0
+Info:  Bundle id=12 addr=38 pad amount 0
+Info:  Bundle id=13 addr=39 pad amount 0
+Info:  Bundle id=14 addr=3a pad amount 0
+Info:  Bundle id=15 addr=3b pad amount 0
+Info:  Bundle id=16 addr=3c pad amount 0
+Info:  Bundle id=17 addr=3d pad amount 0
+Info:  Bundle id=18 addr=3e pad amount 0
 Info:  Bundle id=19 addr=40 pad amount 0
-Info:  Bundle id=20 addr=42 pad amount 0
-Info:  Bundle id=21 addr=44 pad amount 0
-Info:  Bundle id=22 addr=48 pad amount 0
-Info:  Bundle id=23 addr=50 pad amount 0
-Info:  Bundle id=24 addr=51 pad amount 0
-Info:  Bundle id=25 addr=52 pad amount 0
-Info:  Bundle id=26 addr=53 pad amount 0
-Info:  Bundle id=27 addr=54 pad amount 0
-Info:  Bundle id=28 addr=55 pad amount 0
-Info:  Bundle id=29 addr=56 pad amount 0
-Info:  Bundle id=30 addr=58 pad amount 0
-Info:  Bundle id=31 addr=60 pad amount 0
-Info:  Bundle id=32 addr=61 pad amount 0
-Info:  Bundle id=33 addr=62 pad amount 0
-Info:  Bundle id=34 addr=64 pad amount 0
-Info:  Bundle id=35 addr=68 pad amount 0
-Info:  Bundle id=36 addr=70 pad amount 0
-Info:  Bundle id=37 addr=72 pad amount 0
-Info:  Bundle id=38 addr=74 pad amount 0
-Info:  Bundle id=39 addr=78 pad amount 0
-Info:  Bundle id=40 addr=80 pad amount 0
-Info:  Bundle id=41 addr=88 pad amount 0
-Info:  Bundle id=42 addr=8a pad amount 0
-Info:  Bundle id=43 addr=8c pad amount 0
-Info:  Bundle id=44 addr=90 pad amount 0
-Info:  Bundle id=45 addr=98 pad amount 0
-Info:  Bundle id=46 addr=a0 pad amount 0
-Info:  Bundle id=47 addr=a2 pad amount 0
-Info:  Bundle id=48 addr=a4 pad amount 0
-Info:  Bundle id=49 addr=a8 pad amount 0
-Info:  Bundle id=50 addr=b0 pad amount 0
-Info:  Bundle id=51 addr=b8 pad amount 0
-Info:  Bundle id=52 addr=c0 pad amount 0
-Info:  Bundle id=53 addr=c8 pad amount 0
-Info:  Bundle id=54 addr=d0 pad amount 0
-Info:  Bundle id=55 addr=d8 pad amount 0
-Info:  Bundle id=56 addr=e0 pad amount 0
-Info:  Bundle id=57 addr=e8 pad amount 0
-Info:  Bundle id=58 addr=f0 pad amount 0
-Info:  Bundle id=59 addr=f2 pad amount 0
-Info:  Bundle id=60 addr=f4 pad amount 0
-Info:  Bundle id=61 addr=f8 pad amount 0
-Info:  Bundle id=62 addr=100 pad amount 0
-Info:  Bundle id=63 addr=101 pad amount 0
-Info:  Bundle id=64 addr=102 pad amount 0
-Info:  Bundle id=65 addr=104 pad amount 0
-Info:  Bundle id=66 addr=108 pad amount 0
-Info:  Bundle id=67 addr=110 pad amount 0
-Info:  Bundle id=68 addr=111 pad amount 0
-Info:  Bundle id=69 addr=112 pad amount 0
-Info:  Bundle id=70 addr=114 pad amount 0
-Info:  Bundle id=71 addr=118 pad amount 0
-Info: call label main translated to pc-relative 56
+Info:  Bundle id=20 addr=48 pad amount 0
+Info:  Bundle id=21 addr=50 pad amount 0
+Info:  Bundle id=22 addr=52 pad amount 0
+Info:  Bundle id=23 addr=54 pad amount 0
+Info:  Bundle id=24 addr=58 pad amount 0
+Info:  Bundle id=25 addr=60 pad amount 0
+Info:  Bundle id=26 addr=68 pad amount 0
+Info:  Bundle id=27 addr=6a pad amount 0
+Info:  Bundle id=28 addr=6c pad amount 0
+Info:  Bundle id=29 addr=70 pad amount 0
+Info:  Bundle id=30 addr=78 pad amount 0
+Info:  Bundle id=31 addr=80 pad amount 0
+Info:  Bundle id=32 addr=82 pad amount 0
+Info:  Bundle id=33 addr=84 pad amount 0
+Info:  Bundle id=34 addr=88 pad amount 0
+Info:  Bundle id=35 addr=90 pad amount 0
+Info:  Bundle id=36 addr=98 pad amount 0
+Info:  Bundle id=37 addr=a0 pad amount 0
+Info:  Bundle id=38 addr=a8 pad amount 0
+Info:  Bundle id=39 addr=b0 pad amount 0
+Info:  Bundle id=40 addr=b8 pad amount 0
+Info:  Bundle id=41 addr=c0 pad amount 0
+Info:  Bundle id=42 addr=c8 pad amount 0
+Info:  Bundle id=43 addr=d0 pad amount 0
+Info:  Bundle id=44 addr=d2 pad amount 0
+Info:  Bundle id=45 addr=d4 pad amount 0
+Info:  Bundle id=46 addr=d8 pad amount 0
+Info:  Bundle id=47 addr=e0 pad amount 0
+Info:  Bundle id=48 addr=e1 pad amount 0
+Info:  Bundle id=49 addr=e2 pad amount 0
+Info:  Bundle id=50 addr=e4 pad amount 0
+Info:  Bundle id=51 addr=e8 pad amount 0
+Info:  Bundle id=52 addr=f0 pad amount 0
+Info:  Bundle id=53 addr=f1 pad amount 0
+Info:  Bundle id=54 addr=f2 pad amount 0
+Info:  Bundle id=55 addr=f4 pad amount 0
+Info:  Bundle id=56 addr=f8 pad amount 0
+Info: call label main translated to pc-relative 40
 Info: branch label main_epilogue translated to pc-relative 8

@@ -97,6 +97,79 @@ def _parse_deps(text):
             return frozenset(), frozenset(reads), False, (rb, off), (rb, off)
         return frozenset(), frozenset(), False, None, None
 
+    if t.startswith('$pack'):
+        # $pack packed_nbits rd word_nbits rs2
+        # rs2 and rs2+1 form a consecutive register pair — BOTH are read, even though
+        # only rs2 appears in the text. Missing this caused a RAW hazard to go undetected
+        # when an adjacent instruction wrote rs2+1 in the same bundle (found 2026-06-17).
+        m = re.match(r'\$pack\s+\d+\s+(\$r\d+)\s+\d+\s+(\$r\d+)', t)
+        if m:
+            rd, rs2 = m.group(1), m.group(2)
+            partner = f'$r{int(rs2[2:]) + 1}'
+            return frozenset({rd}), frozenset({rs2, partner}), False, None, None
+        return NONE3
+
+    if t.startswith('$cast'):
+        # $cast (dest_type) rd (src_type) rs
+        m = re.match(r'\$cast\s+\(\$\w+\)\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)', t)
+        if m:
+            rd, rs = m.group(1), m.group(2)
+            return frozenset({rd}), frozenset({rs}), False, None, None
+        return NONE3
+
+    if t.startswith('$fsqrt'):
+        # $fsqrt rd (type) rs
+        m = re.match(r'\$fsqrt\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)', t)
+        if m:
+            rd, rs = m.group(1), m.group(2)
+            return frozenset({rd}), frozenset({rs}), False, None, None
+        return NONE3
+
+    if t.startswith('$cmov'):
+        # $cmov (type) check cond rd src_true
+        # rd is BOTH read (kept unchanged if the condition is false) and written.
+        m = re.match(r'\$cmov\s+\(\$\w+\)\s+(\$r\d+)\s+\S+\s+(\$r\d+)\s+(\$r\d+)', t)
+        if m:
+            check, rd, src_true = m.group(1), m.group(2), m.group(3)
+            return frozenset({rd}), frozenset({check, rd, src_true}), False, None, None
+        return NONE3
+
+    if t.startswith('$slice'):
+        # $slice rd hindex lindex rs
+        m = re.match(r'\$slice\s+(\$r\d+)\s+\d+\s+\d+\s+(\$r\d+)', t)
+        if m:
+            rd, rs = m.group(1), m.group(2)
+            return frozenset({rd}), frozenset({rs}), False, None, None
+        return NONE3
+
+    if t.startswith('$v ') or t.startswith('$v\t'):
+        # $v op rd (type) rs1 rs2 [$replicate]
+        m = re.match(r'\$v\s+\S+\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)\s+(\$r\d+)', t)
+        if m:
+            rd, rs1, rs2 = m.group(1), m.group(2), m.group(3)
+            return frozenset({rd}), frozenset({rs1, rs2}), False, None, None
+        return NONE3
+
+    if t.startswith('$dot'):
+        # $dot [$accumulate] rd (type) rs1 rs2
+        # accumulate form also READS rd (rd := (rs1 dot rs2) + rd).
+        m = re.match(r'\$dot\s+(\$accumulate\s+)?(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)\s+(\$r\d+)', t)
+        if m:
+            accumulate, rd, rs1, rs2 = m.group(1), m.group(2), m.group(3), m.group(4)
+            reads = {rs1, rs2}
+            if accumulate:
+                reads.add(rd)
+            return frozenset({rd}), frozenset(reads), False, None, None
+        return NONE3
+
+    if t.startswith('$vreduce'):
+        # $vreduce rd (type) rs
+        m = re.match(r'\$vreduce\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)', t)
+        if m:
+            rd, rs = m.group(1), m.group(2)
+            return frozenset({rd}), frozenset({rs}), False, None, None
+        return NONE3
+
     if t.startswith('?'):
         # ? ($iN) $r op $goto label  →  reads r; ends bundle
         m = re.match(r'\?\s+\(\$i\d+\)\s+(\$r\d+)', t)
@@ -203,6 +276,7 @@ def _pack_bundles(flat):
     c_instrs   = []
     c_writes   = set()
     c_mem_writes = set()   # (base, offset) addresses stored-to in this bundle
+    c_mem_reads  = set()   # registers read by $ld/$st instructions in this bundle
     c_ctrl     = False
 
     def flush():
@@ -211,9 +285,17 @@ def _pack_bundles(flat):
 
     def reset():
         c_labels.clear(); c_instrs.clear(); c_writes.clear(); c_mem_writes.clear()
+        c_mem_reads.clear()
         nonlocal c_ctrl; c_ctrl = False
 
+    # ABI-fixed stack-pointer register (matches codegen.py's SP = '$r27'). bundler.py
+    # works purely on parsed text and doesn't otherwise know ABI register roles, so
+    # this is hardcoded rather than imported.
+    SP_REG = '$r27'
+
     for instr in flat:
+        is_mem  = instr['mem_access'] is not None
+        is_call = instr['text'].startswith('$call')
         split = False
         if c_instrs:
             if instr['labels']:                         split = True  # label → new bundle
@@ -221,6 +303,24 @@ def _pack_bundles(flat):
             elif instr['reads']  & c_writes:           split = True  # RAW hazard
             elif instr['writes'] & c_writes:           split = True  # WAW hazard
             elif instr['mem_access'] in c_mem_writes:   split = True  # memory RAW/WAW hazard
+            # Phase hazard: the aligner places $ld/$st in LATER slots than ALU/$set
+            # instructions within a bundle, regardless of textual order — confirmed
+            # 2026-06-17 by comparing unaligned vs aligned mcode (e.g. every function
+            # prologue's "$st [SP+0] OLD_FP" + "+FP=SP" bundle: the store textually
+            # comes first to capture the OLD FP, but the aligner moves it to a later
+            # slot than the FP update, so it ends up storing the NEW FP instead).
+            # So a non-memory instruction writing a register that an already-bundled
+            # memory instruction reads is unsafe — the memory read will see the new
+            # (post-ALU) value, not the pre-bundle one the compiler intended.
+            elif not is_mem and (instr['writes'] & c_mem_reads): split = True
+            # Conservative fix (2026-06-17): never bundle $call with an instruction
+            # that modifies SP. The exact phase interaction between an SP-modifying
+            # ALU instruction and a co-bundled $call is unconfirmed (breaks even the
+            # simplest possible function call — see memory/project_call_phase_hazard.md)
+            # — rather than guess at the precise mechanism, force them into separate
+            # bundles. This pattern only occurs near call sites, so the cost is a few
+            # extra instruction slots, not a systemic bundling regression.
+            elif is_call and SP_REG in c_writes:        split = True
             elif len(c_instrs) >= 8:                   split = True  # bundle full
 
         if split:
@@ -231,6 +331,8 @@ def _pack_bundles(flat):
         c_writes |= instr['writes']
         if instr['mem_write'] is not None:
             c_mem_writes.add(instr['mem_write'])
+        if is_mem:
+            c_mem_reads |= instr['reads']
         c_ctrl    = c_ctrl or instr['is_ctrl']
 
     flush()

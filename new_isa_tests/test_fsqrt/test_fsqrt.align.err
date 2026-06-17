@@ -31,13 +31,12 @@ mcode_alu_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_fsqrt_instruction 
-Parsing Exception: test_fsqrt.mcode:29:12: expecting LPAREN, found '$r1'
-Parsing Exception: test_fsqrt.mcode:30:1: expecting RUINTEGER, found ';'
+Parsing Exception: test_fsqrt.mcode:33:12: expecting LPAREN, found '$r1'
+Parsing Exception: test_fsqrt.mcode:34:5: expecting RUINTEGER, found '+'
 mcode_instruction
 mcode_arithmetic_instruction
-mcode_alu_instruction
-Error: Register 2 multiply written in bundle 0
-Error: Register 2 multiply written in bundle 0
+mcode_vreduce_instruction
+Parsing Exception: test_fsqrt.mcode:34:23: expecting SEMICOLON, found '-8'
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -47,13 +46,12 @@ mcode_alu_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_fsqrt_instruction 
-Parsing Exception: test_fsqrt.mcode:37:12: expecting LPAREN, found '$r3'
-Parsing Exception: test_fsqrt.mcode:38:1: expecting RUINTEGER, found ';'
+Parsing Exception: test_fsqrt.mcode:41:12: expecting LPAREN, found '$r3'
+Parsing Exception: test_fsqrt.mcode:42:5: expecting RUINTEGER, found '+'
 mcode_instruction
 mcode_arithmetic_instruction
-mcode_alu_instruction
-Error: Register 4 multiply written in bundle 0
-Error: Register 4 multiply written in bundle 0
+mcode_vreduce_instruction
+Parsing Exception: test_fsqrt.mcode:42:23: expecting SEMICOLON, found '-16'
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -111,15 +109,5 @@ Info: added pad bundle pad_2__4 with size 2
 Info: added pad bundle pad_4__6 with size 4
 Info:  Bundle id=4 addr=11 pad amount 7
 Info:  Bundle id=5 addr=20 pad amount 0
-Info:  Bundle id=6 addr=28 pad amount 0
-Info:  Bundle id=7 addr=30 pad amount 0
-Info:  Bundle id=8 addr=38 pad amount 0
-Info:  Bundle id=9 addr=40 pad amount 0
-Info:  Bundle id=10 addr=48 pad amount 0
-Info:  Bundle id=11 addr=50 pad amount 0
-Info:  Bundle id=12 addr=58 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__8 with size 1
-Info: added pad bundle pad_2__10 with size 2
-Info: added pad bundle pad_4__12 with size 4
-Info:  Bundle id=13 addr=59 pad amount 7
+Info:  Bundle id=6 addr=22 pad amount 0
+mcode_align: src/McodeBundle.cpp:222: int McodeInstructionBundle::Calculate_Pad_For_Alignment(uint32_t): Assertion `0' failed.
