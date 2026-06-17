@@ -71,7 +71,7 @@ def _type_size(node):
 def _elem_size(node):
     if isinstance(node, A.ArrayDecl): return _type_size(node.type)
     if isinstance(node, A.PtrDecl):   return 8   # pointer itself is always 8 bytes
-    return 4
+    return _type_size(node)
 
 class IRGenerator(pycparser.c_ast.NodeVisitor):
     DEFAULT_GLOBAL_BASE = 0x400

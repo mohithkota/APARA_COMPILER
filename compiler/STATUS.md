@@ -2,7 +2,107 @@
 
 ---
 
-## 2026-06-17 — Register Spilling (Latest)
+## 2026-06-17 — Vector support verified + by-value arg-passing bug fixed (Latest)
+
+### Vectors: ISA-level codegen confirmed correct
+Cross-checked `_gen_IRVecArith`, `_gen_IRVecDot`, `_gen_IRVecReduce`, `_gen_IRPack` in `codegen.py`
+against `AparaReference.pdf` §5.3-5.5, §8.4. Operand order/semantics match exactly:
+`$v <op> <rd> (<type>) <rs1> <rs2> [$replicate]`, `$dot <rd> (<type>) <rs1> <rs2> [$accumulate]`,
+`$vreduce <rd> (<type>) <rs1>`, `$pack <rd> <result_nbits> <src_nbits> <rs2>`. Confirmed by
+compiling `__vadd_vi32`/`__dot_vi4`/`__vreduce_vi4`/`__pack` intrinsic calls through the Python
+pipeline (mcode text only, no assembler invoked) — generated mcode lines match ISA syntax exactly.
+
+**Caveat — only the "manually packed 64-bit register" style is supported.** The ISA sample
+program (ISA doc Ch.9) loads true 256-bit/128-bit vectors directly from memory via
+`$ld ($u256)`/`$ld ($u128)` (4 or 2 registers at once). `grep -n "u256\|u128"` across
+codegen.py/ir_gen.py/ir.py returns nothing — there is no wide-vector load/store support.
+`_atype()` in codegen.py always returns `($i64)` regardless of `elem_bytes`. So vector ops here
+only work on values a C program has already packed into a single 64-bit register (via `__pack` or
+manual shifts), not on real array data loaded in bulk. This is a real gap vs. the ISA's vector
+capability, not yet attempted.
+
+### Bug found + fixed: by-value call args silently passed by address for char/short/long long/double
+**Symptom:** compiling `long long add_ll(long long a, long long b) { return a + b; }` and calling
+it with local `long long` arguments produced IR that passed the arguments' **stack addresses**
+into the call, never loading their values — e.g. `_t13 = add_ll(_t11, _t12)` where `_t11`/`_t12`
+were `&stack[FP-offset]`, not loaded values. `int`-typed calls were unaffected.
+
+**Root cause:** `ir_gen.py`'s `_elem_size(node)` defaulted to `4` for any non-array, non-pointer
+scalar type — wrong for `long long`/`double` (8 bytes) and `char`/`short` (1/2 bytes). `int`/
+`float` happened to be 4 bytes already, so they never tripped the bug. `_alloc_local` then saw
+`elem_bytes(4) != total_bytes(8 or other)` and concluded "must be an array," registering the
+variable in `_array_elem`. `_call`'s argument-building loop checks `_array_elem` to decide
+"raw array → pass address of first element instead of value" — which silently misfired for any
+`long long`/`double`/`char`/`short` local or parameter passed by value into a call. This is how
+the vector intrinsics (which pass `long long`-packed values across calls) were first noticed to
+be broken — the bug is general-purpose, not vector-specific.
+
+**Fix** (one line):
+```python
+def _elem_size(node):
+    if isinstance(node, A.ArrayDecl): return _type_size(node.type)
+    if isinstance(node, A.PtrDecl):   return 8
+    return _type_size(node)   # was: return 4
+```
+Traced every call site (global/local alloc, struct/2D-array overrides which run after and
+override anyway, array-param decay) — only scalar `char`/`short`/`long long`/`double` behavior
+changes; arrays, pointers, structs, `int`/`float` are unaffected. Also incidentally fixes
+over-allocation of uninitialized global scalars of these types (was allocating 2x DMEM).
+
+**Verification:**
+- `add_ll(l1, l2)` now correctly loads values before the call.
+- Vector intrinsic test (`__pack`/`__vadd_vi32`/`__dot_vi4`/`__vreduce_vi4` via wrapper functions)
+  now produces correct IR and matching mcode.
+- Regression smoke test covering 1D int array param + loop, pointer deref/write, struct field
+  read/write, `char`/`short`/`double` locals — all still IR-correct after the fix.
+- All checks done via the Python text-generation pipeline only; **not yet run on hardware.**
+
+### Known pre-existing limitation (not fixed, not today's scope)
+Float/double constant literals (e.g. `double d = 2.5;`) are not parsed — `_visit_expr` for
+`A.Constant` tries `int(raw, 0)` and falls back to `Const(0)` on failure, silently zeroing any
+non-integer literal. Unrelated to the bug above; flagging for whenever float support is tackled.
+
+---
+
+## 2026-06-17 — Function Pointers: BLOCKED at assembler level
+
+### Status: PAUSED — not a compiler bug, cannot be fixed in compiler.py/ir.py/ir_gen.py/codegen.py
+
+### What already exists (from earlier work, found while investigating)
+`ir.py`, `ir_gen.py`, and `codegen.py` already had substantial function-pointer scaffolding in place:
+- `IRFuncAddr` (dest = address of named function) and `IRIndirectCall` (dest = call through a
+  register) IR nodes — `ir.py:199-210`.
+- `_func_names` pre-collected from all `FuncDef`s so forward references resolve; `&funcname`,
+  `fp = funcname`, `fp(args)`, `(*fp)(args)` all correctly emit `IRFuncAddr`/`IRIndirectCall` —
+  `ir_gen.py` (`_load_var`, `_unary '&'`, `_call`).
+- `_gen_IRFuncAddr` / `_gen_IRIndirectCall` codegen, fully spill/caller-save aware, mirroring the
+  direct-call path — `codegen.py:807-877`.
+
+### The blocker
+Cross-checked against `AparaReference.pdf` (ISA doc) and the assembler's own parser grammar:
+
+1. **`$call $rN` (register-indirect call) is valid hardware/ISA behavior.** ISA §6.2: "the target
+   address is in the bottom 32-bits of the specified register." So `_gen_IRIndirectCall`'s
+   `$call {RET}` is correct — this half of the feature works.
+2. **There is no instruction that can load a function's absolute address into a register.**
+   `$call <label>` is a 25-bit **PC-relative offset**, not an absolute address, so it can't be
+   repurposed. The only other candidate, `$set`, was checked directly against the assembler's
+   parser source: its immediate field grammar only accepts `UINTEGER` / `NINTEGER` / `HEXADECIMAL`
+   tokens — a label name in that position throws `NoViableAltException` (hard parse failure).
+   The assembler has **no label-resolution mechanism** outside of control-transfer instructions.
+
+### Conclusion
+`_gen_IRFuncAddr`'s current `$set {dest} 0 {ir.func_name}` will hard-crash `mcode_assemble`.
+Function pointers cannot be implemented until the assembler gains some way to materialize a
+label's absolute address into a general-purpose register (new instruction, new `$set` grammar
+rule, or a post-assembly relocation/patch mechanism). This is outside the Python compiler's
+control. **Do not re-attempt without first confirming the assembler side has changed.**
+`IRIndirectCall` codegen is sound as-is and can be reused immediately once `IRFuncAddr` has a
+working implementation.
+
+---
+
+## 2026-06-17 — Register Spilling
 
 ### Done today — register spilling when >28 temps are simultaneously live
 
