@@ -21,13 +21,16 @@ class Temp:
 
 class IRGlobalDecl:
     """A global variable in DMEM."""
-    def __init__(self, name, dmem_addr, total_bytes, elem_bytes=4, init=None):
+    def __init__(self, name, dmem_addr, total_bytes, elem_bytes=4, init=None, stride=None):
         self.name       = name
         self.dmem_addr  = dmem_addr   # absolute byte addr in DMEM
         self.total_bytes= total_bytes
-        self.elem_bytes = elem_bytes
+        self.elem_bytes = elem_bytes  # C type size (drives instruction type: $i32 vs $i64)
+        # APARA DMEM: $ld ($i32) always reads bits[63:32] of the 8-byte word.
+        # Every element must sit at byte_off=0 of its own 8-byte DMEM word.
+        self.stride     = stride if stride is not None else max(elem_bytes, 8)
         self.init       = init or []  # flat list of init values
-    def __repr__(self): return f"GLOBAL {self.name} @0x{self.dmem_addr:x} ({self.total_bytes}B)"
+    def __repr__(self): return f"GLOBAL {self.name} @0x{self.dmem_addr:x} ({self.total_bytes}B stride={self.stride})"
 
 class IRFuncBegin:
     def __init__(self, name, params, var_offsets, frame_size):
@@ -128,3 +131,67 @@ class IRReturn:
 
 class IRHalt:
     def __repr__(self): return "HALT"
+
+# ─── New ISA Instructions ──────────────────────────────────────────────────────
+
+class IRCast:
+    """dest = $cast(dest_type) src  — type conversion"""
+    def __init__(self, dest, src, dest_type, src_type='$i64'):
+        self.dest = dest; self.src = src
+        self.dest_type = dest_type; self.src_type = src_type
+    def __repr__(self): return f"{self.dest} = cast({self.dest_type}) {self.src}"
+
+class IRFsqrt:
+    """dest = $fsqrt(type) src  — floating-point square root"""
+    def __init__(self, dest, src, type_str='$f64'):
+        self.dest = dest; self.src = src; self.type_str = type_str
+    def __repr__(self): return f"{self.dest} = fsqrt({self.type_str}) {self.src}"
+
+class IRCmov:
+    """if check cond 0: dest = src_true  else: dest = src_false"""
+    def __init__(self, dest, check, cond, src_true, src_false, type_str='$i64'):
+        self.dest = dest; self.check = check; self.cond = cond
+        self.src_true = src_true; self.src_false = src_false
+        self.type_str = type_str
+    def __repr__(self):
+        return f"{self.dest} = cmov({self.check} {self.cond} 0 ? {self.src_true} : {self.src_false})"
+
+class IRSlice:
+    """dest = src[hindex:lindex]  — bit-field extract"""
+    def __init__(self, dest, src, hindex, lindex):
+        self.dest = dest; self.src = src
+        self.hindex = int(hindex); self.lindex = int(lindex)
+    def __repr__(self): return f"{self.dest} = slice({self.src}, {self.hindex}, {self.lindex})"
+
+class IRPack:
+    """dest = pack(src1, src2, result_nbits, src_nbits)  — pack two regs into one"""
+    def __init__(self, dest, src1, src2, result_nbits, src_nbits):
+        self.dest = dest; self.src1 = src1; self.src2 = src2
+        self.result_nbits = int(result_nbits); self.src_nbits = int(src_nbits)
+    def __repr__(self):
+        return f"{self.dest} = pack({self.src1}, {self.src2}, {self.result_nbits}, {self.src_nbits})"
+
+class IRVecArith:
+    """dest = $v op (type_str) src1 src2 [$replicate]  — vector element-wise arithmetic"""
+    def __init__(self, dest, op, src1, src2, type_str, replicate=False):
+        self.dest = dest; self.op = op; self.src1 = src1; self.src2 = src2
+        self.type_str = type_str; self.replicate = replicate
+    def __repr__(self):
+        return f"{self.dest} = $v {self.op} ({self.type_str}) {self.src1} {self.src2}"
+
+class IRVecDot:
+    """dest = $dot (type_str) src1 src2 [+ dest]  — vector dot product"""
+    def __init__(self, dest, src1, src2, type_str, accumulate=False, accum=None):
+        self.dest = dest; self.src1 = src1; self.src2 = src2
+        self.type_str = type_str; self.accumulate = accumulate; self.accum = accum
+    def __repr__(self): return f"{self.dest} = dot({self.type_str}) {self.src1} . {self.src2}"
+
+class IRVecReduce:
+    """dest = $vreduce (type_str) src  — sum all vector elements"""
+    def __init__(self, dest, src, type_str):
+        self.dest = dest; self.src = src; self.type_str = type_str
+    def __repr__(self): return f"{self.dest} = vreduce({self.type_str}) {self.src}"
+
+class IRNop:
+    """$nop  — no operation"""
+    def __repr__(self): return "NOP"
