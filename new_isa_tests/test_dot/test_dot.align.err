@@ -1,0 +1,230 @@
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_call_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_dot_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_cast_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_dot_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+Error: Register 2 multiply written in bundle 0
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_cast_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_branch_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_return_instruction
+Info: finished parsing file test_dot.mcode
+Info:  Bundle id=0 addr=0 pad amount 0
+Info:  Bundle id=1 addr=2 pad amount 0
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__0 with size 4
+Info:  Bundle id=2 addr=4 pad amount 4
+Info:  Bundle id=3 addr=10 pad amount 0
+Info:  Bundle id=4 addr=18 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__2 with size 1
+Info: added pad bundle pad_2__4 with size 2
+Info: added pad bundle pad_4__6 with size 4
+Info:  Bundle id=5 addr=19 pad amount 7
+Info:  Bundle id=6 addr=28 pad amount 0
+Info:  Bundle id=7 addr=2a pad amount 0
+Info:  Bundle id=8 addr=2c pad amount 0
+Info:  Bundle id=9 addr=2e pad amount 0
+Info:  Bundle id=10 addr=30 pad amount 0
+Info: Adding pad bundles to cover size 6
+Info: added pad bundle pad_2__8 with size 2
+Info: added pad bundle pad_4__10 with size 4
+Info:  Bundle id=11 addr=32 pad amount 6
+Info:  Bundle id=12 addr=40 pad amount 0
+Info:  Bundle id=13 addr=42 pad amount 0
+Info:  Bundle id=14 addr=44 pad amount 0
+Info:  Bundle id=15 addr=46 pad amount 0
+Info:  Bundle id=16 addr=48 pad amount 0
+Info:  Bundle id=17 addr=50 pad amount 0
+Info:  Bundle id=18 addr=58 pad amount 0
+Info:  Bundle id=19 addr=60 pad amount 0
+Info:  Bundle id=20 addr=68 pad amount 0
+Info:  Bundle id=21 addr=70 pad amount 0
+Info:  Bundle id=22 addr=78 pad amount 0
+Info:  Bundle id=23 addr=80 pad amount 0
+Info:  Bundle id=24 addr=88 pad amount 0
+Info:  Bundle id=25 addr=90 pad amount 0
+Info:  Bundle id=26 addr=98 pad amount 0
+Info:  Bundle id=27 addr=a0 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__12 with size 1
+Info: added pad bundle pad_2__14 with size 2
+Info: added pad bundle pad_4__16 with size 4
+Info:  Bundle id=28 addr=a1 pad amount 7
+Info:  Bundle id=29 addr=b0 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__18 with size 1
+Info: added pad bundle pad_2__20 with size 2
+Info: added pad bundle pad_4__22 with size 4
+Info:  Bundle id=30 addr=b1 pad amount 7

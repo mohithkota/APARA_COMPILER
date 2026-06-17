@@ -21,7 +21,7 @@ l_8:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 0]    $r30
+    $st   ($i32)   [$r28  + 0]    $r30
     $null
     $null
     $null
@@ -32,7 +32,7 @@ l_16:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 8]    $r30
+    $st   ($i32)   [$r28  + 8]    $r30
     $null
     $null
     $null
@@ -43,7 +43,7 @@ l_24:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 16]    $r30
+    $st   ($i32)   [$r28  + 16]    $r30
     $null
     $null
     $null
@@ -71,7 +71,7 @@ l_36:
 l_40:
     || 
     +            $r26    ($i64)    $r0    $r27
-    -            $r27    ($i64)    $r27        328
+    $set     $r1    0    840
     $null
     $null
     $st   ($i64)   [$r27  + 0]    $r26
@@ -81,21 +81,21 @@ l_40:
     ;
 l_48:
     || 
+    -            $r27    ($i64)    $r27    $r1
     +            $r1    ($i64)    $r26        -8
     $set     $r2    0    52719
-    ;
-l_50:
-    || 
-    $set     $r2    2    30891
-    ;
-l_51:
-    || 
     $null
     ;
 l_52:
     || 
+    $set     $r2    2    30891
+    ;
+l_53:
+    || 
     $null
-    $null
+    ;
+l_54:
+    || 
     $null
     $null
     ;
@@ -105,7 +105,7 @@ l_56:
     $null
     $null
     $null
-    $st   ($i64)   [$r1  + 0]    $r2
+    $st   ($i32)   [$r1  + 0]    $r2
     $null
     $null
     $null
@@ -116,7 +116,7 @@ l_64:
     +            $r5    ($i64)    $r26        -16
     $null
     $null
-    $ld    ($i64)   $r3    [$r2 + 0]
+    $ld    ($i32)   $r3    [$r2 + 0]
     $null
     $null
     $null
@@ -127,7 +127,7 @@ l_72:
     $null
     $null
     $null
-    $st   ($i64)   [$r5  + 0]    $r4
+    $st   ($i32)   [$r5  + 0]    $r4
     $null
     $null
     $null
@@ -138,7 +138,7 @@ l_80:
     +            $r9    ($i64)    $r26        -24
     $null
     $null
-    $ld    ($i64)   $r7    [$r6 + 0]
+    $ld    ($i32)   $r7    [$r6 + 0]
     $null
     $null
     $null
@@ -149,7 +149,7 @@ l_88:
     $null
     $null
     $null
-    $st   ($i64)   [$r9  + 0]    $r8
+    $st   ($i32)   [$r9  + 0]    $r8
     $null
     $null
     $null
@@ -160,7 +160,7 @@ l_96:
     +            $r13    ($i64)    $r26        -32
     $null
     $null
-    $ld    ($i64)   $r11    [$r10 + 0]
+    $ld    ($i32)   $r11    [$r10 + 0]
     $null
     $null
     $null
@@ -171,7 +171,7 @@ l_104:
     $null
     $null
     $null
-    $st   ($i64)   [$r13  + 0]    $r12
+    $st   ($i32)   [$r13  + 0]    $r12
     $null
     $null
     $null
@@ -182,7 +182,7 @@ l_112:
     $null
     $null
     $null
-    $ld    ($i64)   $r15    [$r14 + 0]
+    $ld    ($i32)   $r15    [$r14 + 0]
     $null
     $null
     $null
@@ -193,7 +193,7 @@ l_120:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 0]    $r15
+    $st   ($i32)   [$r28  + 0]    $r15
     $null
     $null
     $null
@@ -204,7 +204,7 @@ l_128:
     $null
     $null
     $null
-    $ld    ($i64)   $r17    [$r16 + 0]
+    $ld    ($i32)   $r17    [$r16 + 0]
     $null
     $null
     $null
@@ -215,7 +215,7 @@ l_136:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 8]    $r17
+    $st   ($i32)   [$r28  + 8]    $r17
     $null
     $null
     $null
@@ -226,7 +226,7 @@ l_144:
     $null
     $null
     $null
-    $ld    ($i64)   $r19    [$r18 + 0]
+    $ld    ($i32)   $r19    [$r18 + 0]
     $null
     $null
     $null
@@ -237,7 +237,7 @@ l_152:
     $null
     $null
     $null
-    $st   ($i64)   [$r28  + 16]    $r19
+    $st   ($i32)   [$r28  + 16]    $r19
     $null
     $null
     $null
@@ -248,7 +248,7 @@ l_160:
     $null
     $null
     $null
-    $ld    ($i64)   $r21    [$r20 + 0]
+    $ld    ($i32)   $r21    [$r20 + 0]
     $null
     $null
     $null
@@ -259,7 +259,7 @@ l_168:
     $null
     $null
     $null
-    $ld    ($i64)   $r23    [$r22 + 0]
+    $ld    ($i32)   $r23    [$r22 + 0]
     $null
     $null
     $null
@@ -287,7 +287,7 @@ l_184:
     $null
     $null
     $null
-    $ld    ($i64)   $r29    [$r25 + 0]
+    $ld    ($i32)   $r29    [$r25 + 0]
     $null
     $null
     $null

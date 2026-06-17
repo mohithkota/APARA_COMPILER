@@ -368,8 +368,10 @@ class CodeGen:
             return r, True
         return self._alloc_reg(op, protect=protect), False
 
+    _WIDTH_TO_TYPE = {1: '($i8)', 2: '($i16)', 4: '($i32)', 8: '($i64)'}
+
     def _atype(self, elem_bytes):
-        return '($i64)'
+        return self._WIDTH_TO_TYPE.get(elem_bytes, '($i64)')
 
     # ── unconditional / conditional branches ───────────────────────────────────
 
@@ -933,7 +935,9 @@ class CodeGen:
 
     def _gen_IRPack(self, ir):
         """
-        $pack rd result_nbits src_nbits rs2
+        $pack result_nbits rd src_nbits rs2
+        Real assembler grammar order (McodeParser.cpp:570) is (packed_nbits, rd, word_nbits,
+        rs2) — NOT (rd, packed_nbits, word_nbits, rs2) as the ISA doc's own example shows.
         ISA requires rs2 and rs2+1 to be a consecutive register pair.
         borrow_pair() finds any two consecutive free registers at emit time.
         """
@@ -952,7 +956,7 @@ class CodeGen:
         p1, p2 = self._ra.borrow_pair()
         self._emit(f"+ {p1} ($i64) {ZERO} {a}")
         self._emit(f"+ {p2} ($i64) {ZERO} {b}")
-        self._emit(f"$pack {dest} {ir.result_nbits} {ir.src_nbits} {p1}")
+        self._emit(f"$pack {ir.result_nbits} {dest} {ir.src_nbits} {p1}")
         self._ra.unborrow(p2)
         self._ra.unborrow(p1)
 

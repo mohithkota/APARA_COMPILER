@@ -1,0 +1,396 @@
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_call_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_branch_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_branch_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_branch_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_branch_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_return_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_instruction
+mcode_instruction
+Info: finished parsing file test_array.aligned.mcode
+Info:  Bundle id=0 addr=0 pad amount 0
+Info:  Bundle id=1 addr=2 pad amount 0
+Info:  Bundle id=2 addr=4 pad amount 0
+Info:  Bundle id=3 addr=8 pad amount 0
+Info:  Bundle id=4 addr=10 pad amount 0
+Info:  Bundle id=5 addr=18 pad amount 0
+Info:  Bundle id=6 addr=20 pad amount 0
+Info:  Bundle id=7 addr=28 pad amount 0
+Info:  Bundle id=8 addr=30 pad amount 0
+Info:  Bundle id=9 addr=38 pad amount 0
+Info:  Bundle id=10 addr=39 pad amount 0
+Info:  Bundle id=11 addr=3a pad amount 0
+Info:  Bundle id=12 addr=3c pad amount 0
+Info:  Bundle id=13 addr=40 pad amount 0
+Info:  Bundle id=14 addr=48 pad amount 0
+Info:  Bundle id=15 addr=4c pad amount 0
+Info:  Bundle id=16 addr=50 pad amount 0
+Info:  Bundle id=17 addr=58 pad amount 0
+Info:  Bundle id=18 addr=59 pad amount 0
+Info:  Bundle id=19 addr=5a pad amount 0
+Info:  Bundle id=20 addr=5c pad amount 0
+Info:  Bundle id=21 addr=60 pad amount 0
+Info:  Bundle id=22 addr=68 pad amount 0
+Info:  Bundle id=23 addr=69 pad amount 0
+Info:  Bundle id=24 addr=6a pad amount 0
+Info:  Bundle id=25 addr=6c pad amount 0
+Info:  Bundle id=26 addr=70 pad amount 0
+Info:  Bundle id=27 addr=78 pad amount 0
+Info:  Bundle id=28 addr=80 pad amount 0
+Info:  Bundle id=29 addr=88 pad amount 0
+Info:  Bundle id=30 addr=90 pad amount 0
+Info:  Bundle id=31 addr=92 pad amount 0
+Info:  Bundle id=32 addr=93 pad amount 0
+Info:  Bundle id=33 addr=94 pad amount 0
+Info:  Bundle id=34 addr=98 pad amount 0
+Info:  Bundle id=35 addr=a0 pad amount 0
+Info:  Bundle id=36 addr=a1 pad amount 0
+Info:  Bundle id=37 addr=a2 pad amount 0
+Info:  Bundle id=38 addr=a4 pad amount 0
+Info:  Bundle id=39 addr=a8 pad amount 0
+Info:  Bundle id=40 addr=b0 pad amount 0
+Info:  Bundle id=41 addr=b1 pad amount 0
+Info:  Bundle id=42 addr=b2 pad amount 0
+Info:  Bundle id=43 addr=b4 pad amount 0
+Info:  Bundle id=44 addr=b8 pad amount 0
+Info:  Bundle id=45 addr=c0 pad amount 0
+Info:  Bundle id=46 addr=c4 pad amount 0
+Info:  Bundle id=47 addr=c8 pad amount 0
+Info:  Bundle id=48 addr=d0 pad amount 0
+Info:  Bundle id=49 addr=d8 pad amount 0
+Info:  Bundle id=50 addr=e0 pad amount 0
+Info:  Bundle id=51 addr=e1 pad amount 0
+Info:  Bundle id=52 addr=e2 pad amount 0
+Info:  Bundle id=53 addr=e4 pad amount 0
+Info:  Bundle id=54 addr=e8 pad amount 0
+Info: call label main translated to pc-relative 64
+Info: branch label fb_2 translated to pc-relative 16
+Info: branch label fe_4 translated to pc-relative 88
+Info: branch label fc_1 translated to pc-relative -112
+Info: branch label main_epilogue translated to pc-relative 8

@@ -2,7 +2,211 @@
 
 ---
 
-## 2026-06-17 — Vector support verified + by-value arg-passing bug fixed (Latest)
+## 2026-06-17 — Bundler memory-hazard FIXED; found a second bug ($set doesn't merge) (Latest)
+
+### Bundler fix (bundler.py)
+Added memory-address hazard tracking alongside the existing register RAW/WAW/WAR logic.
+`_parse_deps` now also returns `(mem_access, mem_write)` — a `(base_reg, offset)` tuple for any
+`$ld`/`$st`, textually matched. `_pack_bundles` tracks `c_mem_writes` (addresses stored-to in the
+current bundle) and forces a split if a later instruction's `mem_access` matches an address
+already in `c_mem_writes` — i.e. store-then-reload (or store-then-store) of the same `[base+offset]`
+no longer lands in one bundle. Load-then-store of the same address is still allowed in one bundle
+(WAR-safe, matches the existing register WAR philosophy — VLIW reads all operands before writes).
+
+**Verified the fix is correct in isolation**: `int gi = 100; gi = gi+1; if (gi != 101) return -1;
+return 1;` — before the fix this returned -1 (stale reload); after the fix, confirmed on hardware,
+returns 1. The store and reload are now in separate bundles (checked directly in the generated
+mcode).
+
+### The fix resolves 0 of the 9 originally-failing tests — each has additional, different bugs
+Re-ran `test_subword, test_dot, test_struct, test_spill, test_scalar_full, test_vadd, test_vreduce,
+test_slice, test_cast` after the fix. **All 9 still produce the same wrong r1 as before.** Checked
+each one's bundled mcode for residual same-address store+load pairs — none exist (the fix is
+working; these tests were never blocked by *this* hazard, or hit a second bug that masks it).
+
+### New bug found: `$set` does not merge into the register, it overwrites
+The compiler's constant-loading logic (`_load_const`, `_emit_set_const_into` in `codegen.py`,
+and `_gen_IRGlobalDecl`'s init-value writer) assumes calling `$set rd 0 <lo16>` then
+`$set rd 2 <hi16>` accumulates a 32-bit value by writing into two different 16-bit slices of the
+same register, leaving the other slice alone — matching a literal reading of the ISA doc's SET
+section. **Hardware trace proves this is wrong**: for `gi = 100000` (`lo=0x86a0` at field 0,
+`hi=1` at field 2):
+```
+Info: McodeMachine:: Set_Register(30, 0x86a0)   // after $set r30 0 34464 — correct so far
+Info: McodeMachine:: Set_Register(30, 0x10000)  // after $set r30 2 1 — OVERWRITES, should be 0x186a0
+```
+The second `$set` discards the first one's contribution entirely instead of merging. This breaks
+loading ANY constant that needs both a low and a high 16-bit `$set` (i.e. doesn't fit in one
+16-bit field). Confirmed root cause for `test_subword`'s one failing check (`gi=100000`) and
+`test_cast`'s big constant (`0x12345678ABCDEF`); very likely also explains `test_dot`/`test_vadd`/
+`test_vreduce` since they build packed-vector constants via shift expressions
+(`2LL<<16`, `3LL<<32`, etc.) that get constant-folded at codegen time into single large literals
+exceeding 65535. **Not yet confirmed** for `test_slice` (its only large-looking literal, `0xABCD`,
+fits in one 16-bit field — doesn't obviously need the broken merge) or `test_scalar_full`/
+`test_spill` (no large constants found at all). **Not fixed yet** — needs a real fix to how
+multi-word constants are loaded (e.g. shift-and-OR via ALU ops instead of relying on $set to merge,
+or some other mechanism — needs confirmation on what `$set` actually does for ALL field indices
+before choosing an approach, this is similar in spirit to the earlier `$set`-label question).
+
+### test_struct: still unexplained
+Zero large constants, zero same-address store+load pairs in its bundled mcode, yet still returns
+0xa (10) instead of the expected 0 on full success — doesn't match either known bug. Needs its own
+investigation.
+
+### Status: in progress, mid-investigation
+Two real, hardware-confirmed compiler bugs found and one fixed (bundler hazard). The $set-merge
+bug is understood but not fixed. test_struct (and possibly test_slice/test_scalar_full/test_spill)
+have unidentified root causes still. Do not assume "bundler fix landed" means these 9 tests are
+close to passing — they are not, for unrelated reasons.
+
+---
+
+## 2026-06-17 — Full hardware regression (19 programs) on updated engine_isp
+
+User pulled the i32-fixed `engine_isp` binaries into `assembler/bin/`. Ran the complete
+align→assemble→run pipeline (not just Python/mcode generation) on all 19 held/safe tests.
+**Genuine, on-hardware results — replaces all earlier "compiles clean" / "placeholder" claims.**
+
+### PASS (6) — confirmed correct final r1 on real hardware
+| Test | r1 | Expected |
+|---|---|---|
+| test_alu | 0xd (13) | 13 |
+| test_array | 0x96 (150) | 150 |
+| test_ldst | 0x3e8 (1000) | 1000 |
+| test_branch | 0x1 | 1 (a<b branch taken) |
+| test_cmov | 0x258 (600) | 100+200+300 |
+| test_pointer | 0xf (15) | 1+2+3+4+5 |
+
+### PIPELINE-LEVEL FAILURES (4) — never reached execution; assembler/aligner rejected or crashed
+These are tool/codegen bugs unrelated to today's i32 work (mcode for test_2d was byte-identical
+to before today; the other three's relevant instructions are untouched by the elem_bytes/_atype
+change).
+- **test_logic**: `mcode_align` parse error. Root cause **found**: `codegen.py`'s `_APARA_OP` dict
+  maps XNOR (`~^`) to the literal mnemonic `'~~'` — should be `'~^'` per ISA doc §5.1 (opcode
+  0xD). One-line typo, not yet fixed (holding for direction).
+- **test_pack**: `mcode_align` parse error — `expecting UINTEGER, found '$r7'` on the `$pack $r7
+  32 16 $r1` line. The ISA doc's own example (`$pack $r5 32 16 $r1`) shows this exact operand
+  order, so either the assembler grammar differs from the doc, or there's a missing token. Don't
+  know the actual grammar — same category of unknown as the earlier function-pointer `$set`
+  question. Needs your input, not a guess.
+- **test_2d**, **test_fsqrt**: both crash `mcode_align`/`mcode_assemble` with the identical
+  assertion: `McodeInstructionBundle::Calculate_Pad_For_Alignment: Assertion '0' failed`. Same
+  failure family, two different features (2D arrays, fsqrt) — looks like an aligner-side edge
+  case in bundle padding, not something visible from the Python side. Not investigated further.
+
+### WRONG COMPUTED VALUE (9) — ran to completion, final r1 incorrect
+| Test | actual r1 | expected | 
+|---|---|---|
+| test_subword | -12 (fails check #12 only — global `int` increment) | 1 (all 12 checks pass) |
+| test_dot | 0x7ff0 | 0x5a (90) |
+| test_struct | 0xa (10) | 0 |
+| test_spill | 0x328 (808) | 0x1d1 (465) |
+| test_scalar_full | 0x3 | 0xc (12) |
+| test_vadd | 0x0 | 0x4 (4) |
+| test_vreduce | 0x20001 | 0x4c (76) |
+| test_slice | 0x0 | 0xb7 (183) |
+| test_cast | 0x0 | 0x78ab9bcd |
+
+### ROOT CAUSE FOUND for at least one of these, likely explains most: bundler memory hazard
+Isolated with a minimal repro (`gi = gi + 1; if (gi != 100001) return -1;` — nothing else in the
+program). Generated mcode:
+```
+||
+    $st ($i32) [$r28 + 0] $r2     // store gi+1
+    $ld ($i32) $r3 [$r28 + 0]     // reload gi — SAME bundle, SAME address
+    $set $r4 0 34465
+;
+```
+**The store and the reload of the same address are packed into the same VLIW bundle.** Per the
+ISA, instructions in one bundle execute in parallel — the load does not see the store that's
+"simultaneously" in flight, so it reads the stale pre-increment value. Confirmed by hardware run:
+r1 = -1 (the failure branch), proving the reload got the old value. This is a **missing
+memory-aliasing hazard check in `bundler.py`** — it tracks register RAW/WAW/WAR hazards (per
+earlier audit) but evidently not "don't bundle a load with a same-address store still in
+flight." This is a pre-existing bundler bug, **not introduced by today's i32 work** — it would
+equally affect any `($i64)` store-then-reload of the same variable; today's i32 test just happened
+to trigger it. Store→load-same-address is an extremely common pattern (any "increment a global
+and check it" idiom), so this is the prime suspect for most of the other 8 wrong-value failures
+above too, though each hasn't been individually traced to this same mechanism yet.
+
+**`test_subword` detail**: checks 1-11 (char locals/arrays/globals, short locals/arrays/globals,
+int locals/arrays) all passed — only check #12 (the global `int` scalar increment-and-reread,
+the exact bundler-hazard pattern above) failed. This means **the core i8/i16/i32 sub-word
+load/store feature itself is solid** — confirmed independently by `test_subword_i8.c` and
+`test_subword_i16.c` (char-only and short-only, no other variables in the frame) both returning
+r1=1 (full pass) on hardware. The one combined-test failure is the bundler hazard, not the
+sub-word feature.
+
+### Bottom line
+i8/i16/i32 sub-word load/store: **hardware-confirmed working** in isolation
+(`test_subword_i8`, `test_subword_i16`) and via `test_array`/`test_cmov`/`test_branch`/
+`test_pointer` exercising `$i32` in other shapes. The failures above are four separate
+pre-existing issues (XNOR mnemonic typo, `$pack` grammar mismatch, aligner assertion crash,
+bundler memory hazard) uncovered by this regression, none caused by today's work. **None of these
+four have been fixed yet** — flagged for explicit direction on priority/approach before touching
+any of them, given the XNOR fix is a confident one-liner but the other three need either your
+grammar knowledge or non-trivial bundler work.
+
+---
+
+## 2026-06-17 — Sub-word load/store implemented: i32,i32 / i32,i16 / i8,i8
+
+### Why now
+The `$ld ($i32)` engine bug (always read bits[63:32] regardless of byte offset — see the
+"Vector support" entry below and [[apara_dmem_alignment]] memory) is fixed in the upstream VM.
+i4/u4 confirmed by the user to have **no LOAD/STORE form at all** — minimum memory transfer
+granularity is `$i8`; i4 is arithmetic-only. Not implemented, not attempted.
+
+### What changed
+1. **Audited every `IRLoad`/`IRStore`/`IRGlobalLoad`/`IRGlobalStore`/`IRGlobalDecl` construction
+   site in `ir_gen.py`** (~20 sites). About half relied on the `elem_bytes=4` constructor default
+   in `ir.py` even for values that are actually 8 bytes (long long/double/pointer values, struct
+   fields, generic local scalar load/store, pointer dereference, 2D-array base-pointer loads) —
+   harmless only because `_atype()` in `codegen.py` ignored `elem_bytes` and always emitted
+   `($i64)`. Every site now passes the correct width explicitly:
+   - Plain scalars (locals + params): new `_local_elem_bytes` dict in `ir_gen.py`, populated by
+     `_alloc_local`, looked up by `_load_var`/`_store_var`.
+   - Struct fields: `fdmem` from `_structref_base_and_total_off` (always 8 for scalar leaf fields).
+   - Pointer dereference (`*p`) and pointer-value loads: hardcoded `8` — pointers are still
+     stride=8 universally (see `_record_ptr`); pointer-to-narrow-type is a separate, NOT-yet-done
+     feature.
+   - Array/pointer indexing fallback paths: reuse the existing `_get_esz()` helper.
+2. **Removed the `elem_bytes=4` default in `ir.py`** — now a required (or keyword-only, for
+   `IRGlobalLoad` where `offset=None` already occupies the "has a default" slot) argument, so any
+   future missed call site throws immediately instead of silently defaulting to 4.
+3. **Regression checkpoint**: recompiled all 18 existing tests after steps 1-2 — mcode byte-for-byte
+   identical to pre-change baseline (expected: `_atype` still hardcoded `($i64)` at this point).
+4. **`_atype()` now maps elem_bytes → type tag**: `1→($i8)`, `2→($i16)`, `4→($i32)`, `8→($i64)`
+   (was: always `($i64)`).
+5. **New test**: `new_isa_tests/test_subword.c` — char/short/int locals+globals+arrays, all three
+   pairs in one file, Python/IR/mcode-level verified only (see below). Generated mcode confirmed
+   correct: `$i8` for all char access, `$i16` for all short, `$i32` for all int, struct
+   fields/pointers/prologue·epilogue still `$i64`.
+
+### IMPORTANT — hardware verification is partially blocked, READ BEFORE RUNNING ANYTHING
+The user's local `engine_isp` checkout **still has the old $i32 sub-word bug** — the VM fix
+hasn't been pulled yet there. Consequences:
+- `new_isa_tests/test_subword.c` mixes all three widths — **do not hardware-run this one yet**
+  (its i32 section would hit the still-present bug).
+- Split out **`new_isa_tests/test_subword_i8.c`** and **`new_isa_tests/test_subword_i16.c`** —
+  each deliberately contains zero `int`/`short`-the-other-one locals/globals, confirmed via grep
+  that their generated mcode contains only `($i8)`/`($i64)` and `($i16)`/`($i64)` respectively,
+  no `($i32)` anywhere. **These are safe to hardware-verify right now.**
+- **12 of the 18 pre-existing tests now also emit `$i32`** (because they use `int` somewhere) and
+  are therefore now ALSO affected by the still-present bug, not just the new test:
+  `test_array, test_cast, test_cmov, test_dot, test_fsqrt, test_logic, test_pack, test_pointer,
+  test_scalar_full, test_slice, test_vadd, test_vreduce`. **Do not hardware-verify these against
+  the current unpatched engine_isp — they would now fail where they previously passed**, purely
+  because `int` access changed from `($i64)` to `($i32)`, not because of a new compiler bug.
+  Safe/unaffected (no `int` anywhere, zero mcode diff from before this change):
+  `test_alu, test_2d, test_struct, test_branch, test_ldst, test_spill`.
+- **Once the updated `engine_isp` is pulled**: re-run the full 18-test + 3-new-test suite on
+  hardware as the real confirmation. Until then, only Python/IR/mcode-level verification has been
+  done for i32.
+
+---
+
+## 2026-06-17 — Vector support verified + by-value arg-passing bug fixed
 
 ### Vectors: ISA-level codegen confirmed correct
 Cross-checked `_gen_IRVecArith`, `_gen_IRVecDot`, `_gen_IRVecReduce`, `_gen_IRPack` in `codegen.py`

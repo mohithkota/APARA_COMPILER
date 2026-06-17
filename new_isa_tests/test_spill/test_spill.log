@@ -1,0 +1,388 @@
+Info: pc = 0
+Info: imem file = test_spill.obj
+Info: dmem file = data.map
+Info: results file = test_spill.result
+Error: initialization: pc = 2048 is beyond the i-mem size
+Error: initialization: pc = 2049 is beyond the i-mem size
+Error: initialization: pc = 2050 is beyond the i-mem size
+Error: initialization: pc = 2051 is beyond the i-mem size
+Error: initialization: pc = 2052 is beyond the i-mem size
+Error: initialization: pc = 2053 is beyond the i-mem size
+Error: initialization: pc = 2054 is beyond the i-mem size
+Error: initialization: pc = 2055 is beyond the i-mem size
+Error: initialization: pc = 2056 is beyond the i-mem size
+Error: initialization: pc = 2057 is beyond the i-mem size
+Error: initialization: pc = 2058 is beyond the i-mem size
+Error: initialization: pc = 2059 is beyond the i-mem size
+Error: initialization: pc = 2060 is beyond the i-mem size
+Error: initialization: pc = 2061 is beyond the i-mem size
+Error: initialization: pc = 2062 is beyond the i-mem size
+Error: initialization: pc = 2063 is beyond the i-mem size
+Error: initialization: pc = 2064 is beyond the i-mem size
+Error: initialization: pc = 2065 is beyond the i-mem size
+Error: initialization: pc = 2066 is beyond the i-mem size
+Error: initialization: pc = 2067 is beyond the i-mem size
+Error: initialization: pc = 2068 is beyond the i-mem size
+Error: initialization: pc = 2069 is beyond the i-mem size
+Error: initialization: pc = 2070 is beyond the i-mem size
+Error: initialization: pc = 2071 is beyond the i-mem size
+Error: initialization: pc = 2072 is beyond the i-mem size
+Error: initialization: pc = 2073 is beyond the i-mem size
+Error: initialization: pc = 2074 is beyond the i-mem size
+Error: initialization: pc = 2075 is beyond the i-mem size
+Error: initialization: pc = 2076 is beyond the i-mem size
+Error: initialization: pc = 2077 is beyond the i-mem size
+Error: initialization: pc = 2078 is beyond the i-mem size
+Error: initialization: pc = 2079 is beyond the i-mem size
+Error: initialization: pc = 2080 is beyond the i-mem size
+Error: initialization: pc = 2081 is beyond the i-mem size
+Error: initialization: pc = 2082 is beyond the i-mem size
+Error: initialization: pc = 2083 is beyond the i-mem size
+Error: initialization: pc = 2084 is beyond the i-mem size
+Error: initialization: pc = 2085 is beyond the i-mem size
+Error: initialization: pc = 2086 is beyond the i-mem size
+Error: initialization: pc = 2087 is beyond the i-mem size
+Error: initialization: pc = 2088 is beyond the i-mem size
+Error: initialization: pc = 2089 is beyond the i-mem size
+Error: initialization: pc = 2090 is beyond the i-mem size
+Error: initialization: pc = 2091 is beyond the i-mem size
+Error: initialization: pc = 2092 is beyond the i-mem size
+Error: initialization: pc = 2093 is beyond the i-mem size
+Error: initialization: pc = 2094 is beyond the i-mem size
+Error: initialization: pc = 2095 is beyond the i-mem size
+Error: initialization: pc = 2096 is beyond the i-mem size
+Error: initialization: pc = 2097 is beyond the i-mem size
+Error: initialization: pc = 2098 is beyond the i-mem size
+Error: initialization: pc = 2099 is beyond the i-mem size
+Error: initialization: pc = 2100 is beyond the i-mem size
+Error: initialization: pc = 2101 is beyond the i-mem size
+Error: initialization: pc = 2102 is beyond the i-mem size
+Error: initialization: pc = 2103 is beyond the i-mem size
+Error: initialization: pc = 2104 is beyond the i-mem size
+Error: initialization: pc = 2105 is beyond the i-mem size
+Error: initialization: pc = 2106 is beyond the i-mem size
+Error: initialization: pc = 2107 is beyond the i-mem size
+Error: initialization: pc = 2108 is beyond the i-mem size
+Error: initialization: pc = 2109 is beyond the i-mem size
+Error: initialization: pc = 2110 is beyond the i-mem size
+Error: initialization: pc = 2111 is beyond the i-mem size
+Error: initialization: pc = 2112 is beyond the i-mem size
+Error: initialization: pc = 2113 is beyond the i-mem size
+Error: initialization: pc = 2114 is beyond the i-mem size
+Error: initialization: pc = 2115 is beyond the i-mem size
+Error: initialization: pc = 2116 is beyond the i-mem size
+Error: initialization: pc = 2117 is beyond the i-mem size
+Error: initialization: pc = 2118 is beyond the i-mem size
+Error: initialization: pc = 2119 is beyond the i-mem size
+Error: initialization: pc = 2120 is beyond the i-mem size
+Error: initialization: pc = 2121 is beyond the i-mem size
+Error: initialization: pc = 2122 is beyond the i-mem size
+Error: initialization: pc = 2123 is beyond the i-mem size
+Error: initialization: pc = 2124 is beyond the i-mem size
+Error: initialization: pc = 2125 is beyond the i-mem size
+Error: initialization: pc = 2126 is beyond the i-mem size
+Error: initialization: pc = 2127 is beyond the i-mem size
+Error: initialization: pc = 2128 is beyond the i-mem size
+Error: initialization: pc = 2129 is beyond the i-mem size
+Error: initialization: pc = 2130 is beyond the i-mem size
+Error: initialization: pc = 2131 is beyond the i-mem size
+Error: initialization: pc = 2132 is beyond the i-mem size
+Error: initialization: pc = 2133 is beyond the i-mem size
+Error: initialization: pc = 2134 is beyond the i-mem size
+Error: initialization: pc = 2135 is beyond the i-mem size
+Error: initialization: pc = 2136 is beyond the i-mem size
+Error: initialization: pc = 2137 is beyond the i-mem size
+Error: initialization: pc = 2138 is beyond the i-mem size
+Error: initialization: pc = 2139 is beyond the i-mem size
+Error: initialization: pc = 2140 is beyond the i-mem size
+Error: initialization: pc = 2141 is beyond the i-mem size
+Error: initialization: pc = 2142 is beyond the i-mem size
+Error: initialization: pc = 2143 is beyond the i-mem size
+Error: initialization: pc = 2144 is beyond the i-mem size
+Error: initialization: pc = 2145 is beyond the i-mem size
+Error: initialization: pc = 2146 is beyond the i-mem size
+Error: initialization: pc = 2147 is beyond the i-mem size
+Error: initialization: pc = 2148 is beyond the i-mem size
+Error: initialization: pc = 2149 is beyond the i-mem size
+Error: initialization: pc = 2150 is beyond the i-mem size
+Error: initialization: pc = 2151 is beyond the i-mem size
+Error: initialization: pc = 2152 is beyond the i-mem size
+Error: initialization: pc = 2153 is beyond the i-mem size
+Error: initialization: pc = 2154 is beyond the i-mem size
+Error: initialization: pc = 2155 is beyond the i-mem size
+Error: initialization: pc = 2156 is beyond the i-mem size
+Error: initialization: pc = 2157 is beyond the i-mem size
+Error: initialization: pc = 2158 is beyond the i-mem size
+Error: initialization: pc = 2159 is beyond the i-mem size
+Error: initialization: pc = 2160 is beyond the i-mem size
+Error: initialization: pc = 2161 is beyond the i-mem size
+Error: initialization: pc = 2162 is beyond the i-mem size
+Error: initialization: pc = 2163 is beyond the i-mem size
+Error: initialization: pc = 2164 is beyond the i-mem size
+Error: initialization: pc = 2165 is beyond the i-mem size
+Error: initialization: pc = 2166 is beyond the i-mem size
+Error: initialization: pc = 2167 is beyond the i-mem size
+Error: initialization: pc = 2168 is beyond the i-mem size
+Error: initialization: pc = 2169 is beyond the i-mem size
+Error: initialization: pc = 2170 is beyond the i-mem size
+Error: initialization: pc = 2171 is beyond the i-mem size
+Error: initialization: pc = 2172 is beyond the i-mem size
+Error: initialization: pc = 2173 is beyond the i-mem size
+Error: initialization: pc = 2174 is beyond the i-mem size
+Error: initialization: pc = 2175 is beyond the i-mem size
+Info: Loaded 2176 instructions to i-mem
+Info: Loaded 1 words to d-mem
+Info: McodeMachine:: 0xd41c0400 = IMEM[0x0]
+Info: McodeMachine:: 0x541b7ff8 = IMEM[0x1]
+Info: McodeMachine:: 0xe8000000 = IMEM[0x2]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3]
+Info: McodeMachine:: 0xe8000000 = IMEM[0x4]
+Info: McodeMachine:: 0x68000000 = IMEM[0x5]
+Info: McodeMachine:: 0x68000000 = IMEM[0x6]
+Info: McodeMachine:: 0x68000000 = IMEM[0x7]
+Info: McodeMachine:Run_Machine PC=0x0
+Info: McodeMachine:Run_Machine: new bundle pc=0x0 (size=2)
+LOG:Get_Operands: 0x0  McodeSetInstruction
+LOG:Get_Operands: 0x1  McodeSetInstruction
+Info: 0: Set!
+LOG:Execute     : 0x0  McodeSetInstruction
+Info: 1: Set!
+LOG:Execute     : 0x1  McodeSetInstruction
+Info: McodeMachine:: Set_Register(28, 0x400)
+LOG:Set_Results  : 0x0  McodeSetInstruction
+Info: McodeMachine:: Set_Register(27, 0x7ff8)
+LOG:Set_Results  : 0x1  McodeSetInstruction
+RunLog: l_0 pc=0x0  McodeInstructionBundle
+RunLog: 0x0 $set        0x400     -> 0x400    
+RunLog: 0x1 $set        0x7ff8     -> 0x7ff8    
+Info: McodeMachine:Run_Machine PC=0x2
+Info: McodeMachine:Run_Machine: new bundle pc=0x2 (size=2)
+LOG:Get_Operands: 0x2  McodeNullInstruction
+LOG:Get_Operands: 0x3  McodeNullInstruction
+Info: 2: Null!
+LOG:Execute     : 0x2  McodeNullInstruction
+Info: 3: Null!
+LOG:Execute     : 0x3  McodeNullInstruction
+LOG:Set_Results  : 0x2  McodeNullInstruction
+LOG:Set_Results  : 0x3  McodeNullInstruction
+RunLog: l_2 pc=0x2  McodeInstructionBundle
+RunLog: 0x2 $null        -> 
+RunLog: 0x3 $null        -> 
+Info: McodeMachine:Run_Machine PC=0x4
+Info: McodeMachine:Run_Machine: new bundle pc=0x4 (size=4)
+LOG:Get_Operands: 0x4  McodeNullInstruction
+LOG:Get_Operands: 0x5  McodeNullInstruction
+LOG:Get_Operands: 0x6  McodeNullInstruction
+LOG:Get_Operands: 0x7  McodeNullInstruction
+Info: 4: Null!
+LOG:Execute     : 0x4  McodeNullInstruction
+Info: 5: Null!
+LOG:Execute     : 0x5  McodeNullInstruction
+Info: 6: Null!
+LOG:Execute     : 0x6  McodeNullInstruction
+Info: 7: Null!
+LOG:Execute     : 0x7  McodeNullInstruction
+LOG:Set_Results  : 0x4  McodeNullInstruction
+LOG:Set_Results  : 0x5  McodeNullInstruction
+LOG:Set_Results  : 0x6  McodeNullInstruction
+LOG:Set_Results  : 0x7  McodeNullInstruction
+RunLog: l_4 pc=0x4  McodeInstructionBundle
+RunLog: 0x4 $null        -> 
+RunLog: 0x5 $null        -> 
+RunLog: 0x6 $null        -> 
+RunLog: 0x7 $null        -> 
+Info: McodeMachine:: 0x860003d0 = IMEM[0x8]
+Info: McodeMachine:: 0x109a001b = IMEM[0x9]
+Info: McodeMachine:: 0x68000000 = IMEM[0xa]
+Info: McodeMachine:: 0x68000000 = IMEM[0xb]
+Info: McodeMachine:: 0x68000000 = IMEM[0xc]
+Info: McodeMachine:: 0x68000000 = IMEM[0xd]
+Info: McodeMachine:: 0x68000000 = IMEM[0xe]
+Info: McodeMachine:: 0x68000000 = IMEM[0xf]
+Info: McodeMachine:Run_Machine PC=0x8
+Info: McodeMachine:Run_Machine: new bundle pc=0x8 (size=8)
+LOG:Get_Operands: 0x8  McodeCallInstruction
+Info: McodeMachine:: 0x0 = Get_Register(0)
+
+Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+
+LOG:Get_Operands: 0x9  McodeAluInstruction
+LOG:Get_Operands: 0xa  McodeNullInstruction
+LOG:Get_Operands: 0xb  McodeNullInstruction
+LOG:Get_Operands: 0xc  McodeNullInstruction
+LOG:Get_Operands: 0xd  McodeNullInstruction
+LOG:Get_Operands: 0xe  McodeNullInstruction
+LOG:Get_Operands: 0xf  McodeNullInstruction
+Info: ___execute_call_operation___
+Info: 8: Call!
+LOG:Execute     : 0x8  McodeCallInstruction
+Info: ___execute_alu_operation___
+Info: 9: Alu!
+LOG:Execute     : 0x9  McodeAluInstruction
+Info: 10: Null!
+LOG:Execute     : 0xa  McodeNullInstruction
+Info: 11: Null!
+LOG:Execute     : 0xb  McodeNullInstruction
+Info: 12: Null!
+LOG:Execute     : 0xc  McodeNullInstruction
+Info: 13: Null!
+LOG:Execute     : 0xd  McodeNullInstruction
+Info: 14: Null!
+LOG:Execute     : 0xe  McodeNullInstruction
+Info: 15: Null!
+LOG:Execute     : 0xf  McodeNullInstruction
+LOG:Set_Results  : 0x8  McodeCallInstruction
+Info: McodeMachine:: Set_Register(26, 0x7ff8)
+LOG:Set_Results  : 0x9  McodeAluInstruction
+LOG:Set_Results  : 0xa  McodeNullInstruction
+LOG:Set_Results  : 0xb  McodeNullInstruction
+LOG:Set_Results  : 0xc  McodeNullInstruction
+LOG:Set_Results  : 0xd  McodeNullInstruction
+LOG:Set_Results  : 0xe  McodeNullInstruction
+LOG:Set_Results  : 0xf  McodeNullInstruction
+RunLog: l_8 pc=0x8  McodeInstructionBundle
+RunLog: 0x8 $call        ->   npc=  984
+RunLog: 0x9 +           0x0    0x7ff8     -> 0x7ff8    
+RunLog: 0xa $null        -> 
+RunLog: 0xb $null        -> 
+RunLog: 0xc $null        -> 
+RunLog: 0xd $null        -> 
+RunLog: 0xe $null        -> 
+RunLog: 0xf $null        -> 
+Info: McodeMachine:: 0x909a001b = IMEM[0x3d8]
+Info: McodeMachine:: 0x54010328 = IMEM[0x3d9]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3da]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3db]
+Info: McodeMachine:: 0x509adc00 = IMEM[0x3dc]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3dd]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3de]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3df]
+Info: McodeMachine:Run_Machine PC=0x3d8
+Info: McodeMachine:Run_Machine: new bundle pc=0x3d8 (size=8)
+Info: McodeMachine:: 0x0 = Get_Register(0)
+
+Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+
+LOG:Get_Operands: 0x3d8  McodeAluInstruction
+LOG:Get_Operands: 0x3d9  McodeSetInstruction
+LOG:Get_Operands: 0x3da  McodeNullInstruction
+LOG:Get_Operands: 0x3db  McodeNullInstruction
+Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+
+Info: McodeMachine:: 0x7ff8 = Get_Register(26)
+
+LOG:Get_Operands: 0x3dc  McodeStoreInstruction
+LOG:Get_Operands: 0x3dd  McodeNullInstruction
+LOG:Get_Operands: 0x3de  McodeNullInstruction
+LOG:Get_Operands: 0x3df  McodeNullInstruction
+Info: ___execute_alu_operation___
+Info: 984: Alu!
+LOG:Execute     : 0x3d8  McodeAluInstruction
+Info: 985: Set!
+LOG:Execute     : 0x3d9  McodeSetInstruction
+Info: 986: Null!
+LOG:Execute     : 0x3da  McodeNullInstruction
+Info: 987: Null!
+LOG:Execute     : 0x3db  McodeNullInstruction
+Info: McodeMachine:: DMEM[0xfff] = 0x7ff8
+
+Info: ___execute_store_operation___ 
+Info: 988: Store!
+LOG:Execute     : 0x3dc  McodeStoreInstruction
+Info: 989: Null!
+LOG:Execute     : 0x3dd  McodeNullInstruction
+Info: 990: Null!
+LOG:Execute     : 0x3de  McodeNullInstruction
+Info: 991: Null!
+LOG:Execute     : 0x3df  McodeNullInstruction
+Info: McodeMachine:: Set_Register(26, 0x7ff8)
+LOG:Set_Results  : 0x3d8  McodeAluInstruction
+Info: McodeMachine:: Set_Register(1, 0x328)
+LOG:Set_Results  : 0x3d9  McodeSetInstruction
+LOG:Set_Results  : 0x3da  McodeNullInstruction
+LOG:Set_Results  : 0x3db  McodeNullInstruction
+LOG:Set_Results  : 0x3dc  McodeStoreInstruction
+LOG:Set_Results  : 0x3dd  McodeNullInstruction
+LOG:Set_Results  : 0x3de  McodeNullInstruction
+LOG:Set_Results  : 0x3df  McodeNullInstruction
+RunLog: l_984 pc=0x3d8  McodeInstructionBundle
+RunLog: 0x3d8 +           0x0    0x7ff8     -> 0x7ff8    
+RunLog: 0x3d9 $set        0x328     -> 0x328    
+RunLog: 0x3da $null        -> 
+RunLog: 0x3db $null        -> 
+RunLog: 0x3dc $st         0x7ff8    0x0    0x7ff8     -> 
+RunLog: 0x3dd $null        -> 
+RunLog: 0x3de $null        -> 
+RunLog: 0x3df $null        -> 
+Info: McodeMachine:: 0x87fffc38 = IMEM[0x3e0]
+Info: McodeMachine:: 0x149bd801 = IMEM[0x3e1]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e2]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e3]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e4]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e5]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e6]
+Info: McodeMachine:: 0x68000000 = IMEM[0x3e7]
+Info: McodeMachine:Run_Machine PC=0x3e0
+Info: McodeMachine:Run_Machine: new bundle pc=0x3e0 (size=8)
+LOG:Get_Operands: 0x3e0  McodeCallInstruction
+Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+
+Info: McodeMachine:: 0x328 = Get_Register(1)
+
+LOG:Get_Operands: 0x3e1  McodeAluInstruction
+LOG:Get_Operands: 0x3e2  McodeNullInstruction
+LOG:Get_Operands: 0x3e3  McodeNullInstruction
+LOG:Get_Operands: 0x3e4  McodeNullInstruction
+LOG:Get_Operands: 0x3e5  McodeNullInstruction
+LOG:Get_Operands: 0x3e6  McodeNullInstruction
+LOG:Get_Operands: 0x3e7  McodeNullInstruction
+Info: ___execute_call_operation___
+Info: 992: Call!
+LOG:Execute     : 0x3e0  McodeCallInstruction
+Info: ___execute_alu_operation___
+Info: 993: Alu!
+LOG:Execute     : 0x3e1  McodeAluInstruction
+Info: 994: Null!
+LOG:Execute     : 0x3e2  McodeNullInstruction
+Info: 995: Null!
+LOG:Execute     : 0x3e3  McodeNullInstruction
+Info: 996: Null!
+LOG:Execute     : 0x3e4  McodeNullInstruction
+Info: 997: Null!
+LOG:Execute     : 0x3e5  McodeNullInstruction
+Info: 998: Null!
+LOG:Execute     : 0x3e6  McodeNullInstruction
+Info: 999: Null!
+LOG:Execute     : 0x3e7  McodeNullInstruction
+LOG:Set_Results  : 0x3e0  McodeCallInstruction
+Info: McodeMachine:: Set_Register(27, 0x7cd0)
+LOG:Set_Results  : 0x3e1  McodeAluInstruction
+LOG:Set_Results  : 0x3e2  McodeNullInstruction
+LOG:Set_Results  : 0x3e3  McodeNullInstruction
+LOG:Set_Results  : 0x3e4  McodeNullInstruction
+LOG:Set_Results  : 0x3e5  McodeNullInstruction
+LOG:Set_Results  : 0x3e6  McodeNullInstruction
+LOG:Set_Results  : 0x3e7  McodeNullInstruction
+RunLog: l_992 pc=0x3e0  McodeInstructionBundle
+RunLog: 0x3e0 $call        ->   npc=  33554456
+RunLog: 0x3e1 -           0x7ff8    0x328     -> 0x7cd0    
+RunLog: 0x3e2 $null        -> 
+RunLog: 0x3e3 $null        -> 
+RunLog: 0x3e4 $null        -> 
+RunLog: 0x3e5 $null        -> 
+RunLog: 0x3e6 $null        -> 
+RunLog: 0x3e7 $null        -> 
+Info: McodeMachine:: 0x0 = IMEM[0x2000018]
+Info: McodeMachine:: 0x0 = IMEM[0x2000019]
+Info: McodeMachine:: 0x0 = IMEM[0x200001a]
+Info: McodeMachine:: 0x0 = IMEM[0x200001b]
+Info: McodeMachine:: 0x0 = IMEM[0x200001c]
+Info: McodeMachine:: 0x0 = IMEM[0x200001d]
+Info: McodeMachine:: 0x0 = IMEM[0x200001e]
+Info: McodeMachine:: 0x0 = IMEM[0x200001f]
+Info: McodeMachine:Run_Machine PC=0x2000018
+Info: McodeMachine run finished after 6 bundles
+
+Info: McodeMachine:: 0x328 = Get_Register(1)
+
+Error: PostCondition Reg[1] = 0x328, expected 0x1 (mask=0xffffffffll)

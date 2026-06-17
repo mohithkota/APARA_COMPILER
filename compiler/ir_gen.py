@@ -86,6 +86,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._frame_off    = 0
         self._var_offsets  = {}
         self._array_elem   = {}
+        # name → elem_bytes for the variable's OWN scalar load/store width
+        # (set by _alloc_local; used by _load_var/_store_var for the local-scalar path).
+        self._local_elem_bytes = {}
         self._scopes       = [{}]
         self._break_to     = None
         self._cont_to      = None
@@ -156,6 +159,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._frame_off += total_dmem
         fp_off = -self._frame_off
         self._var_offsets[name] = fp_off
+        self._local_elem_bytes[name] = elem_bytes
         if elem_bytes != total_bytes:
             self._array_elem[name] = dmem_stride  # DMEM stride for index computation
         self._define(name, 'local', fp_off)
@@ -173,12 +177,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if kind == 'global':
             gd = loc
             res = self._tmp()
-            self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), gd.elem_bytes))
+            self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), elem_bytes=gd.elem_bytes))
             return res
         else:
             addr = self._tmp(); val = self._tmp()
+            eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
-            self._emit(IRLoad(val, addr, Const(0)))
+            self._emit(IRLoad(val, addr, Const(0), eb))
             return val
 
     def _store_var(self, name, val):
@@ -190,8 +195,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRGlobalStore(gd.dmem_addr, Const(0), val, gd.elem_bytes))
         else:
             addr = self._tmp()
+            eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
-            self._emit(IRStore(addr, Const(0), val))
+            self._emit(IRStore(addr, Const(0), val, eb))
 
     def _addr_of_var(self, name):
         info = self._lookup(name)
@@ -337,14 +343,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         return base, total_off, fdmem, sub_struct
 
     def _structref_read(self, node):
-        base, off, _, _ = self._structref_base_and_total_off(node)
+        base, off, fdmem, _ = self._structref_base_and_total_off(node)
         res = self._tmp()
-        self._emit(IRLoad(res, base, Const(off)))
+        self._emit(IRLoad(res, base, Const(off), fdmem))
         return res
 
     def _structref_write(self, node, val):
-        base, off, _, _ = self._structref_base_and_total_off(node)
-        self._emit(IRStore(base, Const(off), val))
+        base, off, fdmem, _ = self._structref_base_and_total_off(node)
+        self._emit(IRStore(base, Const(off), val, fdmem))
 
     # ── 2D array helpers ──────────────────────────────────────────────────────
 
@@ -394,7 +400,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 base = self._tmp()
                 if arr_name in self._ptr_stride:
                     # Global pointer holding array address: load the pointer value
-                    self._emit(IRGlobalLoad(base, loc.dmem_addr, Const(0), loc.elem_bytes))
+                    self._emit(IRGlobalLoad(base, loc.dmem_addr, Const(0), elem_bytes=loc.elem_bytes))
                 else:
                     # Global 2D array: address of first element
                     self._emit(IRGlobalAddrOf(base, loc.dmem_addr))
@@ -404,7 +410,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     # Local 2D array param: value on stack IS the base pointer
                     addr = self._tmp()
                     self._emit(IRLoadAddr(addr, loc))
-                    self._emit(IRLoad(base, addr, Const(0)))
+                    self._emit(IRLoad(base, addr, Const(0), 8))
                 else:
                     # Local 2D array (inline on frame): use frame address directly
                     self._emit(IRLoadAddr(base, loc))
@@ -412,17 +418,17 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             base = self._tmp()
             self._emit(IRAssign(base, Const(0)))
 
-        return base, total_off
+        return base, total_off, col_stride
 
     def _2d_arrayref_read(self, node):
-        base, off = self._2d_base_and_offset(node)
+        base, off, col_stride = self._2d_base_and_offset(node)
         res = self._tmp()
-        self._emit(IRLoad(res, base, off))
+        self._emit(IRLoad(res, base, off, col_stride))
         return res
 
     def _2d_arrayref_write(self, node, val):
-        base, off = self._2d_base_and_offset(node)
-        self._emit(IRStore(base, off, val))
+        base, off, col_stride = self._2d_base_and_offset(node)
+        self._emit(IRStore(base, off, val, col_stride))
 
     def visit_FileAST(self, node):
         Temp.reset()
@@ -492,7 +498,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     base = self._tmp()
                     self._emit(IRLoadAddr(base, fp_off))
                     for i, v in enumerate(init_vals):
-                        self._emit(IRStore(base, Const(i * 8), Const(v)))
+                        self._emit(IRStore(base, Const(i * 8), Const(v), 8))
                 elif is_arr and isinstance(node.init, A.InitList):
                     base = self._tmp()
                     self._emit(IRLoadAddr(base, fp_off))
@@ -502,7 +508,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     val = self._visit_expr(node.init)
                     addr = self._tmp()
                     self._emit(IRLoadAddr(addr, fp_off))
-                    self._emit(IRStore(addr, Const(0), val))
+                    self._emit(IRStore(addr, Const(0), val, esz))
 
     def _flatten_init(self, init_node):
         if isinstance(init_node, A.Constant):
@@ -523,6 +529,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._frame_off = 0
         self._var_offsets = {}
         self._array_elem  = {}
+        self._local_elem_bytes = {}
         Temp.reset()
 
         params_raw = []
@@ -616,10 +623,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     self._emit(IRStore(base, off, val, gd.elem_bytes))
                     return
             # Pointer variable or local array: store to computed address
-            self._emit(IRStore(base, off, val))
+            eb = self._get_esz(lval.name) if isinstance(lval.name, A.ID) else 8
+            self._emit(IRStore(base, off, val, eb))
         elif isinstance(lval, A.UnaryOp) and lval.op == '*':
+            # All pointer types currently use stride=8 (see _record_ptr) — *p is
+            # always an 8-byte dereference until pointer-to-narrow-type is tracked.
             ptr = self._visit_expr(lval.expr)
-            self._emit(IRStore(ptr, Const(0), val))
+            self._emit(IRStore(ptr, Const(0), val, 8))
 
     def visit_If(self, node):
         t_lbl = self._lbl('if_t'); e_lbl = self._lbl('if_e')
@@ -865,8 +875,10 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 return res
             return Const(0)
         if op == '*':
+            # All pointer types currently use stride=8 (see _record_ptr) — *p is
+            # always an 8-byte dereference until pointer-to-narrow-type is tracked.
             ptr = self._visit_expr(node.expr); res = self._tmp()
-            self._emit(IRLoad(res, ptr, Const(0))); return res
+            self._emit(IRLoad(res, ptr, Const(0), 8)); return res
         return self._visit_expr(node.expr)
 
     def _call(self, node):
@@ -996,10 +1008,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if info and info[0] == 'global' and name not in self._ptr_stride:
                 # Global array (not pointer): use direct global-load shortcut
                 gd = info[1]
-                self._emit(IRGlobalLoad(res, gd.dmem_addr, off, gd.elem_bytes))
+                self._emit(IRGlobalLoad(res, gd.dmem_addr, off, elem_bytes=gd.elem_bytes))
                 return res
         # Pointer variable or local array: load from computed address
-        self._emit(IRLoad(res, base, off))
+        eb = self._get_esz(node.name) if isinstance(node.name, A.ID) else 8
+        self._emit(IRLoad(res, base, off, eb))
         return res
 
     def _ternary(self, node):
@@ -1049,7 +1062,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     if name in self._ptr_stride:
                         # p[i] where p is a global pointer: load pointer VALUE
                         base = self._tmp()
-                        self._emit(IRGlobalLoad(base, loc.dmem_addr, Const(0), loc.elem_bytes))
+                        self._emit(IRGlobalLoad(base, loc.dmem_addr, Const(0), elem_bytes=loc.elem_bytes))
                     else:
                         # arr[i] where arr is a global array: get base address
                         base = self._tmp()
@@ -1060,7 +1073,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                         # p[i] where p is a local pointer: load pointer VALUE from stack
                         addr = self._tmp(); base = self._tmp()
                         self._emit(IRLoadAddr(addr, loc))
-                        self._emit(IRLoad(base, addr, Const(0)))
+                        self._emit(IRLoad(base, addr, Const(0), 8))
                     else:
                         # arr[i] where arr is a local array: get base address
                         base = self._tmp()

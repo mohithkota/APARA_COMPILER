@@ -21,7 +21,7 @@ class Temp:
 
 class IRGlobalDecl:
     """A global variable in DMEM."""
-    def __init__(self, name, dmem_addr, total_bytes, elem_bytes=4, init=None, stride=None):
+    def __init__(self, name, dmem_addr, total_bytes, elem_bytes, init=None, stride=None):
         self.name       = name
         self.dmem_addr  = dmem_addr   # absolute byte addr in DMEM
         self.total_bytes= total_bytes
@@ -72,28 +72,28 @@ class IRLoadAddr:
 
 class IRLoad:
     """dest = mem[base + offset]"""
-    def __init__(self, dest, base, offset, elem_bytes=4):
+    def __init__(self, dest, base, offset, elem_bytes):
         self.dest = dest; self.base = base; self.offset = offset
         self.elem_bytes = elem_bytes
     def __repr__(self): return f"{self.dest} = *({self.base}+{self.offset})"
 
 class IRStore:
     """mem[base + offset] = src"""
-    def __init__(self, base, offset, src, elem_bytes=4):
+    def __init__(self, base, offset, src, elem_bytes):
         self.base = base; self.offset = offset; self.src = src
         self.elem_bytes = elem_bytes
     def __repr__(self): return f"*({self.base}+{self.offset}) = {self.src}"
 
 class IRGlobalLoad:
     """dest = DMEM[dmem_addr + offset]  (global variable access)"""
-    def __init__(self, dest, dmem_addr, offset=None, elem_bytes=4):
+    def __init__(self, dest, dmem_addr, offset=None, *, elem_bytes):
         self.dest = dest; self.dmem_addr = dmem_addr
         self.offset = offset or Const(0); self.elem_bytes = elem_bytes
     def __repr__(self): return f"{self.dest} = DMEM[0x{self.dmem_addr:x}+{self.offset}]"
 
 class IRGlobalStore:
     """DMEM[dmem_addr + offset] = src"""
-    def __init__(self, dmem_addr, offset, src, elem_bytes=4):
+    def __init__(self, dmem_addr, offset, src, elem_bytes):
         self.dmem_addr = dmem_addr; self.offset = offset
         self.src = src; self.elem_bytes = elem_bytes
     def __repr__(self): return f"DMEM[0x{self.dmem_addr:x}+{self.offset}] = {self.src}"
