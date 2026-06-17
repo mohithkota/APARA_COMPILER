@@ -1,0 +1,960 @@
+load1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r1    [$r0 + 0]
+    $null
+    $null
+    $null
+    ;
+load2:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r2    [$r0 + 4]
+    $null
+    $null
+    $null
+    ;
+load3:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r3    [$r0 + 5]
+    $null
+    $null
+    $null
+    ;
+load4:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r4    [$r0 + 6]
+    $null
+    $null
+    $null
+    ;
+load1_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r5    [$r0 + 8]
+    $null
+    $null
+    $null
+    ;
+load2_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r6    [$r0 + 12]
+    $null
+    $null
+    $null
+    ;
+load3_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r7    [$r0 + 13]
+    $null
+    $null
+    $null
+    ;
+load4_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r8    [$r0 + 14]
+    $null
+    $null
+    $null
+    ;
+load2_a:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r9    [$r0 + 16]
+    $null
+    $null
+    $null
+    ;
+load2_b:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r10    [$r0 + 20]
+    $null
+    $null
+    $null
+    ;
+load2_c:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r11    [$r0 + 21]
+    $null
+    $null
+    $null
+    ;
+load2_d:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r12    [$r0 + 22]
+    $null
+    $null
+    $null
+    ;
+load3_a:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r13    [$r0 + 24]
+    $null
+    $null
+    $null
+    ;
+load3_b:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r14    [$r0 + 28]
+    $null
+    $null
+    $null
+    ;
+load3_c:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r15    [$r0 + 29]
+    $null
+    $null
+    $null
+    ;
+load3_d:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u64)   $r16    [$r0 + 512]
+    $null
+    $null
+    $null
+    ;
+store_32_1_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 32]    $r1
+    $null
+    $null
+    $null
+    ;
+store_8_2_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 36]    $r2
+    $null
+    $null
+    $null
+    ;
+store_8_3_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 37]    $r3
+    $null
+    $null
+    $null
+    ;
+store_16_4_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 38]    $r4
+    $null
+    $null
+    $null
+    ;
+store_32_11_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 40]    $r5
+    $null
+    $null
+    $null
+    ;
+store_8_22_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 44]    $r6
+    $null
+    $null
+    $null
+    ;
+store_8_33_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 45]    $r7
+    $null
+    $null
+    $null
+    ;
+store_16_44_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 46]    $r8
+    $null
+    $null
+    $null
+    ;
+store_32_111_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 48]    $r9
+    $null
+    $null
+    $null
+    ;
+store_8_222_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 52]    $r10
+    $null
+    $null
+    $null
+    ;
+store_8_333_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 53]    $r11
+    $null
+    $null
+    $null
+    ;
+store_16_444_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 54]    $r12
+    $null
+    $null
+    $null
+    ;
+store_32_1111_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 56]    $r13
+    $null
+    $null
+    $null
+    ;
+store_8_2222_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 60]    $r14
+    $null
+    $null
+    $null
+    ;
+store_8_3333_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 61]    $r15
+    $null
+    $null
+    $null
+    ;
+store_16_4444_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 62]    $r16
+    $null
+    $null
+    $null
+    ;
+0: e8000000
+1: 68000000
+2: 68000000
+3: 68000000
+4: 4d010400
+5: 68000000
+6: 68000000
+7: 68000000
+8: e8000000
+9: 68000000
+a: 68000000
+b: 68000000
+c: 4cc20404
+d: 68000000
+e: 68000000
+f: 68000000
+10: e8000000
+11: 68000000
+12: 68000000
+13: 68000000
+14: 4cc30405
+15: 68000000
+16: 68000000
+17: 68000000
+18: e8000000
+19: 68000000
+1a: 68000000
+1b: 68000000
+1c: 4ce40406
+1d: 68000000
+1e: 68000000
+1f: 68000000
+20: e8000000
+21: 68000000
+22: 68000000
+23: 68000000
+24: 4d050408
+25: 68000000
+26: 68000000
+27: 68000000
+28: e8000000
+29: 68000000
+2a: 68000000
+2b: 68000000
+2c: 4cc6040c
+2d: 68000000
+2e: 68000000
+2f: 68000000
+30: e8000000
+31: 68000000
+32: 68000000
+33: 68000000
+34: 4cc7040d
+35: 68000000
+36: 68000000
+37: 68000000
+38: e8000000
+39: 68000000
+3a: 68000000
+3b: 68000000
+3c: 4ce8040e
+3d: 68000000
+3e: 68000000
+3f: 68000000
+40: e8000000
+41: 68000000
+42: 68000000
+43: 68000000
+44: 4d090410
+45: 68000000
+46: 68000000
+47: 68000000
+48: e8000000
+49: 68000000
+4a: 68000000
+4b: 68000000
+4c: 4cca0414
+4d: 68000000
+4e: 68000000
+4f: 68000000
+50: e8000000
+51: 68000000
+52: 68000000
+53: 68000000
+54: 4ccb0415
+55: 68000000
+56: 68000000
+57: 68000000
+58: e8000000
+59: 68000000
+5a: 68000000
+5b: 68000000
+5c: 4cec0416
+5d: 68000000
+5e: 68000000
+5f: 68000000
+60: e8000000
+61: 68000000
+62: 68000000
+63: 68000000
+64: 4d0d0418
+65: 68000000
+66: 68000000
+67: 68000000
+68: e8000000
+69: 68000000
+6a: 68000000
+6b: 68000000
+6c: 4cce041c
+6d: 68000000
+6e: 68000000
+6f: 68000000
+70: e8000000
+71: 68000000
+72: 68000000
+73: 68000000
+74: 4ccf041d
+75: 68000000
+76: 68000000
+77: 68000000
+78: e8000000
+79: 68000000
+7a: 68000000
+7b: 68000000
+7c: 4d300600
+7d: 68000000
+7e: 68000000
+7f: 68000000
+80: e8000000
+81: 68000000
+82: 68000000
+83: 68000000
+84: 51010420
+85: 68000000
+86: 68000000
+87: 68000000
+88: e8000000
+89: 68000000
+8a: 68000000
+8b: 68000000
+8c: 50c20424
+8d: 68000000
+8e: 68000000
+8f: 68000000
+90: e8000000
+91: 68000000
+92: 68000000
+93: 68000000
+94: 50c30425
+95: 68000000
+96: 68000000
+97: 68000000
+98: e8000000
+99: 68000000
+9a: 68000000
+9b: 68000000
+9c: 50e40426
+9d: 68000000
+9e: 68000000
+9f: 68000000
+a0: e8000000
+a1: 68000000
+a2: 68000000
+a3: 68000000
+a4: 51050428
+a5: 68000000
+a6: 68000000
+a7: 68000000
+a8: e8000000
+a9: 68000000
+aa: 68000000
+ab: 68000000
+ac: 50c6042c
+ad: 68000000
+ae: 68000000
+af: 68000000
+b0: e8000000
+b1: 68000000
+b2: 68000000
+b3: 68000000
+b4: 50c7042d
+b5: 68000000
+b6: 68000000
+b7: 68000000
+b8: e8000000
+b9: 68000000
+ba: 68000000
+bb: 68000000
+bc: 50e8042e
+bd: 68000000
+be: 68000000
+bf: 68000000
+c0: e8000000
+c1: 68000000
+c2: 68000000
+c3: 68000000
+c4: 51090430
+c5: 68000000
+c6: 68000000
+c7: 68000000
+c8: e8000000
+c9: 68000000
+ca: 68000000
+cb: 68000000
+cc: 50ca0434
+cd: 68000000
+ce: 68000000
+cf: 68000000
+d0: e8000000
+d1: 68000000
+d2: 68000000
+d3: 68000000
+d4: 50cb0435
+d5: 68000000
+d6: 68000000
+d7: 68000000
+d8: e8000000
+d9: 68000000
+da: 68000000
+db: 68000000
+dc: 50ec0436
+dd: 68000000
+de: 68000000
+df: 68000000
+e0: e8000000
+e1: 68000000
+e2: 68000000
+e3: 68000000
+e4: 510d0438
+e5: 68000000
+e6: 68000000
+e7: 68000000
+e8: e8000000
+e9: 68000000
+ea: 68000000
+eb: 68000000
+ec: 50ce043c
+ed: 68000000
+ee: 68000000
+ef: 68000000
+f0: e8000000
+f1: 68000000
+f2: 68000000
+f3: 68000000
+f4: 50cf043d
+f5: 68000000
+f6: 68000000
+f7: 68000000
+f8: e8000000
+f9: 68000000
+fa: 68000000
+fb: 68000000
+fc: 50f0043e
+fd: 68000000
+fe: 68000000
+ff: 68000000
+l_0:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r1    [$r0 + 0]
+    $null
+    $null
+    $null
+    ;
+l_8:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r2    [$r0 + 4]
+    $null
+    $null
+    $null
+    ;
+l_16:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r3    [$r0 + 5]
+    $null
+    $null
+    $null
+    ;
+l_24:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r4    [$r0 + 6]
+    $null
+    $null
+    $null
+    ;
+l_32:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r5    [$r0 + 8]
+    $null
+    $null
+    $null
+    ;
+l_40:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r6    [$r0 + 12]
+    $null
+    $null
+    $null
+    ;
+l_48:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r7    [$r0 + 13]
+    $null
+    $null
+    $null
+    ;
+l_56:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r8    [$r0 + 14]
+    $null
+    $null
+    $null
+    ;
+l_64:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r9    [$r0 + 16]
+    $null
+    $null
+    $null
+    ;
+l_72:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r10    [$r0 + 20]
+    $null
+    $null
+    $null
+    ;
+l_80:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r11    [$r0 + 21]
+    $null
+    $null
+    $null
+    ;
+l_88:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r12    [$r0 + 22]
+    $null
+    $null
+    $null
+    ;
+l_96:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r13    [$r0 + 24]
+    $null
+    $null
+    $null
+    ;
+l_104:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r14    [$r0 + 28]
+    $null
+    $null
+    $null
+    ;
+l_112:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r15    [$r0 + 29]
+    $null
+    $null
+    $null
+    ;
+l_120:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u64)   $r16    [$r0 + -512]
+    $null
+    $null
+    $null
+    ;
+l_128:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 32]    $r1
+    $null
+    $null
+    $null
+    ;
+l_136:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 36]    $r2
+    $null
+    $null
+    $null
+    ;
+l_144:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 37]    $r3
+    $null
+    $null
+    $null
+    ;
+l_152:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 38]    $r4
+    $null
+    $null
+    $null
+    ;
+l_160:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 40]    $r5
+    $null
+    $null
+    $null
+    ;
+l_168:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 44]    $r6
+    $null
+    $null
+    $null
+    ;
+l_176:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 45]    $r7
+    $null
+    $null
+    $null
+    ;
+l_184:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 46]    $r8
+    $null
+    $null
+    $null
+    ;
+l_192:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 48]    $r9
+    $null
+    $null
+    $null
+    ;
+l_200:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 52]    $r10
+    $null
+    $null
+    $null
+    ;
+l_208:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 53]    $r11
+    $null
+    $null
+    $null
+    ;
+l_216:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 54]    $r12
+    $null
+    $null
+    $null
+    ;
+l_224:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 56]    $r13
+    $null
+    $null
+    $null
+    ;
+l_232:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 60]    $r14
+    $null
+    $null
+    $null
+    ;
+l_240:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 61]    $r15
+    $null
+    $null
+    $null
+    ;
+l_248:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 62]    $r16
+    $null
+    $null
+    $null
+    ;

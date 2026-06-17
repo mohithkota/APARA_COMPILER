@@ -1,0 +1,352 @@
+load1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r1    [$r0 + 0]
+    $null
+    $null
+    $null
+    ;
+load2:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r2    [$r0 + 4]
+    $null
+    $null
+    $null
+    ;
+load3:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r3    [$r0 + 5]
+    $null
+    $null
+    $null
+    ;
+load4:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r4    [$r0 + 6]
+    $null
+    $null
+    $null
+    ;
+load1_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r5    [$r0 + 8]
+    $null
+    $null
+    $null
+    ;
+load2_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r6    [$r0 + 12]
+    $null
+    $null
+    $null
+    ;
+load3_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r7    [$r0 + 13]
+    $null
+    $null
+    $null
+    ;
+load4_1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r8    [$r0 + 14]
+    $null
+    $null
+    $null
+    ;
+load2_a:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r9    [$r0 + 16]
+    $null
+    $null
+    $null
+    ;
+load2_b:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r10    [$r0 + 20]
+    $null
+    $null
+    $null
+    ;
+load2_c:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r11    [$r0 + 21]
+    $null
+    $null
+    $null
+    ;
+load2_d:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u16)   $r12    [$r0 + 22]
+    $null
+    $null
+    $null
+    ;
+load3_a:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u32)   $r13    [$r0 + 24]
+    $null
+    $null
+    $null
+    ;
+load3_b:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r14    [$r0 + 28]
+    $null
+    $null
+    $null
+    ;
+load3_c:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u8)   $r15    [$r0 + 29]
+    $null
+    $null
+    $null
+    ;
+load3_d:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u64)   $r16    [$r0 + 512]
+    $null
+    $null
+    $null
+    ;
+store_32_1_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 32]    $r1
+    $null
+    $null
+    $null
+    ;
+store_8_2_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 36]    $r2
+    $null
+    $null
+    $null
+    ;
+store_8_3_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 37]    $r3
+    $null
+    $null
+    $null
+    ;
+store_16_4_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 38]    $r4
+    $null
+    $null
+    $null
+    ;
+store_32_11_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 40]    $r5
+    $null
+    $null
+    $null
+    ;
+store_8_22_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 44]    $r6
+    $null
+    $null
+    $null
+    ;
+store_8_33_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 45]    $r7
+    $null
+    $null
+    $null
+    ;
+store_16_44_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 46]    $r8
+    $null
+    $null
+    $null
+    ;
+store_32_111_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 48]    $r9
+    $null
+    $null
+    $null
+    ;
+store_8_222_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 52]    $r10
+    $null
+    $null
+    $null
+    ;
+store_8_333_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 53]    $r11
+    $null
+    $null
+    $null
+    ;
+store_16_444_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 54]    $r12
+    $null
+    $null
+    $null
+    ;
+store_32_1111_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u32)   [$r0  + 56]    $r13
+    $null
+    $null
+    $null
+    ;
+store_8_2222_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 60]    $r14
+    $null
+    $null
+    $null
+    ;
+store_8_3333_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u8)   [$r0  + 61]    $r15
+    $null
+    $null
+    $null
+    ;
+store_16_4444_bit:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($u16)   [$r0  + 62]    $r16
+    $null
+    $null
+    $null
+    ;
