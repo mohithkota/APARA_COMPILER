@@ -1,6 +1,6 @@
 #!/bin/bash
 cd "$(dirname "$0")"
-BIN_DIR=/home/mohithkota/engine_isp/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin
+BIN_DIR=/home/mohithkota/complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin
 ALIGN=$BIN_DIR/mcode_align
 AS=$BIN_DIR/mcode_assemble
 DISAS=$BIN_DIR/mcode_disassemble

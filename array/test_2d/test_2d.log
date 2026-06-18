@@ -1,17 +1,42 @@
-Info: pc = 0
+Info: Thread 0 pc = 0
 Info: imem file = test_2d.obj
 Info: dmem file = data.map
 Info: results file = test_2d.result
 Info: Loaded 0 instructions to i-mem
+Info: Init: DMEM[0] = 0x0
+Info: Init: DMEM[128] = 0x0
+Info: Init: DMEM[129] = 0x0
+Info: Init: DMEM[130] = 0x0
+Info: Init: DMEM[131] = 0x0
+Info: Init: DMEM[132] = 0x0
+Info: Init: DMEM[133] = 0x0
+Info: Init: DMEM[134] = 0x0
+Info: Init: DMEM[135] = 0x0
+Info: Init: DMEM[136] = 0x0
+Info: Init: DMEM[137] = 0x0
+Info: Init: DMEM[138] = 0x0
+Info: Init: DMEM[139] = 0x0
+Info: Init: DMEM[140] = 0x0
+Info: Init: DMEM[141] = 0x0
+Info: Init: DMEM[142] = 0x0
+Info: Init: DMEM[143] = 0x0
+Info: Init: DMEM[144] = 0x0
+Info: Init: DMEM[145] = 0x0
+Info: Init: DMEM[146] = 0x0
+Info: Init: DMEM[147] = 0x0
+Info: Init: DMEM[148] = 0x0
 Info: Loaded 22 words to d-mem
-Info: McodeMachine:: 0x0 = IMEM[0x0]
-Info: McodeMachine:: 0x0 = IMEM[0x1]
-Info: McodeMachine:: 0x0 = IMEM[0x2]
-Info: McodeMachine:: 0x0 = IMEM[0x3]
-Info: McodeMachine:: 0x0 = IMEM[0x4]
-Info: McodeMachine:: 0x0 = IMEM[0x5]
-Info: McodeMachine:: 0x0 = IMEM[0x6]
-Info: McodeMachine:: 0x0 = IMEM[0x7]
+Info: Info: activate thread 0 to pc 0
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x0 = IMEM[0x0]
+Info: McodeAccelerator:: 0x0 = IMEM[0x1]
+Info: McodeAccelerator:: 0x0 = IMEM[0x2]
+Info: McodeAccelerator:: 0x0 = IMEM[0x3]
+Info: McodeAccelerator:: 0x0 = IMEM[0x4]
+Info: McodeAccelerator:: 0x0 = IMEM[0x5]
+Info: McodeAccelerator:: 0x0 = IMEM[0x6]
+Info: McodeAccelerator:: 0x0 = IMEM[0x7]
 Info: McodeMachine:Run_Machine PC=0x0
-Info: McodeMachine run finished after 0 bundles
-
+Info: Stopped after 0 ticks.
+Info: number of non-null instructions executed = 0
+Info: number of null instructions executed = 0

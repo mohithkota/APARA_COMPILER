@@ -1,23 +1,23 @@
-l_0:
+l_0: // pc=0x0
     || 
     $set     $r28    0    1024
     $set     $r27    0    32760
     ;
-l_2:
+l_2: // pc=0x2
     || 
     +            $r26    ($i64)    $r0    $r27
     +            $r30    ($i64)    $r0        10
     ;
-l_4:
+l_4: // pc=0x4
     || 
     $null
     $null
     $null
     $null
     ;
-l_8:
+l_8: // pc=0x8
     || 
-    +            $r30    ($i64)    $r0        3
+    $null
     $null
     $null
     $null
@@ -26,9 +26,29 @@ l_8:
     $null
     $null
     ;
-l_16:
+l_16: // pc=0x10
     || 
-    +            $r30    ($i64)    $r0        0
+    +            $r30    ($i64)    $r0        3
+    ;
+l_17: // pc=0x11
+    || 
+    $null
+    ;
+l_18: // pc=0x12
+    || 
+    $null
+    $null
+    ;
+l_20: // pc=0x14
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_24: // pc=0x18
+    || 
+    $null
     $null
     $null
     $null
@@ -37,9 +57,29 @@ l_16:
     $null
     $null
     ;
-l_24:
+l_32: // pc=0x20
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_33: // pc=0x21
+    || 
+    $null
+    ;
+l_34: // pc=0x22
+    || 
+    $null
+    $null
+    ;
+l_36: // pc=0x24
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_40: // pc=0x28
+    || 
+    $null
     $null
     $null
     $null
@@ -48,9 +88,29 @@ l_24:
     $null
     $null
     ;
-l_32:
+l_48: // pc=0x30
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_49: // pc=0x31
+    || 
+    $null
+    ;
+l_50: // pc=0x32
+    || 
+    $null
+    $null
+    ;
+l_52: // pc=0x34
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_56: // pc=0x38
+    || 
+    $null
     $null
     $null
     $null
@@ -59,9 +119,29 @@ l_32:
     $null
     $null
     ;
-l_40:
+l_64: // pc=0x40
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_65: // pc=0x41
+    || 
+    $null
+    ;
+l_66: // pc=0x42
+    || 
+    $null
+    $null
+    ;
+l_68: // pc=0x44
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_72: // pc=0x48
+    || 
+    $null
     $null
     $null
     $null
@@ -70,9 +150,29 @@ l_40:
     $null
     $null
     ;
-l_48:
+l_80: // pc=0x50
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_81: // pc=0x51
+    || 
+    $null
+    ;
+l_82: // pc=0x52
+    || 
+    $null
+    $null
+    ;
+l_84: // pc=0x54
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_88: // pc=0x58
+    || 
+    $null
     $null
     $null
     $null
@@ -81,9 +181,29 @@ l_48:
     $null
     $null
     ;
-l_56:
+l_96: // pc=0x60
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_97: // pc=0x61
+    || 
+    $null
+    ;
+l_98: // pc=0x62
+    || 
+    $null
+    $null
+    ;
+l_100: // pc=0x64
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_104: // pc=0x68
+    || 
+    $null
     $null
     $null
     $null
@@ -92,9 +212,29 @@ l_56:
     $null
     $null
     ;
-l_64:
+l_112: // pc=0x70
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_113: // pc=0x71
+    || 
+    $null
+    ;
+l_114: // pc=0x72
+    || 
+    $null
+    $null
+    ;
+l_116: // pc=0x74
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_120: // pc=0x78
+    || 
+    $null
     $null
     $null
     $null
@@ -103,9 +243,29 @@ l_64:
     $null
     $null
     ;
-l_72:
+l_128: // pc=0x80
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_129: // pc=0x81
+    || 
+    $null
+    ;
+l_130: // pc=0x82
+    || 
+    $null
+    $null
+    ;
+l_132: // pc=0x84
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_136: // pc=0x88
+    || 
+    $null
     $null
     $null
     $null
@@ -114,9 +274,29 @@ l_72:
     $null
     $null
     ;
-l_80:
+l_144: // pc=0x90
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_145: // pc=0x91
+    || 
+    $null
+    ;
+l_146: // pc=0x92
+    || 
+    $null
+    $null
+    ;
+l_148: // pc=0x94
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_152: // pc=0x98
+    || 
+    $null
     $null
     $null
     $null
@@ -125,9 +305,29 @@ l_80:
     $null
     $null
     ;
-l_88:
+l_160: // pc=0xa0
     || 
     +            $r30    ($i64)    $r0        0
+    ;
+l_161: // pc=0xa1
+    || 
+    $null
+    ;
+l_162: // pc=0xa2
+    || 
+    $null
+    $null
+    ;
+l_164: // pc=0xa4
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_168: // pc=0xa8
+    || 
+    $null
     $null
     $null
     $null
@@ -136,9 +336,29 @@ l_88:
     $null
     $null
     ;
-l_96:
+l_176: // pc=0xb0
     || 
-    $call    l_112
+    +            $r30    ($i64)    $r0        0
+    ;
+l_177: // pc=0xb1
+    || 
+    $null
+    ;
+l_178: // pc=0xb2
+    || 
+    $null
+    $null
+    ;
+l_180: // pc=0xb4
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_184: // pc=0xb8
+    || 
+    $call    l_200
     $null
     $null
     $null
@@ -147,30 +367,30 @@ l_96:
     $null
     $null
     ;
-l_104:
+l_192: // pc=0xc0
     || 
     $halt
     ;
-l_105:
+l_193: // pc=0xc1
     || 
     $null
     ;
-l_106:
+l_194: // pc=0xc2
     || 
     $null
     $null
     ;
-l_108:
+l_196: // pc=0xc4
     || 
     $null
     $null
     $null
     $null
     ;
-l_112:
+l_200: // pc=0xc8
     || 
-    +            $r26    ($i64)    $r0    $r27
-    $set     $r1    0    808
+    $null
+    $null
     $null
     $null
     $st   ($i64)   [$r27  + 0]    $r26
@@ -178,7 +398,24 @@ l_112:
     $null
     $null
     ;
-l_120:
+l_208: // pc=0xd0
+    || 
+    +            $r26    ($i64)    $r0    $r27
+    $set     $r1    0    808
+    ;
+l_210: // pc=0xd2
+    || 
+    $null
+    $null
+    ;
+l_212: // pc=0xd4
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_216: // pc=0xd8
     || 
     -            $r27    ($i64)    $r27    $r1
     $null
@@ -189,27 +426,27 @@ l_120:
     $null
     $null
     ;
-l_128:
+l_224: // pc=0xe0
     || 
     +            $r3    ($i64)    $r1    $r2
     ;
-l_129:
+l_225: // pc=0xe1
     || 
     $null
     ;
-l_130:
+l_226: // pc=0xe2
     || 
     $null
     $null
     ;
-l_132:
+l_228: // pc=0xe4
     || 
     $null
     $null
     $null
     $null
     ;
-l_136:
+l_232: // pc=0xe8
     || 
     $null
     $null
@@ -220,27 +457,27 @@ l_136:
     $ld    ($i64)   $r5    [$r28 + 8]
     $null
     ;
-l_144:
+l_240: // pc=0xf0
     || 
     -            $r6    ($i64)    $r4    $r5
     ;
-l_145:
+l_241: // pc=0xf1
     || 
     $null
     ;
-l_146:
+l_242: // pc=0xf2
     || 
     $null
     $null
     ;
-l_148:
+l_244: // pc=0xf4
     || 
     $null
     $null
     $null
     $null
     ;
-l_152:
+l_248: // pc=0xf8
     || 
     $null
     $null
@@ -251,27 +488,27 @@ l_152:
     $ld    ($i64)   $r8    [$r28 + 8]
     $null
     ;
-l_160:
+l_256: // pc=0x100
     || 
     *            $r9    ($i64)    $r7    $r8
     ;
-l_161:
+l_257: // pc=0x101
     || 
     $null
     ;
-l_162:
+l_258: // pc=0x102
     || 
     $null
     $null
     ;
-l_164:
+l_260: // pc=0x104
     || 
     $null
     $null
     $null
     $null
     ;
-l_168:
+l_264: // pc=0x108
     || 
     $null
     $null
@@ -282,7 +519,7 @@ l_168:
     $ld    ($i64)   $r11    [$r28 + 8]
     $null
     ;
-l_176:
+l_272: // pc=0x110
     || 
     $null
     /            $r12    ($i64)    $r10    $r11
@@ -293,7 +530,7 @@ l_176:
     $null
     $null
     ;
-l_184:
+l_280: // pc=0x118
     || 
     $null
     $null
@@ -304,7 +541,7 @@ l_184:
     $ld    ($i64)   $r14    [$r28 + 8]
     $null
     ;
-l_192:
+l_288: // pc=0x120
     || 
     $null
     /            $r16    ($i64)    $r13    $r14
@@ -315,27 +552,27 @@ l_192:
     $null
     $null
     ;
-l_200:
+l_296: // pc=0x128
     || 
     *            $r16    ($i64)    $r16    $r14
     ;
-l_201:
+l_297: // pc=0x129
     || 
     -            $r15    ($i64)    $r13    $r16
     ;
-l_202:
+l_298: // pc=0x12a
     || 
     $null
     $null
     ;
-l_204:
+l_300: // pc=0x12c
     || 
     $null
     $null
     $null
     $null
     ;
-l_208:
+l_304: // pc=0x130
     || 
     $null
     $null
@@ -346,27 +583,27 @@ l_208:
     $ld    ($i64)   $r17    [$r28 + 8]
     $null
     ;
-l_216:
+l_312: // pc=0x138
     || 
     &            $r18    ($i64)    $r16    $r17
     ;
-l_217:
+l_313: // pc=0x139
     || 
     $null
     ;
-l_218:
+l_314: // pc=0x13a
     || 
     $null
     $null
     ;
-l_220:
+l_316: // pc=0x13c
     || 
     $null
     $null
     $null
     $null
     ;
-l_224:
+l_320: // pc=0x140
     || 
     $null
     $null
@@ -377,27 +614,27 @@ l_224:
     $ld    ($i64)   $r20    [$r28 + 8]
     $null
     ;
-l_232:
+l_328: // pc=0x148
     || 
     |            $r21    ($i64)    $r19    $r20
     ;
-l_233:
+l_329: // pc=0x149
     || 
     $null
     ;
-l_234:
+l_330: // pc=0x14a
     || 
     $null
     $null
     ;
-l_236:
+l_332: // pc=0x14c
     || 
     $null
     $null
     $null
     $null
     ;
-l_240:
+l_336: // pc=0x150
     || 
     $null
     $null
@@ -408,27 +645,27 @@ l_240:
     $ld    ($i64)   $r23    [$r28 + 8]
     $null
     ;
-l_248:
+l_344: // pc=0x158
     || 
     ^            $r24    ($i64)    $r22    $r23
     ;
-l_249:
+l_345: // pc=0x159
     || 
     $null
     ;
-l_250:
+l_346: // pc=0x15a
     || 
     $null
     $null
     ;
-l_252:
+l_348: // pc=0x15c
     || 
     $null
     $null
     $null
     $null
     ;
-l_256:
+l_352: // pc=0x160
     || 
     $null
     $null
@@ -439,27 +676,27 @@ l_256:
     $ld    ($i64)   $r29    [$r28 + 8]
     $null
     ;
-l_264:
+l_360: // pc=0x168
     || 
     <<           $r30    ($i64)    $r25    $r29
     ;
-l_265:
+l_361: // pc=0x169
     || 
     $null
     ;
-l_266:
+l_362: // pc=0x16a
     || 
     $null
     $null
     ;
-l_268:
+l_364: // pc=0x16c
     || 
     $null
     $null
     $null
     $null
     ;
-l_272:
+l_368: // pc=0x170
     || 
     $null
     $null
@@ -470,27 +707,27 @@ l_272:
     $ld    ($i64)   $r1    [$r28 + 8]
     $null
     ;
-l_280:
+l_376: // pc=0x178
     || 
     >>           $r2    ($i64)    $r31    $r1
     ;
-l_281:
+l_377: // pc=0x179
     || 
     $null
     ;
-l_282:
+l_378: // pc=0x17a
     || 
     $null
     $null
     ;
-l_284:
+l_380: // pc=0x17c
     || 
     $null
     $null
     $null
     $null
     ;
-l_288:
+l_384: // pc=0x180
     || 
     $null
     $null
@@ -501,9 +738,9 @@ l_288:
     $null
     $null
     ;
-l_296:
+l_392: // pc=0x188
     || 
-    ? ($i64)  $r0 ==    $goto    l_304
+    ? ($i64)  $r0 ==    $goto    l_400
     +            $r1    ($i64)    $r0    $r3
     $null
     $null
@@ -512,27 +749,27 @@ l_296:
     $null
     $null
     ;
-l_304:
+l_400: // pc=0x190
     || 
     +            $r27    ($i64)    $r0    $r26
     ;
-l_305:
+l_401: // pc=0x191
     || 
     $null
     ;
-l_306:
+l_402: // pc=0x192
     || 
     $null
     $null
     ;
-l_308:
+l_404: // pc=0x194
     || 
     $null
     $null
     $null
     $null
     ;
-l_312:
+l_408: // pc=0x198
     || 
     $return
     $null

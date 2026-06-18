@@ -1,17 +1,182 @@
-Info: pc = 0
+Info: Thread 0 pc = 0
 Info: imem file = test_slice.obj
 Info: dmem file = data.map
 Info: results file = test_slice.result
-Info: Loaded 104 instructions to i-mem
+Info: Init: IMEM[0] = 0xd41c0400
+Info: Init: IMEM[1] = 0x541b7ff8
+Info: Init: IMEM[2] = 0x909a001b
+Info: Init: IMEM[3] = 0x109e0400
+Info: Init: IMEM[4] = 0xe8000000
+Info: Init: IMEM[5] = 0x68000000
+Info: Init: IMEM[6] = 0x68000000
+Info: Init: IMEM[7] = 0x68000000
+Info: Init: IMEM[8] = 0xe8000000
+Info: Init: IMEM[9] = 0x68000000
+Info: Init: IMEM[10] = 0x68000000
+Info: Init: IMEM[11] = 0x68000000
+Info: Init: IMEM[12] = 0x507ee400
+Info: Init: IMEM[13] = 0x68000000
+Info: Init: IMEM[14] = 0x68000000
+Info: Init: IMEM[15] = 0x68000000
+Info: Init: IMEM[16] = 0x909e0400
+Info: Init: IMEM[17] = 0xe8000000
+Info: Init: IMEM[18] = 0xe8000000
+Info: Init: IMEM[19] = 0x68000000
+Info: Init: IMEM[20] = 0xe8000000
+Info: Init: IMEM[21] = 0x68000000
+Info: Init: IMEM[22] = 0x68000000
+Info: Init: IMEM[23] = 0x68000000
+Info: Init: IMEM[24] = 0x86000010
+Info: Init: IMEM[25] = 0x68000000
+Info: Init: IMEM[26] = 0x68000000
+Info: Init: IMEM[27] = 0x68000000
+Info: Init: IMEM[28] = 0x507ee408
+Info: Init: IMEM[29] = 0x68000000
+Info: Init: IMEM[30] = 0x68000000
+Info: Init: IMEM[31] = 0x68000000
+Info: Init: IMEM[32] = 0xec000000
+Info: Init: IMEM[33] = 0xe8000000
+Info: Init: IMEM[34] = 0xe8000000
+Info: Init: IMEM[35] = 0x68000000
+Info: Init: IMEM[36] = 0xe8000000
+Info: Init: IMEM[37] = 0x68000000
+Info: Init: IMEM[38] = 0x68000000
+Info: Init: IMEM[39] = 0x68000000
+Info: Init: IMEM[40] = 0xe8000000
+Info: Init: IMEM[41] = 0x68000000
+Info: Init: IMEM[42] = 0x68000000
+Info: Init: IMEM[43] = 0x68000000
+Info: Init: IMEM[44] = 0x509adc00
+Info: Init: IMEM[45] = 0x68000000
+Info: Init: IMEM[46] = 0x68000000
+Info: Init: IMEM[47] = 0x68000000
+Info: Init: IMEM[48] = 0x909a001b
+Info: Init: IMEM[49] = 0x54010330
+Info: Init: IMEM[50] = 0xe8000000
+Info: Init: IMEM[51] = 0x68000000
+Info: Init: IMEM[52] = 0x949bd801
+Info: Init: IMEM[53] = 0x1081d7f8
+Info: Init: IMEM[54] = 0x5402abcd
+Info: Init: IMEM[55] = 0x68000000
+Info: Init: IMEM[56] = 0xe8000000
+Info: Init: IMEM[57] = 0x68000000
+Info: Init: IMEM[58] = 0x68000000
+Info: Init: IMEM[59] = 0x68000000
+Info: Init: IMEM[60] = 0x50620c00
+Info: Init: IMEM[61] = 0x68000000
+Info: Init: IMEM[62] = 0x68000000
+Info: Init: IMEM[63] = 0x68000000
+Info: Init: IMEM[64] = 0x9082d7f8
+Info: Init: IMEM[65] = 0xe8000000
+Info: Init: IMEM[66] = 0xe8000000
+Info: Init: IMEM[67] = 0x68000000
+Info: Init: IMEM[68] = 0xe8000000
+Info: Init: IMEM[69] = 0x68000000
+Info: Init: IMEM[70] = 0x68000000
+Info: Init: IMEM[71] = 0x68000000
+Info: Init: IMEM[72] = 0xe8000000
+Info: Init: IMEM[73] = 0x68000000
+Info: Init: IMEM[74] = 0x68000000
+Info: Init: IMEM[75] = 0x68000000
+Info: Init: IMEM[76] = 0x4c631400
+Info: Init: IMEM[77] = 0x68000000
+Info: Init: IMEM[78] = 0x68000000
+Info: Init: IMEM[79] = 0x68000000
+Info: Init: IMEM[80] = 0xe4648803
+Info: Init: IMEM[81] = 0xe8000000
+Info: Init: IMEM[82] = 0xe8000000
+Info: Init: IMEM[83] = 0x68000000
+Info: Init: IMEM[84] = 0xe8000000
+Info: Init: IMEM[85] = 0x68000000
+Info: Init: IMEM[86] = 0x68000000
+Info: Init: IMEM[87] = 0x68000000
+Info: Init: IMEM[88] = 0x9085d7f8
+Info: Init: IMEM[89] = 0x68000000
+Info: Init: IMEM[90] = 0x68000000
+Info: Init: IMEM[91] = 0x68000000
+Info: Init: IMEM[92] = 0x5064e400
+Info: Init: IMEM[93] = 0x68000000
+Info: Init: IMEM[94] = 0x68000000
+Info: Init: IMEM[95] = 0x68000000
+Info: Init: IMEM[96] = 0xe8000000
+Info: Init: IMEM[97] = 0x68000000
+Info: Init: IMEM[98] = 0x68000000
+Info: Init: IMEM[99] = 0x68000000
+Info: Init: IMEM[100] = 0x4c662c00
+Info: Init: IMEM[101] = 0x68000000
+Info: Init: IMEM[102] = 0x68000000
+Info: Init: IMEM[103] = 0x68000000
+Info: Init: IMEM[104] = 0xe4e79006
+Info: Init: IMEM[105] = 0xe8000000
+Info: Init: IMEM[106] = 0xe8000000
+Info: Init: IMEM[107] = 0x68000000
+Info: Init: IMEM[108] = 0xe8000000
+Info: Init: IMEM[109] = 0x68000000
+Info: Init: IMEM[110] = 0x68000000
+Info: Init: IMEM[111] = 0x68000000
+Info: Init: IMEM[112] = 0xe8000000
+Info: Init: IMEM[113] = 0x68000000
+Info: Init: IMEM[114] = 0x68000000
+Info: Init: IMEM[115] = 0x68000000
+Info: Init: IMEM[116] = 0x5067e408
+Info: Init: IMEM[117] = 0x4c68e400
+Info: Init: IMEM[118] = 0x68000000
+Info: Init: IMEM[119] = 0x68000000
+Info: Init: IMEM[120] = 0xe8000000
+Info: Init: IMEM[121] = 0x68000000
+Info: Init: IMEM[122] = 0x68000000
+Info: Init: IMEM[123] = 0x68000000
+Info: Init: IMEM[124] = 0x4c69e408
+Info: Init: IMEM[125] = 0x68000000
+Info: Init: IMEM[126] = 0x68000000
+Info: Init: IMEM[127] = 0x68000000
+Info: Init: IMEM[128] = 0x908a4009
+Info: Init: IMEM[129] = 0xe8000000
+Info: Init: IMEM[130] = 0xe8000000
+Info: Init: IMEM[131] = 0x68000000
+Info: Init: IMEM[132] = 0xe8000000
+Info: Init: IMEM[133] = 0x68000000
+Info: Init: IMEM[134] = 0x68000000
+Info: Init: IMEM[135] = 0x68000000
+Info: Init: IMEM[136] = 0x89080100
+Info: Init: IMEM[137] = 0x1081000a
+Info: Init: IMEM[138] = 0x68000000
+Info: Init: IMEM[139] = 0x68000000
+Info: Init: IMEM[140] = 0x68000000
+Info: Init: IMEM[141] = 0x68000000
+Info: Init: IMEM[142] = 0x68000000
+Info: Init: IMEM[143] = 0x68000000
+Info: Init: IMEM[144] = 0x909b001a
+Info: Init: IMEM[145] = 0xe8000000
+Info: Init: IMEM[146] = 0xe8000000
+Info: Init: IMEM[147] = 0x68000000
+Info: Init: IMEM[148] = 0xe8000000
+Info: Init: IMEM[149] = 0x68000000
+Info: Init: IMEM[150] = 0x68000000
+Info: Init: IMEM[151] = 0x68000000
+Info: Init: IMEM[152] = 0x8c000000
+Info: Init: IMEM[153] = 0x68000000
+Info: Init: IMEM[154] = 0x68000000
+Info: Init: IMEM[155] = 0x68000000
+Info: Init: IMEM[156] = 0x4c9adc00
+Info: Init: IMEM[157] = 0x68000000
+Info: Init: IMEM[158] = 0x68000000
+Info: Init: IMEM[159] = 0x68000000
+Info: Loaded 160 instructions to i-mem
+Info: Init: DMEM[0] = 0x0
+Info: Init: DMEM[128] = 0x0
+Info: Init: DMEM[129] = 0x0
 Info: Loaded 3 words to d-mem
-Info: McodeMachine:: 0xd41c0400 = IMEM[0x0]
-Info: McodeMachine:: 0x541b7ff8 = IMEM[0x1]
-Info: McodeMachine:: 0x909a001b = IMEM[0x2]
-Info: McodeMachine:: 0x109e0400 = IMEM[0x3]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x4]
-Info: McodeMachine:: 0x68000000 = IMEM[0x5]
-Info: McodeMachine:: 0x68000000 = IMEM[0x6]
-Info: McodeMachine:: 0x68000000 = IMEM[0x7]
+Info: Info: activate thread 0 to pc 0
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xd41c0400 = IMEM[0x0]
+Info: McodeAccelerator:: 0x541b7ff8 = IMEM[0x1]
+Info: McodeAccelerator:: 0x909a001b = IMEM[0x2]
+Info: McodeAccelerator:: 0x109e0400 = IMEM[0x3]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x4]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x6]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7]
 Info: McodeMachine:Run_Machine PC=0x0
 Info: McodeMachine:Run_Machine: new bundle pc=0x0 (size=2)
 LOG:Get_Operands: 0x0  McodeSetInstruction
@@ -20,21 +185,22 @@ Info: 0: Set!
 LOG:Execute     : 0x0  McodeSetInstruction
 Info: 1: Set!
 LOG:Execute     : 0x1  McodeSetInstruction
-Info: McodeMachine:: Set_Register(28, 0x400)
+Info: RunLog[0]: Set_Register(28, 0x400)
 LOG:Set_Results  : 0x0  McodeSetInstruction
-Info: McodeMachine:: Set_Register(27, 0x7ff8)
+Info: RunLog[0]: Set_Register(27, 0x7ff8)
 LOG:Set_Results  : 0x1  McodeSetInstruction
-RunLog: l_0 pc=0x0  McodeInstructionBundle
-RunLog: 0x0 $set        0x400     -> 0x400    
-RunLog: 0x1 $set        0x7ff8     -> 0x7ff8    
+RunLog[0]: l_0 pc=0x0  McodeInstructionBundle
+RunLog[0]: 0x0 $set        0x400     -> 0x400    
+RunLog[0]: 0x1 $set        0x7ff8     -> 0x7ff8    
+Info: Tick on thread 0
 Info: McodeMachine:Run_Machine PC=0x2
 Info: McodeMachine:Run_Machine: new bundle pc=0x2 (size=2)
-Info: McodeMachine:: 0x0 = Get_Register(0)
+Info: RunLog[0]: 0x0 = Get_Register(0)
 
-Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+Info: RunLog[0]: 0x7ff8 = Get_Register(27)
 
 LOG:Get_Operands: 0x2  McodeAluInstruction
-Info: McodeMachine:: 0x0 = Get_Register(0)
+Info: RunLog[0]: 0x0 = Get_Register(0)
 
 LOG:Get_Operands: 0x3  McodeAluInstruction
 Info: ___execute_alu_operation___
@@ -43,13 +209,14 @@ LOG:Execute     : 0x2  McodeAluInstruction
 Info: ___execute_alu_operation___
 Info: 3: Alu!
 LOG:Execute     : 0x3  McodeAluInstruction
-Info: McodeMachine:: Set_Register(26, 0x7ff8)
+Info: RunLog[0]: Set_Register(26, 0x7ff8)
 LOG:Set_Results  : 0x2  McodeAluInstruction
-Info: McodeMachine:: Set_Register(30, 0x0)
+Info: RunLog[0]: Set_Register(30, 0x0)
 LOG:Set_Results  : 0x3  McodeAluInstruction
-RunLog: l_2 pc=0x2  McodeInstructionBundle
-RunLog: 0x2 +           0x0    0x7ff8     -> 0x7ff8    
-RunLog: 0x3 +           0x0    0x0     -> 0x0    
+RunLog[0]: l_2 pc=0x2  McodeInstructionBundle
+RunLog[0]: 0x2 +           0x0    0x7ff8     -> 0x7ff8    
+RunLog[0]: 0x3 +           0x0    0x0     -> 0x0    
+Info: Tick on thread 0
 Info: McodeMachine:Run_Machine PC=0x4
 Info: McodeMachine:Run_Machine: new bundle pc=0x4 (size=4)
 LOG:Get_Operands: 0x4  McodeNullInstruction
@@ -68,45 +235,43 @@ LOG:Set_Results  : 0x4  McodeNullInstruction
 LOG:Set_Results  : 0x5  McodeNullInstruction
 LOG:Set_Results  : 0x6  McodeNullInstruction
 LOG:Set_Results  : 0x7  McodeNullInstruction
-RunLog: l_4 pc=0x4  McodeInstructionBundle
-RunLog: 0x4 $null        -> 
-RunLog: 0x5 $null        -> 
-RunLog: 0x6 $null        -> 
-RunLog: 0x7 $null        -> 
-Info: McodeMachine:: 0x909e0400 = IMEM[0x8]
-Info: McodeMachine:: 0x68000000 = IMEM[0x9]
-Info: McodeMachine:: 0x68000000 = IMEM[0xa]
-Info: McodeMachine:: 0x68000000 = IMEM[0xb]
-Info: McodeMachine:: 0x507ee400 = IMEM[0xc]
-Info: McodeMachine:: 0x68000000 = IMEM[0xd]
-Info: McodeMachine:: 0x68000000 = IMEM[0xe]
-Info: McodeMachine:: 0x68000000 = IMEM[0xf]
+RunLog[0]: l_4 pc=0x4  McodeInstructionBundle
+RunLog[0]: 0x4 $null        -> 
+RunLog[0]: 0x5 $null        -> 
+RunLog[0]: 0x6 $null        -> 
+RunLog[0]: 0x7 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x8]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0xa]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0xb]
+Info: McodeAccelerator:: 0x507ee400 = IMEM[0xc]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0xd]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0xe]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0xf]
 Info: McodeMachine:Run_Machine PC=0x8
 Info: McodeMachine:Run_Machine: new bundle pc=0x8 (size=8)
-Info: McodeMachine:: 0x0 = Get_Register(0)
-
-LOG:Get_Operands: 0x8  McodeAluInstruction
+LOG:Get_Operands: 0x8  McodeNullInstruction
 LOG:Get_Operands: 0x9  McodeNullInstruction
 LOG:Get_Operands: 0xa  McodeNullInstruction
 LOG:Get_Operands: 0xb  McodeNullInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
+Info: RunLog[0]: 0x400 = Get_Register(28)
 
-Info: McodeMachine:: 0x0 = Get_Register(30)
+Info: RunLog[0]: 0x0 = Get_Register(30)
 
 LOG:Get_Operands: 0xc  McodeStoreInstruction
 LOG:Get_Operands: 0xd  McodeNullInstruction
 LOG:Get_Operands: 0xe  McodeNullInstruction
 LOG:Get_Operands: 0xf  McodeNullInstruction
-Info: ___execute_alu_operation___
-Info: 8: Alu!
-LOG:Execute     : 0x8  McodeAluInstruction
+Info: 8: Null!
+LOG:Execute     : 0x8  McodeNullInstruction
 Info: 9: Null!
 LOG:Execute     : 0x9  McodeNullInstruction
 Info: 10: Null!
 LOG:Execute     : 0xa  McodeNullInstruction
 Info: 11: Null!
 LOG:Execute     : 0xb  McodeNullInstruction
-Info: McodeMachine:: DMEM[0x80] = 0x0
+Info: McodeAccelerator:: DMEM[0x80] = 0x0
 
 Info: ___execute_store_operation___ 
 Info: 12: Store!
@@ -117,8 +282,7 @@ Info: 14: Null!
 LOG:Execute     : 0xe  McodeNullInstruction
 Info: 15: Null!
 LOG:Execute     : 0xf  McodeNullInstruction
-Info: McodeMachine:: Set_Register(30, 0x0)
-LOG:Set_Results  : 0x8  McodeAluInstruction
+LOG:Set_Results  : 0x8  McodeNullInstruction
 LOG:Set_Results  : 0x9  McodeNullInstruction
 LOG:Set_Results  : 0xa  McodeNullInstruction
 LOG:Set_Results  : 0xb  McodeNullInstruction
@@ -126,514 +290,514 @@ LOG:Set_Results  : 0xc  McodeStoreInstruction
 LOG:Set_Results  : 0xd  McodeNullInstruction
 LOG:Set_Results  : 0xe  McodeNullInstruction
 LOG:Set_Results  : 0xf  McodeNullInstruction
-RunLog: l_8 pc=0x8  McodeInstructionBundle
-RunLog: 0x8 +           0x0    0x0     -> 0x0    
-RunLog: 0x9 $null        -> 
-RunLog: 0xa $null        -> 
-RunLog: 0xb $null        -> 
-RunLog: 0xc $st         0x400    0x0    0x0     -> 
-RunLog: 0xd $null        -> 
-RunLog: 0xe $null        -> 
-RunLog: 0xf $null        -> 
-Info: McodeMachine:: 0x86000010 = IMEM[0x10]
-Info: McodeMachine:: 0x68000000 = IMEM[0x11]
-Info: McodeMachine:: 0x68000000 = IMEM[0x12]
-Info: McodeMachine:: 0x68000000 = IMEM[0x13]
-Info: McodeMachine:: 0x507ee408 = IMEM[0x14]
-Info: McodeMachine:: 0x68000000 = IMEM[0x15]
-Info: McodeMachine:: 0x68000000 = IMEM[0x16]
-Info: McodeMachine:: 0x68000000 = IMEM[0x17]
+RunLog[0]: l_8 pc=0x8  McodeInstructionBundle
+RunLog[0]: 0x8 $null        -> 
+RunLog[0]: 0x9 $null        -> 
+RunLog[0]: 0xa $null        -> 
+RunLog[0]: 0xb $null        -> 
+RunLog[0]: 0xc $st         0x400    0x0    0x0     -> 
+RunLog[0]: 0xd $null        -> 
+RunLog[0]: 0xe $null        -> 
+RunLog[0]: 0xf $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x909e0400 = IMEM[0x10]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x11]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x12]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x13]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x14]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x15]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x16]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x17]
 Info: McodeMachine:Run_Machine PC=0x10
-Info: McodeMachine:Run_Machine: new bundle pc=0x10 (size=8)
-LOG:Get_Operands: 0x10  McodeCallInstruction
+Info: McodeMachine:Run_Machine: new bundle pc=0x10 (size=1)
+Info: RunLog[0]: 0x0 = Get_Register(0)
+
+LOG:Get_Operands: 0x10  McodeAluInstruction
+Info: ___execute_alu_operation___
+Info: 16: Alu!
+LOG:Execute     : 0x10  McodeAluInstruction
+Info: RunLog[0]: Set_Register(30, 0x0)
+LOG:Set_Results  : 0x10  McodeAluInstruction
+RunLog[0]: l_16 pc=0x10  McodeInstructionBundle
+RunLog[0]: 0x10 +           0x0    0x0     -> 0x0    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x11
+Info: McodeMachine:Run_Machine: new bundle pc=0x11 (size=1)
 LOG:Get_Operands: 0x11  McodeNullInstruction
-LOG:Get_Operands: 0x12  McodeNullInstruction
-LOG:Get_Operands: 0x13  McodeNullInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
-
-Info: McodeMachine:: 0x0 = Get_Register(30)
-
-LOG:Get_Operands: 0x14  McodeStoreInstruction
-LOG:Get_Operands: 0x15  McodeNullInstruction
-LOG:Get_Operands: 0x16  McodeNullInstruction
-LOG:Get_Operands: 0x17  McodeNullInstruction
-Info: ___execute_call_operation___
-Info: 16: Call!
-LOG:Execute     : 0x10  McodeCallInstruction
 Info: 17: Null!
 LOG:Execute     : 0x11  McodeNullInstruction
+LOG:Set_Results  : 0x11  McodeNullInstruction
+RunLog[0]: l_17 pc=0x11  McodeInstructionBundle
+RunLog[0]: 0x11 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x12
+Info: McodeMachine:Run_Machine: new bundle pc=0x12 (size=2)
+LOG:Get_Operands: 0x12  McodeNullInstruction
+LOG:Get_Operands: 0x13  McodeNullInstruction
 Info: 18: Null!
 LOG:Execute     : 0x12  McodeNullInstruction
 Info: 19: Null!
 LOG:Execute     : 0x13  McodeNullInstruction
-Info: McodeMachine:: DMEM[0x81] = 0x0
-
-Info: ___execute_store_operation___ 
-Info: 20: Store!
-LOG:Execute     : 0x14  McodeStoreInstruction
+LOG:Set_Results  : 0x12  McodeNullInstruction
+LOG:Set_Results  : 0x13  McodeNullInstruction
+RunLog[0]: l_18 pc=0x12  McodeInstructionBundle
+RunLog[0]: 0x12 $null        -> 
+RunLog[0]: 0x13 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x14
+Info: McodeMachine:Run_Machine: new bundle pc=0x14 (size=4)
+LOG:Get_Operands: 0x14  McodeNullInstruction
+LOG:Get_Operands: 0x15  McodeNullInstruction
+LOG:Get_Operands: 0x16  McodeNullInstruction
+LOG:Get_Operands: 0x17  McodeNullInstruction
+Info: 20: Null!
+LOG:Execute     : 0x14  McodeNullInstruction
 Info: 21: Null!
 LOG:Execute     : 0x15  McodeNullInstruction
 Info: 22: Null!
 LOG:Execute     : 0x16  McodeNullInstruction
 Info: 23: Null!
 LOG:Execute     : 0x17  McodeNullInstruction
-LOG:Set_Results  : 0x10  McodeCallInstruction
-LOG:Set_Results  : 0x11  McodeNullInstruction
-LOG:Set_Results  : 0x12  McodeNullInstruction
-LOG:Set_Results  : 0x13  McodeNullInstruction
-LOG:Set_Results  : 0x14  McodeStoreInstruction
+LOG:Set_Results  : 0x14  McodeNullInstruction
 LOG:Set_Results  : 0x15  McodeNullInstruction
 LOG:Set_Results  : 0x16  McodeNullInstruction
 LOG:Set_Results  : 0x17  McodeNullInstruction
-RunLog: l_16 pc=0x10  McodeInstructionBundle
-RunLog: 0x10 $call        ->   npc=  32
-RunLog: 0x11 $null        -> 
-RunLog: 0x12 $null        -> 
-RunLog: 0x13 $null        -> 
-RunLog: 0x14 $st         0x400    0x8    0x0     -> 
-RunLog: 0x15 $null        -> 
-RunLog: 0x16 $null        -> 
-RunLog: 0x17 $null        -> 
-Info: McodeMachine:: 0x909a001b = IMEM[0x20]
-Info: McodeMachine:: 0x54010330 = IMEM[0x21]
-Info: McodeMachine:: 0x68000000 = IMEM[0x22]
-Info: McodeMachine:: 0x68000000 = IMEM[0x23]
-Info: McodeMachine:: 0x509adc00 = IMEM[0x24]
-Info: McodeMachine:: 0x68000000 = IMEM[0x25]
-Info: McodeMachine:: 0x68000000 = IMEM[0x26]
-Info: McodeMachine:: 0x68000000 = IMEM[0x27]
-Info: McodeMachine:Run_Machine PC=0x20
-Info: McodeMachine:Run_Machine: new bundle pc=0x20 (size=8)
-Info: McodeMachine:: 0x0 = Get_Register(0)
+RunLog[0]: l_20 pc=0x14  McodeInstructionBundle
+RunLog[0]: 0x14 $null        -> 
+RunLog[0]: 0x15 $null        -> 
+RunLog[0]: 0x16 $null        -> 
+RunLog[0]: 0x17 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x86000010 = IMEM[0x18]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x19]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x1a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x1b]
+Info: McodeAccelerator:: 0x507ee408 = IMEM[0x1c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x1d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x1e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x1f]
+Info: McodeMachine:Run_Machine PC=0x18
+Info: McodeMachine:Run_Machine: new bundle pc=0x18 (size=8)
+LOG:Get_Operands: 0x18  McodeCallInstruction
+LOG:Get_Operands: 0x19  McodeNullInstruction
+LOG:Get_Operands: 0x1a  McodeNullInstruction
+LOG:Get_Operands: 0x1b  McodeNullInstruction
+Info: RunLog[0]: 0x400 = Get_Register(28)
 
-Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+Info: RunLog[0]: 0x0 = Get_Register(30)
 
-LOG:Get_Operands: 0x20  McodeAluInstruction
-LOG:Get_Operands: 0x21  McodeSetInstruction
-LOG:Get_Operands: 0x22  McodeNullInstruction
-LOG:Get_Operands: 0x23  McodeNullInstruction
-Info: McodeMachine:: 0x7ff8 = Get_Register(27)
-
-Info: McodeMachine:: 0x7ff8 = Get_Register(26)
-
-LOG:Get_Operands: 0x24  McodeStoreInstruction
-LOG:Get_Operands: 0x25  McodeNullInstruction
-LOG:Get_Operands: 0x26  McodeNullInstruction
-LOG:Get_Operands: 0x27  McodeNullInstruction
-Info: ___execute_alu_operation___
-Info: 32: Alu!
-LOG:Execute     : 0x20  McodeAluInstruction
-Info: 33: Set!
-LOG:Execute     : 0x21  McodeSetInstruction
-Info: 34: Null!
-LOG:Execute     : 0x22  McodeNullInstruction
-Info: 35: Null!
-LOG:Execute     : 0x23  McodeNullInstruction
-Info: McodeMachine:: DMEM[0xfff] = 0x7ff8
+LOG:Get_Operands: 0x1c  McodeStoreInstruction
+LOG:Get_Operands: 0x1d  McodeNullInstruction
+LOG:Get_Operands: 0x1e  McodeNullInstruction
+LOG:Get_Operands: 0x1f  McodeNullInstruction
+Info: ___execute_call_operation___
+Info: 24: Call!
+LOG:Execute     : 0x18  McodeCallInstruction
+Info: 25: Null!
+LOG:Execute     : 0x19  McodeNullInstruction
+Info: 26: Null!
+LOG:Execute     : 0x1a  McodeNullInstruction
+Info: 27: Null!
+LOG:Execute     : 0x1b  McodeNullInstruction
+Info: McodeAccelerator:: DMEM[0x81] = 0x0
 
 Info: ___execute_store_operation___ 
-Info: 36: Store!
-LOG:Execute     : 0x24  McodeStoreInstruction
-Info: 37: Null!
-LOG:Execute     : 0x25  McodeNullInstruction
-Info: 38: Null!
-LOG:Execute     : 0x26  McodeNullInstruction
-Info: 39: Null!
-LOG:Execute     : 0x27  McodeNullInstruction
-Info: McodeMachine:: Set_Register(26, 0x7ff8)
-LOG:Set_Results  : 0x20  McodeAluInstruction
-Info: McodeMachine:: Set_Register(1, 0x330)
-LOG:Set_Results  : 0x21  McodeSetInstruction
-LOG:Set_Results  : 0x22  McodeNullInstruction
-LOG:Set_Results  : 0x23  McodeNullInstruction
-LOG:Set_Results  : 0x24  McodeStoreInstruction
-LOG:Set_Results  : 0x25  McodeNullInstruction
-LOG:Set_Results  : 0x26  McodeNullInstruction
-LOG:Set_Results  : 0x27  McodeNullInstruction
-RunLog: l_32 pc=0x20  McodeInstructionBundle
-RunLog: 0x20 +           0x0    0x7ff8     -> 0x7ff8    
-RunLog: 0x21 $set        0x330     -> 0x330    
-RunLog: 0x22 $null        -> 
-RunLog: 0x23 $null        -> 
-RunLog: 0x24 $st         0x7ff8    0x0    0x7ff8     -> 
-RunLog: 0x25 $null        -> 
-RunLog: 0x26 $null        -> 
-RunLog: 0x27 $null        -> 
-Info: McodeMachine:: 0x949bd801 = IMEM[0x28]
-Info: McodeMachine:: 0x1081d7f8 = IMEM[0x29]
-Info: McodeMachine:: 0x5402abcd = IMEM[0x2a]
-Info: McodeMachine:: 0x68000000 = IMEM[0x2b]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x2c]
-Info: McodeMachine:: 0x68000000 = IMEM[0x2d]
-Info: McodeMachine:: 0x68000000 = IMEM[0x2e]
-Info: McodeMachine:: 0x68000000 = IMEM[0x2f]
+Info: 28: Store!
+LOG:Execute     : 0x1c  McodeStoreInstruction
+Info: 29: Null!
+LOG:Execute     : 0x1d  McodeNullInstruction
+Info: 30: Null!
+LOG:Execute     : 0x1e  McodeNullInstruction
+Info: 31: Null!
+LOG:Execute     : 0x1f  McodeNullInstruction
+LOG:Set_Results  : 0x18  McodeCallInstruction
+LOG:Set_Results  : 0x19  McodeNullInstruction
+LOG:Set_Results  : 0x1a  McodeNullInstruction
+LOG:Set_Results  : 0x1b  McodeNullInstruction
+LOG:Set_Results  : 0x1c  McodeStoreInstruction
+LOG:Set_Results  : 0x1d  McodeNullInstruction
+LOG:Set_Results  : 0x1e  McodeNullInstruction
+LOG:Set_Results  : 0x1f  McodeNullInstruction
+RunLog[0]: l_24 pc=0x18  McodeInstructionBundle
+RunLog[0]: 0x18 $call        ->   npc=0x28
+RunLog[0]: 0x19 $null        -> 
+RunLog[0]: 0x1a $null        -> 
+RunLog[0]: 0x1b $null        -> 
+RunLog[0]: 0x1c $st         0x400    0x8    0x0     -> 
+RunLog[0]: 0x1d $null        -> 
+RunLog[0]: 0x1e $null        -> 
+RunLog[0]: 0x1f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x28]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x29]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x2a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x2b]
+Info: McodeAccelerator:: 0x509adc00 = IMEM[0x2c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x2d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x2e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x2f]
 Info: McodeMachine:Run_Machine PC=0x28
-Info: McodeMachine:Run_Machine: new bundle pc=0x28 (size=4)
-Info: McodeMachine:: 0x7ff8 = Get_Register(27)
-
-Info: McodeMachine:: 0x330 = Get_Register(1)
-
-LOG:Get_Operands: 0x28  McodeAluInstruction
-Info: McodeMachine:: 0x7ff8 = Get_Register(26)
-
-LOG:Get_Operands: 0x29  McodeAluInstruction
-LOG:Get_Operands: 0x2a  McodeSetInstruction
+Info: McodeMachine:Run_Machine: new bundle pc=0x28 (size=8)
+LOG:Get_Operands: 0x28  McodeNullInstruction
+LOG:Get_Operands: 0x29  McodeNullInstruction
+LOG:Get_Operands: 0x2a  McodeNullInstruction
 LOG:Get_Operands: 0x2b  McodeNullInstruction
-Info: ___execute_alu_operation___
-Info: 40: Alu!
-LOG:Execute     : 0x28  McodeAluInstruction
-Info: ___execute_alu_operation___
-Info: 41: Alu!
-LOG:Execute     : 0x29  McodeAluInstruction
-Info: 42: Set!
-LOG:Execute     : 0x2a  McodeSetInstruction
-Info: 43: Null!
-LOG:Execute     : 0x2b  McodeNullInstruction
-Info: McodeMachine:: Set_Register(27, 0x7cc8)
-LOG:Set_Results  : 0x28  McodeAluInstruction
-Info: McodeMachine:: Set_Register(1, 0x7ff0)
-LOG:Set_Results  : 0x29  McodeAluInstruction
-Info: McodeMachine:: Set_Register(2, 0xabcd)
-LOG:Set_Results  : 0x2a  McodeSetInstruction
-LOG:Set_Results  : 0x2b  McodeNullInstruction
-RunLog: l_40 pc=0x28  McodeInstructionBundle
-RunLog: 0x28 -           0x7ff8    0x330     -> 0x7cc8    
-RunLog: 0x29 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
-RunLog: 0x2a $set        0xabcd     -> 0xabcd    
-RunLog: 0x2b $null        -> 
-Info: McodeMachine:Run_Machine PC=0x2c
-Info: McodeMachine:Run_Machine: new bundle pc=0x2c (size=4)
-LOG:Get_Operands: 0x2c  McodeNullInstruction
+Info: RunLog[0]: 0x7ff8 = Get_Register(27)
+
+Info: RunLog[0]: 0x7ff8 = Get_Register(26)
+
+LOG:Get_Operands: 0x2c  McodeStoreInstruction
 LOG:Get_Operands: 0x2d  McodeNullInstruction
 LOG:Get_Operands: 0x2e  McodeNullInstruction
 LOG:Get_Operands: 0x2f  McodeNullInstruction
-Info: 44: Null!
-LOG:Execute     : 0x2c  McodeNullInstruction
+Info: 40: Null!
+LOG:Execute     : 0x28  McodeNullInstruction
+Info: 41: Null!
+LOG:Execute     : 0x29  McodeNullInstruction
+Info: 42: Null!
+LOG:Execute     : 0x2a  McodeNullInstruction
+Info: 43: Null!
+LOG:Execute     : 0x2b  McodeNullInstruction
+Info: McodeAccelerator:: DMEM[0xfff] = 0x7ff8
+
+Info: ___execute_store_operation___ 
+Info: 44: Store!
+LOG:Execute     : 0x2c  McodeStoreInstruction
 Info: 45: Null!
 LOG:Execute     : 0x2d  McodeNullInstruction
 Info: 46: Null!
 LOG:Execute     : 0x2e  McodeNullInstruction
 Info: 47: Null!
 LOG:Execute     : 0x2f  McodeNullInstruction
-LOG:Set_Results  : 0x2c  McodeNullInstruction
+LOG:Set_Results  : 0x28  McodeNullInstruction
+LOG:Set_Results  : 0x29  McodeNullInstruction
+LOG:Set_Results  : 0x2a  McodeNullInstruction
+LOG:Set_Results  : 0x2b  McodeNullInstruction
+LOG:Set_Results  : 0x2c  McodeStoreInstruction
 LOG:Set_Results  : 0x2d  McodeNullInstruction
 LOG:Set_Results  : 0x2e  McodeNullInstruction
 LOG:Set_Results  : 0x2f  McodeNullInstruction
-RunLog: l_44 pc=0x2c  McodeInstructionBundle
-RunLog: 0x2c $null        -> 
-RunLog: 0x2d $null        -> 
-RunLog: 0x2e $null        -> 
-RunLog: 0x2f $null        -> 
-Info: McodeMachine:: 0x9082d7f8 = IMEM[0x30]
-Info: McodeMachine:: 0x68000000 = IMEM[0x31]
-Info: McodeMachine:: 0x68000000 = IMEM[0x32]
-Info: McodeMachine:: 0x68000000 = IMEM[0x33]
-Info: McodeMachine:: 0x50620c00 = IMEM[0x34]
-Info: McodeMachine:: 0x68000000 = IMEM[0x35]
-Info: McodeMachine:: 0x68000000 = IMEM[0x36]
-Info: McodeMachine:: 0x68000000 = IMEM[0x37]
+RunLog[0]: l_40 pc=0x28  McodeInstructionBundle
+RunLog[0]: 0x28 $null        -> 
+RunLog[0]: 0x29 $null        -> 
+RunLog[0]: 0x2a $null        -> 
+RunLog[0]: 0x2b $null        -> 
+RunLog[0]: 0x2c $st         0x7ff8    0x0    0x7ff8     -> 
+RunLog[0]: 0x2d $null        -> 
+RunLog[0]: 0x2e $null        -> 
+RunLog[0]: 0x2f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x909a001b = IMEM[0x30]
+Info: McodeAccelerator:: 0x54010330 = IMEM[0x31]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x32]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x33]
+Info: McodeAccelerator:: 0x949bd801 = IMEM[0x34]
+Info: McodeAccelerator:: 0x1081d7f8 = IMEM[0x35]
+Info: McodeAccelerator:: 0x5402abcd = IMEM[0x36]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x37]
 Info: McodeMachine:Run_Machine PC=0x30
-Info: McodeMachine:Run_Machine: new bundle pc=0x30 (size=8)
-Info: McodeMachine:: 0x7ff8 = Get_Register(26)
+Info: McodeMachine:Run_Machine: new bundle pc=0x30 (size=2)
+Info: RunLog[0]: 0x0 = Get_Register(0)
+
+Info: RunLog[0]: 0x7ff8 = Get_Register(27)
 
 LOG:Get_Operands: 0x30  McodeAluInstruction
-LOG:Get_Operands: 0x31  McodeNullInstruction
-LOG:Get_Operands: 0x32  McodeNullInstruction
-LOG:Get_Operands: 0x33  McodeNullInstruction
-Info: McodeMachine:: 0x7ff0 = Get_Register(1)
-
-Info: McodeMachine:: 0xabcd = Get_Register(2)
-
-LOG:Get_Operands: 0x34  McodeStoreInstruction
-LOG:Get_Operands: 0x35  McodeNullInstruction
-LOG:Get_Operands: 0x36  McodeNullInstruction
-LOG:Get_Operands: 0x37  McodeNullInstruction
+LOG:Get_Operands: 0x31  McodeSetInstruction
 Info: ___execute_alu_operation___
 Info: 48: Alu!
 LOG:Execute     : 0x30  McodeAluInstruction
-Info: 49: Null!
-LOG:Execute     : 0x31  McodeNullInstruction
+Info: 49: Set!
+LOG:Execute     : 0x31  McodeSetInstruction
+Info: RunLog[0]: Set_Register(26, 0x7ff8)
+LOG:Set_Results  : 0x30  McodeAluInstruction
+Info: RunLog[0]: Set_Register(1, 0x330)
+LOG:Set_Results  : 0x31  McodeSetInstruction
+RunLog[0]: l_48 pc=0x30  McodeInstructionBundle
+RunLog[0]: 0x30 +           0x0    0x7ff8     -> 0x7ff8    
+RunLog[0]: 0x31 $set        0x330     -> 0x330    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x32
+Info: McodeMachine:Run_Machine: new bundle pc=0x32 (size=2)
+LOG:Get_Operands: 0x32  McodeNullInstruction
+LOG:Get_Operands: 0x33  McodeNullInstruction
 Info: 50: Null!
 LOG:Execute     : 0x32  McodeNullInstruction
 Info: 51: Null!
 LOG:Execute     : 0x33  McodeNullInstruction
-Info: McodeMachine:: DMEM[0xffe] = 0xabcd00000000
-
-Info: ___execute_store_operation___ 
-Info: 52: Store!
-LOG:Execute     : 0x34  McodeStoreInstruction
-Info: 53: Null!
-LOG:Execute     : 0x35  McodeNullInstruction
-Info: 54: Null!
-LOG:Execute     : 0x36  McodeNullInstruction
-Info: 55: Null!
-LOG:Execute     : 0x37  McodeNullInstruction
-Info: McodeMachine:: Set_Register(2, 0x7ff0)
-LOG:Set_Results  : 0x30  McodeAluInstruction
-LOG:Set_Results  : 0x31  McodeNullInstruction
 LOG:Set_Results  : 0x32  McodeNullInstruction
 LOG:Set_Results  : 0x33  McodeNullInstruction
-LOG:Set_Results  : 0x34  McodeStoreInstruction
-LOG:Set_Results  : 0x35  McodeNullInstruction
-LOG:Set_Results  : 0x36  McodeNullInstruction
+RunLog[0]: l_50 pc=0x32  McodeInstructionBundle
+RunLog[0]: 0x32 $null        -> 
+RunLog[0]: 0x33 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x34
+Info: McodeMachine:Run_Machine: new bundle pc=0x34 (size=4)
+Info: RunLog[0]: 0x7ff8 = Get_Register(27)
+
+Info: RunLog[0]: 0x330 = Get_Register(1)
+
+LOG:Get_Operands: 0x34  McodeAluInstruction
+Info: RunLog[0]: 0x7ff8 = Get_Register(26)
+
+LOG:Get_Operands: 0x35  McodeAluInstruction
+LOG:Get_Operands: 0x36  McodeSetInstruction
+LOG:Get_Operands: 0x37  McodeNullInstruction
+Info: ___execute_alu_operation___
+Info: 52: Alu!
+LOG:Execute     : 0x34  McodeAluInstruction
+Info: ___execute_alu_operation___
+Info: 53: Alu!
+LOG:Execute     : 0x35  McodeAluInstruction
+Info: 54: Set!
+LOG:Execute     : 0x36  McodeSetInstruction
+Info: 55: Null!
+LOG:Execute     : 0x37  McodeNullInstruction
+Info: RunLog[0]: Set_Register(27, 0x7cc8)
+LOG:Set_Results  : 0x34  McodeAluInstruction
+Info: RunLog[0]: Set_Register(1, 0x7ff0)
+LOG:Set_Results  : 0x35  McodeAluInstruction
+Info: RunLog[0]: Set_Register(2, 0xabcd)
+LOG:Set_Results  : 0x36  McodeSetInstruction
 LOG:Set_Results  : 0x37  McodeNullInstruction
-RunLog: l_48 pc=0x30  McodeInstructionBundle
-RunLog: 0x30 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
-RunLog: 0x31 $null        -> 
-RunLog: 0x32 $null        -> 
-RunLog: 0x33 $null        -> 
-RunLog: 0x34 $st         0x7ff0    0x0    0xabcd     -> 
-RunLog: 0x35 $null        -> 
-RunLog: 0x36 $null        -> 
-RunLog: 0x37 $null        -> 
-Info: McodeMachine:: 0xe4648803 = IMEM[0x38]
-Info: McodeMachine:: 0x1085d7f8 = IMEM[0x39]
-Info: McodeMachine:: 0x68000000 = IMEM[0x3a]
-Info: McodeMachine:: 0x68000000 = IMEM[0x3b]
-Info: McodeMachine:: 0x4c631400 = IMEM[0x3c]
-Info: McodeMachine:: 0x5064e400 = IMEM[0x3d]
-Info: McodeMachine:: 0x68000000 = IMEM[0x3e]
-Info: McodeMachine:: 0x68000000 = IMEM[0x3f]
+RunLog[0]: l_52 pc=0x34  McodeInstructionBundle
+RunLog[0]: 0x34 -           0x7ff8    0x330     -> 0x7cc8    
+RunLog[0]: 0x35 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
+RunLog[0]: 0x36 $set        0xabcd     -> 0xabcd    
+RunLog[0]: 0x37 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x38]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x39]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x3a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x3b]
+Info: McodeAccelerator:: 0x50620c00 = IMEM[0x3c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x3d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x3e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x3f]
 Info: McodeMachine:Run_Machine PC=0x38
 Info: McodeMachine:Run_Machine: new bundle pc=0x38 (size=8)
-Info: McodeMachine:: 0x0 = Get_Register(3)
-
-LOG:Get_Operands: 0x38  McodeSliceInstruction
-Info: McodeMachine:: 0x7ff8 = Get_Register(26)
-
-LOG:Get_Operands: 0x39  McodeAluInstruction
+LOG:Get_Operands: 0x38  McodeNullInstruction
+LOG:Get_Operands: 0x39  McodeNullInstruction
 LOG:Get_Operands: 0x3a  McodeNullInstruction
 LOG:Get_Operands: 0x3b  McodeNullInstruction
-Info: McodeMachine:: 0x7ff0 = Get_Register(2)
+Info: RunLog[0]: 0x7ff0 = Get_Register(1)
 
-LOG:Get_Operands: 0x3c  McodeLoadInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
+Info: RunLog[0]: 0xabcd = Get_Register(2)
 
-Info: McodeMachine:: 0x0 = Get_Register(4)
-
-LOG:Get_Operands: 0x3d  McodeStoreInstruction
+LOG:Get_Operands: 0x3c  McodeStoreInstruction
+LOG:Get_Operands: 0x3d  McodeNullInstruction
 LOG:Get_Operands: 0x3e  McodeNullInstruction
 LOG:Get_Operands: 0x3f  McodeNullInstruction
-LOG:Execute     : 0x38  McodeSliceInstruction
-Info: ___execute_alu_operation___
-Info: 57: Alu!
-LOG:Execute     : 0x39  McodeAluInstruction
+Info: 56: Null!
+LOG:Execute     : 0x38  McodeNullInstruction
+Info: 57: Null!
+LOG:Execute     : 0x39  McodeNullInstruction
 Info: 58: Null!
 LOG:Execute     : 0x3a  McodeNullInstruction
 Info: 59: Null!
 LOG:Execute     : 0x3b  McodeNullInstruction
-Info: McodeMachine:: 0xabcd00000000 = DMEM[0xffe]
-
-Info: ___execute_load_operation___
-Info: 60: Load!
-LOG:Execute     : 0x3c  McodeLoadInstruction
-Info: McodeMachine:: DMEM[0x80] = 0x0
+Info: McodeAccelerator:: DMEM[0xffe] = 0xabcd00000000
 
 Info: ___execute_store_operation___ 
-Info: 61: Store!
-LOG:Execute     : 0x3d  McodeStoreInstruction
+Info: 60: Store!
+LOG:Execute     : 0x3c  McodeStoreInstruction
+Info: 61: Null!
+LOG:Execute     : 0x3d  McodeNullInstruction
 Info: 62: Null!
 LOG:Execute     : 0x3e  McodeNullInstruction
 Info: 63: Null!
 LOG:Execute     : 0x3f  McodeNullInstruction
-Info: McodeMachine:: Set_Register(4, 0x0)
-LOG:Set_Results  : 0x38  McodeSliceInstruction
-Info: McodeMachine:: Set_Register(5, 0x7ff0)
-LOG:Set_Results  : 0x39  McodeAluInstruction
+LOG:Set_Results  : 0x38  McodeNullInstruction
+LOG:Set_Results  : 0x39  McodeNullInstruction
 LOG:Set_Results  : 0x3a  McodeNullInstruction
 LOG:Set_Results  : 0x3b  McodeNullInstruction
-Info: McodeMachine:: Set_Register(3, 0xabcd)
-LOG:Set_Results  : 0x3c  McodeLoadInstruction
-LOG:Set_Results  : 0x3d  McodeStoreInstruction
+LOG:Set_Results  : 0x3c  McodeStoreInstruction
+LOG:Set_Results  : 0x3d  McodeNullInstruction
 LOG:Set_Results  : 0x3e  McodeNullInstruction
 LOG:Set_Results  : 0x3f  McodeNullInstruction
-RunLog: l_56 pc=0x38  McodeInstructionBundle
-RunLog: 0x38    0x0     -> 0x0    
-RunLog: 0x39 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
-RunLog: 0x3a $null        -> 
-RunLog: 0x3b $null        -> 
-RunLog: 0x3c $ld         0x7ff0    0x0     -> 0xabcd    
-RunLog: 0x3d $st         0x400    0x0    0x0     -> 
-RunLog: 0x3e $null        -> 
-RunLog: 0x3f $null        -> 
-Info: McodeMachine:: 0xe4e79006 = IMEM[0x40]
-Info: McodeMachine:: 0x68000000 = IMEM[0x41]
-Info: McodeMachine:: 0x68000000 = IMEM[0x42]
-Info: McodeMachine:: 0x68000000 = IMEM[0x43]
-Info: McodeMachine:: 0x4c662c00 = IMEM[0x44]
-Info: McodeMachine:: 0x5067e408 = IMEM[0x45]
-Info: McodeMachine:: 0x4c68e400 = IMEM[0x46]
-Info: McodeMachine:: 0x4c69e408 = IMEM[0x47]
+RunLog[0]: l_56 pc=0x38  McodeInstructionBundle
+RunLog[0]: 0x38 $null        -> 
+RunLog[0]: 0x39 $null        -> 
+RunLog[0]: 0x3a $null        -> 
+RunLog[0]: 0x3b $null        -> 
+RunLog[0]: 0x3c $st         0x7ff0    0x0    0xabcd     -> 
+RunLog[0]: 0x3d $null        -> 
+RunLog[0]: 0x3e $null        -> 
+RunLog[0]: 0x3f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x9082d7f8 = IMEM[0x40]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x41]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x42]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x43]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x44]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x45]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x46]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x47]
 Info: McodeMachine:Run_Machine PC=0x40
-Info: McodeMachine:Run_Machine: new bundle pc=0x40 (size=8)
-Info: McodeMachine:: 0x0 = Get_Register(6)
+Info: McodeMachine:Run_Machine: new bundle pc=0x40 (size=1)
+Info: RunLog[0]: 0x7ff8 = Get_Register(26)
 
-LOG:Get_Operands: 0x40  McodeSliceInstruction
+LOG:Get_Operands: 0x40  McodeAluInstruction
+Info: ___execute_alu_operation___
+Info: 64: Alu!
+LOG:Execute     : 0x40  McodeAluInstruction
+Info: RunLog[0]: Set_Register(2, 0x7ff0)
+LOG:Set_Results  : 0x40  McodeAluInstruction
+RunLog[0]: l_64 pc=0x40  McodeInstructionBundle
+RunLog[0]: 0x40 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x41
+Info: McodeMachine:Run_Machine: new bundle pc=0x41 (size=1)
 LOG:Get_Operands: 0x41  McodeNullInstruction
-LOG:Get_Operands: 0x42  McodeNullInstruction
-LOG:Get_Operands: 0x43  McodeNullInstruction
-Info: McodeMachine:: 0x7ff0 = Get_Register(5)
-
-LOG:Get_Operands: 0x44  McodeLoadInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
-
-Info: McodeMachine:: 0x0 = Get_Register(7)
-
-LOG:Get_Operands: 0x45  McodeStoreInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
-
-LOG:Get_Operands: 0x46  McodeLoadInstruction
-Info: McodeMachine:: 0x400 = Get_Register(28)
-
-LOG:Get_Operands: 0x47  McodeLoadInstruction
-LOG:Execute     : 0x40  McodeSliceInstruction
 Info: 65: Null!
 LOG:Execute     : 0x41  McodeNullInstruction
+LOG:Set_Results  : 0x41  McodeNullInstruction
+RunLog[0]: l_65 pc=0x41  McodeInstructionBundle
+RunLog[0]: 0x41 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x42
+Info: McodeMachine:Run_Machine: new bundle pc=0x42 (size=2)
+LOG:Get_Operands: 0x42  McodeNullInstruction
+LOG:Get_Operands: 0x43  McodeNullInstruction
 Info: 66: Null!
 LOG:Execute     : 0x42  McodeNullInstruction
 Info: 67: Null!
 LOG:Execute     : 0x43  McodeNullInstruction
-Info: McodeMachine:: 0xabcd00000000 = DMEM[0xffe]
-
-Info: ___execute_load_operation___
-Info: 68: Load!
-LOG:Execute     : 0x44  McodeLoadInstruction
-Info: McodeMachine:: DMEM[0x81] = 0x0
-
-Info: ___execute_store_operation___ 
-Info: 69: Store!
-LOG:Execute     : 0x45  McodeStoreInstruction
-Info: McodeMachine:: 0x0 = DMEM[0x80]
-
-Info: ___execute_load_operation___
-Info: 70: Load!
-LOG:Execute     : 0x46  McodeLoadInstruction
-Info: McodeMachine:: 0x0 = DMEM[0x81]
-
-Info: ___execute_load_operation___
-Info: 71: Load!
-LOG:Execute     : 0x47  McodeLoadInstruction
-Info: McodeMachine:: Set_Register(7, 0x0)
-LOG:Set_Results  : 0x40  McodeSliceInstruction
-LOG:Set_Results  : 0x41  McodeNullInstruction
 LOG:Set_Results  : 0x42  McodeNullInstruction
 LOG:Set_Results  : 0x43  McodeNullInstruction
-Info: McodeMachine:: Set_Register(6, 0xabcd)
-LOG:Set_Results  : 0x44  McodeLoadInstruction
-LOG:Set_Results  : 0x45  McodeStoreInstruction
-Info: McodeMachine:: Set_Register(8, 0x0)
-LOG:Set_Results  : 0x46  McodeLoadInstruction
-Info: McodeMachine:: Set_Register(9, 0x0)
-LOG:Set_Results  : 0x47  McodeLoadInstruction
-RunLog: l_64 pc=0x40  McodeInstructionBundle
-RunLog: 0x40    0x0     -> 0x0    
-RunLog: 0x41 $null        -> 
-RunLog: 0x42 $null        -> 
-RunLog: 0x43 $null        -> 
-RunLog: 0x44 $ld         0x7ff0    0x0     -> 0xabcd    
-RunLog: 0x45 $st         0x400    0x8    0x0     -> 
-RunLog: 0x46 $ld         0x400    0x0     -> 0x0    
-RunLog: 0x47 $ld         0x400    0x8     -> 0x0    
-Info: McodeMachine:: 0x908a4009 = IMEM[0x48]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x49]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x4a]
-Info: McodeMachine:: 0x68000000 = IMEM[0x4b]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x4c]
-Info: McodeMachine:: 0x68000000 = IMEM[0x4d]
-Info: McodeMachine:: 0x68000000 = IMEM[0x4e]
-Info: McodeMachine:: 0x68000000 = IMEM[0x4f]
+RunLog[0]: l_66 pc=0x42  McodeInstructionBundle
+RunLog[0]: 0x42 $null        -> 
+RunLog[0]: 0x43 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x44
+Info: McodeMachine:Run_Machine: new bundle pc=0x44 (size=4)
+LOG:Get_Operands: 0x44  McodeNullInstruction
+LOG:Get_Operands: 0x45  McodeNullInstruction
+LOG:Get_Operands: 0x46  McodeNullInstruction
+LOG:Get_Operands: 0x47  McodeNullInstruction
+Info: 68: Null!
+LOG:Execute     : 0x44  McodeNullInstruction
+Info: 69: Null!
+LOG:Execute     : 0x45  McodeNullInstruction
+Info: 70: Null!
+LOG:Execute     : 0x46  McodeNullInstruction
+Info: 71: Null!
+LOG:Execute     : 0x47  McodeNullInstruction
+LOG:Set_Results  : 0x44  McodeNullInstruction
+LOG:Set_Results  : 0x45  McodeNullInstruction
+LOG:Set_Results  : 0x46  McodeNullInstruction
+LOG:Set_Results  : 0x47  McodeNullInstruction
+RunLog[0]: l_68 pc=0x44  McodeInstructionBundle
+RunLog[0]: 0x44 $null        -> 
+RunLog[0]: 0x45 $null        -> 
+RunLog[0]: 0x46 $null        -> 
+RunLog[0]: 0x47 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x48]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x49]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x4a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x4b]
+Info: McodeAccelerator:: 0x4c631400 = IMEM[0x4c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x4d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x4e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x4f]
 Info: McodeMachine:Run_Machine PC=0x48
-Info: McodeMachine:Run_Machine: new bundle pc=0x48 (size=1)
-Info: McodeMachine:: 0x0 = Get_Register(8)
-
-Info: McodeMachine:: 0x0 = Get_Register(9)
-
-LOG:Get_Operands: 0x48  McodeAluInstruction
-Info: ___execute_alu_operation___
-Info: 72: Alu!
-LOG:Execute     : 0x48  McodeAluInstruction
-Info: McodeMachine:: Set_Register(10, 0x0)
-LOG:Set_Results  : 0x48  McodeAluInstruction
-RunLog: l_72 pc=0x48  McodeInstructionBundle
-RunLog: 0x48 +           0x0    0x0     -> 0x0    
-Info: McodeMachine:Run_Machine PC=0x49
-Info: McodeMachine:Run_Machine: new bundle pc=0x49 (size=1)
+Info: McodeMachine:Run_Machine: new bundle pc=0x48 (size=8)
+LOG:Get_Operands: 0x48  McodeNullInstruction
 LOG:Get_Operands: 0x49  McodeNullInstruction
-Info: 73: Null!
-LOG:Execute     : 0x49  McodeNullInstruction
-LOG:Set_Results  : 0x49  McodeNullInstruction
-RunLog: l_73 pc=0x49  McodeInstructionBundle
-RunLog: 0x49 $null        -> 
-Info: McodeMachine:Run_Machine PC=0x4a
-Info: McodeMachine:Run_Machine: new bundle pc=0x4a (size=2)
 LOG:Get_Operands: 0x4a  McodeNullInstruction
 LOG:Get_Operands: 0x4b  McodeNullInstruction
+Info: RunLog[0]: 0x7ff0 = Get_Register(2)
+
+LOG:Get_Operands: 0x4c  McodeLoadInstruction
+LOG:Get_Operands: 0x4d  McodeNullInstruction
+LOG:Get_Operands: 0x4e  McodeNullInstruction
+LOG:Get_Operands: 0x4f  McodeNullInstruction
+Info: 72: Null!
+LOG:Execute     : 0x48  McodeNullInstruction
+Info: 73: Null!
+LOG:Execute     : 0x49  McodeNullInstruction
 Info: 74: Null!
 LOG:Execute     : 0x4a  McodeNullInstruction
 Info: 75: Null!
 LOG:Execute     : 0x4b  McodeNullInstruction
-LOG:Set_Results  : 0x4a  McodeNullInstruction
-LOG:Set_Results  : 0x4b  McodeNullInstruction
-RunLog: l_74 pc=0x4a  McodeInstructionBundle
-RunLog: 0x4a $null        -> 
-RunLog: 0x4b $null        -> 
-Info: McodeMachine:Run_Machine PC=0x4c
-Info: McodeMachine:Run_Machine: new bundle pc=0x4c (size=4)
-LOG:Get_Operands: 0x4c  McodeNullInstruction
-LOG:Get_Operands: 0x4d  McodeNullInstruction
-LOG:Get_Operands: 0x4e  McodeNullInstruction
-LOG:Get_Operands: 0x4f  McodeNullInstruction
-Info: 76: Null!
-LOG:Execute     : 0x4c  McodeNullInstruction
+Info: McodeAccelerator:: 0xabcd00000000 = DMEM[0xffe]
+
+Info: ___execute_load_operation___
+Info: 76: Load!
+LOG:Execute     : 0x4c  McodeLoadInstruction
 Info: 77: Null!
 LOG:Execute     : 0x4d  McodeNullInstruction
 Info: 78: Null!
 LOG:Execute     : 0x4e  McodeNullInstruction
 Info: 79: Null!
 LOG:Execute     : 0x4f  McodeNullInstruction
-LOG:Set_Results  : 0x4c  McodeNullInstruction
+LOG:Set_Results  : 0x48  McodeNullInstruction
+LOG:Set_Results  : 0x49  McodeNullInstruction
+LOG:Set_Results  : 0x4a  McodeNullInstruction
+LOG:Set_Results  : 0x4b  McodeNullInstruction
+Info: RunLog[0]: Set_Register(3, 0xabcd)
+LOG:Set_Results  : 0x4c  McodeLoadInstruction
 LOG:Set_Results  : 0x4d  McodeNullInstruction
 LOG:Set_Results  : 0x4e  McodeNullInstruction
 LOG:Set_Results  : 0x4f  McodeNullInstruction
-RunLog: l_76 pc=0x4c  McodeInstructionBundle
-RunLog: 0x4c $null        -> 
-RunLog: 0x4d $null        -> 
-RunLog: 0x4e $null        -> 
-RunLog: 0x4f $null        -> 
-Info: McodeMachine:: 0x89080100 = IMEM[0x50]
-Info: McodeMachine:: 0x1081000a = IMEM[0x51]
-Info: McodeMachine:: 0x68000000 = IMEM[0x52]
-Info: McodeMachine:: 0x68000000 = IMEM[0x53]
-Info: McodeMachine:: 0x68000000 = IMEM[0x54]
-Info: McodeMachine:: 0x68000000 = IMEM[0x55]
-Info: McodeMachine:: 0x68000000 = IMEM[0x56]
-Info: McodeMachine:: 0x68000000 = IMEM[0x57]
+RunLog[0]: l_72 pc=0x48  McodeInstructionBundle
+RunLog[0]: 0x48 $null        -> 
+RunLog[0]: 0x49 $null        -> 
+RunLog[0]: 0x4a $null        -> 
+RunLog[0]: 0x4b $null        -> 
+RunLog[0]: 0x4c $ld         0x7ff0    0x0     -> 0xabcd    
+RunLog[0]: 0x4d $null        -> 
+RunLog[0]: 0x4e $null        -> 
+RunLog[0]: 0x4f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe4648803 = IMEM[0x50]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x51]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x52]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x53]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x54]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x55]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x56]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x57]
 Info: McodeMachine:Run_Machine PC=0x50
-Info: McodeMachine:Run_Machine: new bundle pc=0x50 (size=8)
-Info: McodeMachine:: 0x0 = Get_Register(0)
+Info: McodeMachine:Run_Machine: new bundle pc=0x50 (size=1)
+Info: RunLog[0]: 0xabcd = Get_Register(3)
 
-LOG:Get_Operands: 0x50  McodeBranchInstruction
-Info: McodeMachine:: 0x0 = Get_Register(0)
-
-Info: McodeMachine:: 0x0 = Get_Register(10)
-
-LOG:Get_Operands: 0x51  McodeAluInstruction
+LOG:Get_Operands: 0x50  McodeSliceInstruction
+LOG:Execute     : 0x50  McodeSliceInstruction
+Info: RunLog[0]: Set_Register(4, 0xc)
+LOG:Set_Results  : 0x50  McodeSliceInstruction
+RunLog[0]: l_80 pc=0x50  McodeInstructionBundle
+RunLog[0]: 0x50    0xabcd     -> 0xc    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x51
+Info: McodeMachine:Run_Machine: new bundle pc=0x51 (size=1)
+LOG:Get_Operands: 0x51  McodeNullInstruction
+Info: 81: Null!
+LOG:Execute     : 0x51  McodeNullInstruction
+LOG:Set_Results  : 0x51  McodeNullInstruction
+RunLog[0]: l_81 pc=0x51  McodeInstructionBundle
+RunLog[0]: 0x51 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x52
+Info: McodeMachine:Run_Machine: new bundle pc=0x52 (size=2)
 LOG:Get_Operands: 0x52  McodeNullInstruction
 LOG:Get_Operands: 0x53  McodeNullInstruction
-LOG:Get_Operands: 0x54  McodeNullInstruction
-LOG:Get_Operands: 0x55  McodeNullInstruction
-LOG:Get_Operands: 0x56  McodeNullInstruction
-LOG:Get_Operands: 0x57  McodeNullInstruction
-Info: ___execute_branch_operation___
-Info: 80: Branch!
-LOG:Execute     : 0x50  McodeBranchInstruction
-Info: ___execute_alu_operation___
-Info: 81: Alu!
-LOG:Execute     : 0x51  McodeAluInstruction
 Info: 82: Null!
 LOG:Execute     : 0x52  McodeNullInstruction
 Info: 83: Null!
 LOG:Execute     : 0x53  McodeNullInstruction
+LOG:Set_Results  : 0x52  McodeNullInstruction
+LOG:Set_Results  : 0x53  McodeNullInstruction
+RunLog[0]: l_82 pc=0x52  McodeInstructionBundle
+RunLog[0]: 0x52 $null        -> 
+RunLog[0]: 0x53 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x54
+Info: McodeMachine:Run_Machine: new bundle pc=0x54 (size=4)
+LOG:Get_Operands: 0x54  McodeNullInstruction
+LOG:Get_Operands: 0x55  McodeNullInstruction
+LOG:Get_Operands: 0x56  McodeNullInstruction
+LOG:Get_Operands: 0x57  McodeNullInstruction
 Info: 84: Null!
 LOG:Execute     : 0x54  McodeNullInstruction
 Info: 85: Null!
@@ -642,120 +806,108 @@ Info: 86: Null!
 LOG:Execute     : 0x56  McodeNullInstruction
 Info: 87: Null!
 LOG:Execute     : 0x57  McodeNullInstruction
-LOG:Set_Results  : 0x50  McodeBranchInstruction
-Info: McodeMachine:: Set_Register(1, 0x0)
-LOG:Set_Results  : 0x51  McodeAluInstruction
-LOG:Set_Results  : 0x52  McodeNullInstruction
-LOG:Set_Results  : 0x53  McodeNullInstruction
 LOG:Set_Results  : 0x54  McodeNullInstruction
 LOG:Set_Results  : 0x55  McodeNullInstruction
 LOG:Set_Results  : 0x56  McodeNullInstruction
 LOG:Set_Results  : 0x57  McodeNullInstruction
-RunLog: l_80 pc=0x50  McodeInstructionBundle
-RunLog: 0x50 $branch     0x0     ->   npc= 88
-RunLog: 0x51 +           0x0    0x0     -> 0x0    
-RunLog: 0x52 $null        -> 
-RunLog: 0x53 $null        -> 
-RunLog: 0x54 $null        -> 
-RunLog: 0x55 $null        -> 
-RunLog: 0x56 $null        -> 
-RunLog: 0x57 $null        -> 
-Info: McodeMachine:: 0x909b001a = IMEM[0x58]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x59]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x5a]
-Info: McodeMachine:: 0x68000000 = IMEM[0x5b]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x5c]
-Info: McodeMachine:: 0x68000000 = IMEM[0x5d]
-Info: McodeMachine:: 0x68000000 = IMEM[0x5e]
-Info: McodeMachine:: 0x68000000 = IMEM[0x5f]
+RunLog[0]: l_84 pc=0x54  McodeInstructionBundle
+RunLog[0]: 0x54 $null        -> 
+RunLog[0]: 0x55 $null        -> 
+RunLog[0]: 0x56 $null        -> 
+RunLog[0]: 0x57 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x9085d7f8 = IMEM[0x58]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x59]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5b]
+Info: McodeAccelerator:: 0x5064e400 = IMEM[0x5c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x5f]
 Info: McodeMachine:Run_Machine PC=0x58
-Info: McodeMachine:Run_Machine: new bundle pc=0x58 (size=1)
-Info: McodeMachine:: 0x0 = Get_Register(0)
-
-Info: McodeMachine:: 0x7ff8 = Get_Register(26)
+Info: McodeMachine:Run_Machine: new bundle pc=0x58 (size=8)
+Info: RunLog[0]: 0x7ff8 = Get_Register(26)
 
 LOG:Get_Operands: 0x58  McodeAluInstruction
+LOG:Get_Operands: 0x59  McodeNullInstruction
+LOG:Get_Operands: 0x5a  McodeNullInstruction
+LOG:Get_Operands: 0x5b  McodeNullInstruction
+Info: RunLog[0]: 0x400 = Get_Register(28)
+
+Info: RunLog[0]: 0xc = Get_Register(4)
+
+LOG:Get_Operands: 0x5c  McodeStoreInstruction
+LOG:Get_Operands: 0x5d  McodeNullInstruction
+LOG:Get_Operands: 0x5e  McodeNullInstruction
+LOG:Get_Operands: 0x5f  McodeNullInstruction
 Info: ___execute_alu_operation___
 Info: 88: Alu!
 LOG:Execute     : 0x58  McodeAluInstruction
-Info: McodeMachine:: Set_Register(27, 0x7ff8)
-LOG:Set_Results  : 0x58  McodeAluInstruction
-RunLog: l_88 pc=0x58  McodeInstructionBundle
-RunLog: 0x58 +           0x0    0x7ff8     -> 0x7ff8    
-Info: McodeMachine:Run_Machine PC=0x59
-Info: McodeMachine:Run_Machine: new bundle pc=0x59 (size=1)
-LOG:Get_Operands: 0x59  McodeNullInstruction
 Info: 89: Null!
 LOG:Execute     : 0x59  McodeNullInstruction
-LOG:Set_Results  : 0x59  McodeNullInstruction
-RunLog: l_89 pc=0x59  McodeInstructionBundle
-RunLog: 0x59 $null        -> 
-Info: McodeMachine:Run_Machine PC=0x5a
-Info: McodeMachine:Run_Machine: new bundle pc=0x5a (size=2)
-LOG:Get_Operands: 0x5a  McodeNullInstruction
-LOG:Get_Operands: 0x5b  McodeNullInstruction
 Info: 90: Null!
 LOG:Execute     : 0x5a  McodeNullInstruction
 Info: 91: Null!
 LOG:Execute     : 0x5b  McodeNullInstruction
-LOG:Set_Results  : 0x5a  McodeNullInstruction
-LOG:Set_Results  : 0x5b  McodeNullInstruction
-RunLog: l_90 pc=0x5a  McodeInstructionBundle
-RunLog: 0x5a $null        -> 
-RunLog: 0x5b $null        -> 
-Info: McodeMachine:Run_Machine PC=0x5c
-Info: McodeMachine:Run_Machine: new bundle pc=0x5c (size=4)
-LOG:Get_Operands: 0x5c  McodeNullInstruction
-LOG:Get_Operands: 0x5d  McodeNullInstruction
-LOG:Get_Operands: 0x5e  McodeNullInstruction
-LOG:Get_Operands: 0x5f  McodeNullInstruction
-Info: 92: Null!
-LOG:Execute     : 0x5c  McodeNullInstruction
+Info: McodeAccelerator:: DMEM[0x80] = 0xc00000000
+
+Info: ___execute_store_operation___ 
+Info: 92: Store!
+LOG:Execute     : 0x5c  McodeStoreInstruction
 Info: 93: Null!
 LOG:Execute     : 0x5d  McodeNullInstruction
 Info: 94: Null!
 LOG:Execute     : 0x5e  McodeNullInstruction
 Info: 95: Null!
 LOG:Execute     : 0x5f  McodeNullInstruction
-LOG:Set_Results  : 0x5c  McodeNullInstruction
+Info: RunLog[0]: Set_Register(5, 0x7ff0)
+LOG:Set_Results  : 0x58  McodeAluInstruction
+LOG:Set_Results  : 0x59  McodeNullInstruction
+LOG:Set_Results  : 0x5a  McodeNullInstruction
+LOG:Set_Results  : 0x5b  McodeNullInstruction
+LOG:Set_Results  : 0x5c  McodeStoreInstruction
 LOG:Set_Results  : 0x5d  McodeNullInstruction
 LOG:Set_Results  : 0x5e  McodeNullInstruction
 LOG:Set_Results  : 0x5f  McodeNullInstruction
-RunLog: l_92 pc=0x5c  McodeInstructionBundle
-RunLog: 0x5c $null        -> 
-RunLog: 0x5d $null        -> 
-RunLog: 0x5e $null        -> 
-RunLog: 0x5f $null        -> 
-Info: McodeMachine:: 0x8c000000 = IMEM[0x60]
-Info: McodeMachine:: 0x68000000 = IMEM[0x61]
-Info: McodeMachine:: 0x68000000 = IMEM[0x62]
-Info: McodeMachine:: 0x68000000 = IMEM[0x63]
-Info: McodeMachine:: 0x4c9adc00 = IMEM[0x64]
-Info: McodeMachine:: 0x68000000 = IMEM[0x65]
-Info: McodeMachine:: 0x68000000 = IMEM[0x66]
-Info: McodeMachine:: 0x68000000 = IMEM[0x67]
+RunLog[0]: l_88 pc=0x58  McodeInstructionBundle
+RunLog[0]: 0x58 +           0x7ff8    0xfffffffffffffff8     -> 0x7ff0    
+RunLog[0]: 0x59 $null        -> 
+RunLog[0]: 0x5a $null        -> 
+RunLog[0]: 0x5b $null        -> 
+RunLog[0]: 0x5c $st         0x400    0x0    0xc     -> 
+RunLog[0]: 0x5d $null        -> 
+RunLog[0]: 0x5e $null        -> 
+RunLog[0]: 0x5f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x60]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x61]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x62]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x63]
+Info: McodeAccelerator:: 0x4c662c00 = IMEM[0x64]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x65]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x66]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x67]
 Info: McodeMachine:Run_Machine PC=0x60
 Info: McodeMachine:Run_Machine: new bundle pc=0x60 (size=8)
-LOG:Get_Operands: 0x60  McodeReturnInstruction
+LOG:Get_Operands: 0x60  McodeNullInstruction
 LOG:Get_Operands: 0x61  McodeNullInstruction
 LOG:Get_Operands: 0x62  McodeNullInstruction
 LOG:Get_Operands: 0x63  McodeNullInstruction
-Info: McodeMachine:: 0x7ff8 = Get_Register(27)
+Info: RunLog[0]: 0x7ff0 = Get_Register(5)
 
 LOG:Get_Operands: 0x64  McodeLoadInstruction
 LOG:Get_Operands: 0x65  McodeNullInstruction
 LOG:Get_Operands: 0x66  McodeNullInstruction
 LOG:Get_Operands: 0x67  McodeNullInstruction
-Info: ___execute_return_operation___
-Info: 96: Return!
-LOG:Execute     : 0x60  McodeReturnInstruction
+Info: 96: Null!
+LOG:Execute     : 0x60  McodeNullInstruction
 Info: 97: Null!
 LOG:Execute     : 0x61  McodeNullInstruction
 Info: 98: Null!
 LOG:Execute     : 0x62  McodeNullInstruction
 Info: 99: Null!
 LOG:Execute     : 0x63  McodeNullInstruction
-Info: McodeMachine:: 0x7ff8 = DMEM[0xfff]
+Info: McodeAccelerator:: 0xabcd00000000 = DMEM[0xffe]
 
 Info: ___execute_load_operation___
 Info: 100: Load!
@@ -766,39 +918,490 @@ Info: 102: Null!
 LOG:Execute     : 0x66  McodeNullInstruction
 Info: 103: Null!
 LOG:Execute     : 0x67  McodeNullInstruction
-LOG:Set_Results  : 0x60  McodeReturnInstruction
+LOG:Set_Results  : 0x60  McodeNullInstruction
 LOG:Set_Results  : 0x61  McodeNullInstruction
 LOG:Set_Results  : 0x62  McodeNullInstruction
 LOG:Set_Results  : 0x63  McodeNullInstruction
-Info: McodeMachine:: Set_Register(26, 0x7ff8)
+Info: RunLog[0]: Set_Register(6, 0xabcd)
 LOG:Set_Results  : 0x64  McodeLoadInstruction
 LOG:Set_Results  : 0x65  McodeNullInstruction
 LOG:Set_Results  : 0x66  McodeNullInstruction
 LOG:Set_Results  : 0x67  McodeNullInstruction
-RunLog: l_96 pc=0x60  McodeInstructionBundle
-RunLog: 0x60 $ret         ->   npc=  24
-RunLog: 0x61 $null        -> 
-RunLog: 0x62 $null        -> 
-RunLog: 0x63 $null        -> 
-RunLog: 0x64 $ld         0x7ff8    0x0     -> 0x7ff8    
-RunLog: 0x65 $null        -> 
-RunLog: 0x66 $null        -> 
-RunLog: 0x67 $null        -> 
-Info: McodeMachine:: 0xec000000 = IMEM[0x18]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x19]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x1a]
-Info: McodeMachine:: 0x68000000 = IMEM[0x1b]
-Info: McodeMachine:: 0xe8000000 = IMEM[0x1c]
-Info: McodeMachine:: 0x68000000 = IMEM[0x1d]
-Info: McodeMachine:: 0x68000000 = IMEM[0x1e]
-Info: McodeMachine:: 0x68000000 = IMEM[0x1f]
-Info: McodeMachine:Run_Machine PC=0x18
-Info: McodeMachine:Run_Machine: new bundle pc=0x18 (size=1)
-LOG:Get_Operands: 0x18  McodeHaltInstruction
-Info: 24: Halt!
-LOG:Execute     : 0x18  McodeHaltInstruction
-LOG:Set_Results  : 0x18  McodeHaltInstruction
-RunLog: l_24 pc=0x18  McodeInstructionBundle
-RunLog: 0x18 $halt        -> 
-Info: McodeMachine run finished after 22 bundles
+RunLog[0]: l_96 pc=0x60  McodeInstructionBundle
+RunLog[0]: 0x60 $null        -> 
+RunLog[0]: 0x61 $null        -> 
+RunLog[0]: 0x62 $null        -> 
+RunLog[0]: 0x63 $null        -> 
+RunLog[0]: 0x64 $ld         0x7ff0    0x0     -> 0xabcd    
+RunLog[0]: 0x65 $null        -> 
+RunLog[0]: 0x66 $null        -> 
+RunLog[0]: 0x67 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe4e79006 = IMEM[0x68]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x69]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x6a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x6b]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x6c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x6d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x6e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x6f]
+Info: McodeMachine:Run_Machine PC=0x68
+Info: McodeMachine:Run_Machine: new bundle pc=0x68 (size=1)
+Info: RunLog[0]: 0xabcd = Get_Register(6)
 
+LOG:Get_Operands: 0x68  McodeSliceInstruction
+LOG:Execute     : 0x68  McodeSliceInstruction
+Info: RunLog[0]: Set_Register(7, 0xab)
+LOG:Set_Results  : 0x68  McodeSliceInstruction
+RunLog[0]: l_104 pc=0x68  McodeInstructionBundle
+RunLog[0]: 0x68    0xabcd     -> 0xab    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x69
+Info: McodeMachine:Run_Machine: new bundle pc=0x69 (size=1)
+LOG:Get_Operands: 0x69  McodeNullInstruction
+Info: 105: Null!
+LOG:Execute     : 0x69  McodeNullInstruction
+LOG:Set_Results  : 0x69  McodeNullInstruction
+RunLog[0]: l_105 pc=0x69  McodeInstructionBundle
+RunLog[0]: 0x69 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x6a
+Info: McodeMachine:Run_Machine: new bundle pc=0x6a (size=2)
+LOG:Get_Operands: 0x6a  McodeNullInstruction
+LOG:Get_Operands: 0x6b  McodeNullInstruction
+Info: 106: Null!
+LOG:Execute     : 0x6a  McodeNullInstruction
+Info: 107: Null!
+LOG:Execute     : 0x6b  McodeNullInstruction
+LOG:Set_Results  : 0x6a  McodeNullInstruction
+LOG:Set_Results  : 0x6b  McodeNullInstruction
+RunLog[0]: l_106 pc=0x6a  McodeInstructionBundle
+RunLog[0]: 0x6a $null        -> 
+RunLog[0]: 0x6b $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x6c
+Info: McodeMachine:Run_Machine: new bundle pc=0x6c (size=4)
+LOG:Get_Operands: 0x6c  McodeNullInstruction
+LOG:Get_Operands: 0x6d  McodeNullInstruction
+LOG:Get_Operands: 0x6e  McodeNullInstruction
+LOG:Get_Operands: 0x6f  McodeNullInstruction
+Info: 108: Null!
+LOG:Execute     : 0x6c  McodeNullInstruction
+Info: 109: Null!
+LOG:Execute     : 0x6d  McodeNullInstruction
+Info: 110: Null!
+LOG:Execute     : 0x6e  McodeNullInstruction
+Info: 111: Null!
+LOG:Execute     : 0x6f  McodeNullInstruction
+LOG:Set_Results  : 0x6c  McodeNullInstruction
+LOG:Set_Results  : 0x6d  McodeNullInstruction
+LOG:Set_Results  : 0x6e  McodeNullInstruction
+LOG:Set_Results  : 0x6f  McodeNullInstruction
+RunLog[0]: l_108 pc=0x6c  McodeInstructionBundle
+RunLog[0]: 0x6c $null        -> 
+RunLog[0]: 0x6d $null        -> 
+RunLog[0]: 0x6e $null        -> 
+RunLog[0]: 0x6f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x70]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x71]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x72]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x73]
+Info: McodeAccelerator:: 0x5067e408 = IMEM[0x74]
+Info: McodeAccelerator:: 0x4c68e400 = IMEM[0x75]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x76]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x77]
+Info: McodeMachine:Run_Machine PC=0x70
+Info: McodeMachine:Run_Machine: new bundle pc=0x70 (size=8)
+LOG:Get_Operands: 0x70  McodeNullInstruction
+LOG:Get_Operands: 0x71  McodeNullInstruction
+LOG:Get_Operands: 0x72  McodeNullInstruction
+LOG:Get_Operands: 0x73  McodeNullInstruction
+Info: RunLog[0]: 0x400 = Get_Register(28)
+
+Info: RunLog[0]: 0xab = Get_Register(7)
+
+LOG:Get_Operands: 0x74  McodeStoreInstruction
+Info: RunLog[0]: 0x400 = Get_Register(28)
+
+LOG:Get_Operands: 0x75  McodeLoadInstruction
+LOG:Get_Operands: 0x76  McodeNullInstruction
+LOG:Get_Operands: 0x77  McodeNullInstruction
+Info: 112: Null!
+LOG:Execute     : 0x70  McodeNullInstruction
+Info: 113: Null!
+LOG:Execute     : 0x71  McodeNullInstruction
+Info: 114: Null!
+LOG:Execute     : 0x72  McodeNullInstruction
+Info: 115: Null!
+LOG:Execute     : 0x73  McodeNullInstruction
+Info: McodeAccelerator:: DMEM[0x81] = 0xab00000000
+
+Info: ___execute_store_operation___ 
+Info: 116: Store!
+LOG:Execute     : 0x74  McodeStoreInstruction
+Info: McodeAccelerator:: 0xc00000000 = DMEM[0x80]
+
+Info: ___execute_load_operation___
+Info: 117: Load!
+LOG:Execute     : 0x75  McodeLoadInstruction
+Info: 118: Null!
+LOG:Execute     : 0x76  McodeNullInstruction
+Info: 119: Null!
+LOG:Execute     : 0x77  McodeNullInstruction
+LOG:Set_Results  : 0x70  McodeNullInstruction
+LOG:Set_Results  : 0x71  McodeNullInstruction
+LOG:Set_Results  : 0x72  McodeNullInstruction
+LOG:Set_Results  : 0x73  McodeNullInstruction
+LOG:Set_Results  : 0x74  McodeStoreInstruction
+Info: RunLog[0]: Set_Register(8, 0xc)
+LOG:Set_Results  : 0x75  McodeLoadInstruction
+LOG:Set_Results  : 0x76  McodeNullInstruction
+LOG:Set_Results  : 0x77  McodeNullInstruction
+RunLog[0]: l_112 pc=0x70  McodeInstructionBundle
+RunLog[0]: 0x70 $null        -> 
+RunLog[0]: 0x71 $null        -> 
+RunLog[0]: 0x72 $null        -> 
+RunLog[0]: 0x73 $null        -> 
+RunLog[0]: 0x74 $st         0x400    0x8    0xab     -> 
+RunLog[0]: 0x75 $ld         0x400    0x0     -> 0xc    
+RunLog[0]: 0x76 $null        -> 
+RunLog[0]: 0x77 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x78]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x79]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7b]
+Info: McodeAccelerator:: 0x4c69e408 = IMEM[0x7c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x7f]
+Info: McodeMachine:Run_Machine PC=0x78
+Info: McodeMachine:Run_Machine: new bundle pc=0x78 (size=8)
+LOG:Get_Operands: 0x78  McodeNullInstruction
+LOG:Get_Operands: 0x79  McodeNullInstruction
+LOG:Get_Operands: 0x7a  McodeNullInstruction
+LOG:Get_Operands: 0x7b  McodeNullInstruction
+Info: RunLog[0]: 0x400 = Get_Register(28)
+
+LOG:Get_Operands: 0x7c  McodeLoadInstruction
+LOG:Get_Operands: 0x7d  McodeNullInstruction
+LOG:Get_Operands: 0x7e  McodeNullInstruction
+LOG:Get_Operands: 0x7f  McodeNullInstruction
+Info: 120: Null!
+LOG:Execute     : 0x78  McodeNullInstruction
+Info: 121: Null!
+LOG:Execute     : 0x79  McodeNullInstruction
+Info: 122: Null!
+LOG:Execute     : 0x7a  McodeNullInstruction
+Info: 123: Null!
+LOG:Execute     : 0x7b  McodeNullInstruction
+Info: McodeAccelerator:: 0xab00000000 = DMEM[0x81]
+
+Info: ___execute_load_operation___
+Info: 124: Load!
+LOG:Execute     : 0x7c  McodeLoadInstruction
+Info: 125: Null!
+LOG:Execute     : 0x7d  McodeNullInstruction
+Info: 126: Null!
+LOG:Execute     : 0x7e  McodeNullInstruction
+Info: 127: Null!
+LOG:Execute     : 0x7f  McodeNullInstruction
+LOG:Set_Results  : 0x78  McodeNullInstruction
+LOG:Set_Results  : 0x79  McodeNullInstruction
+LOG:Set_Results  : 0x7a  McodeNullInstruction
+LOG:Set_Results  : 0x7b  McodeNullInstruction
+Info: RunLog[0]: Set_Register(9, 0xab)
+LOG:Set_Results  : 0x7c  McodeLoadInstruction
+LOG:Set_Results  : 0x7d  McodeNullInstruction
+LOG:Set_Results  : 0x7e  McodeNullInstruction
+LOG:Set_Results  : 0x7f  McodeNullInstruction
+RunLog[0]: l_120 pc=0x78  McodeInstructionBundle
+RunLog[0]: 0x78 $null        -> 
+RunLog[0]: 0x79 $null        -> 
+RunLog[0]: 0x7a $null        -> 
+RunLog[0]: 0x7b $null        -> 
+RunLog[0]: 0x7c $ld         0x400    0x8     -> 0xab    
+RunLog[0]: 0x7d $null        -> 
+RunLog[0]: 0x7e $null        -> 
+RunLog[0]: 0x7f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x908a4009 = IMEM[0x80]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x81]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x82]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x83]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x84]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x85]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x86]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x87]
+Info: McodeMachine:Run_Machine PC=0x80
+Info: McodeMachine:Run_Machine: new bundle pc=0x80 (size=1)
+Info: RunLog[0]: 0xc = Get_Register(8)
+
+Info: RunLog[0]: 0xab = Get_Register(9)
+
+LOG:Get_Operands: 0x80  McodeAluInstruction
+Info: ___execute_alu_operation___
+Info: 128: Alu!
+LOG:Execute     : 0x80  McodeAluInstruction
+Info: RunLog[0]: Set_Register(10, 0xb7)
+LOG:Set_Results  : 0x80  McodeAluInstruction
+RunLog[0]: l_128 pc=0x80  McodeInstructionBundle
+RunLog[0]: 0x80 +           0xc    0xab     -> 0xb7    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x81
+Info: McodeMachine:Run_Machine: new bundle pc=0x81 (size=1)
+LOG:Get_Operands: 0x81  McodeNullInstruction
+Info: 129: Null!
+LOG:Execute     : 0x81  McodeNullInstruction
+LOG:Set_Results  : 0x81  McodeNullInstruction
+RunLog[0]: l_129 pc=0x81  McodeInstructionBundle
+RunLog[0]: 0x81 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x82
+Info: McodeMachine:Run_Machine: new bundle pc=0x82 (size=2)
+LOG:Get_Operands: 0x82  McodeNullInstruction
+LOG:Get_Operands: 0x83  McodeNullInstruction
+Info: 130: Null!
+LOG:Execute     : 0x82  McodeNullInstruction
+Info: 131: Null!
+LOG:Execute     : 0x83  McodeNullInstruction
+LOG:Set_Results  : 0x82  McodeNullInstruction
+LOG:Set_Results  : 0x83  McodeNullInstruction
+RunLog[0]: l_130 pc=0x82  McodeInstructionBundle
+RunLog[0]: 0x82 $null        -> 
+RunLog[0]: 0x83 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x84
+Info: McodeMachine:Run_Machine: new bundle pc=0x84 (size=4)
+LOG:Get_Operands: 0x84  McodeNullInstruction
+LOG:Get_Operands: 0x85  McodeNullInstruction
+LOG:Get_Operands: 0x86  McodeNullInstruction
+LOG:Get_Operands: 0x87  McodeNullInstruction
+Info: 132: Null!
+LOG:Execute     : 0x84  McodeNullInstruction
+Info: 133: Null!
+LOG:Execute     : 0x85  McodeNullInstruction
+Info: 134: Null!
+LOG:Execute     : 0x86  McodeNullInstruction
+Info: 135: Null!
+LOG:Execute     : 0x87  McodeNullInstruction
+LOG:Set_Results  : 0x84  McodeNullInstruction
+LOG:Set_Results  : 0x85  McodeNullInstruction
+LOG:Set_Results  : 0x86  McodeNullInstruction
+LOG:Set_Results  : 0x87  McodeNullInstruction
+RunLog[0]: l_132 pc=0x84  McodeInstructionBundle
+RunLog[0]: 0x84 $null        -> 
+RunLog[0]: 0x85 $null        -> 
+RunLog[0]: 0x86 $null        -> 
+RunLog[0]: 0x87 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x89080100 = IMEM[0x88]
+Info: McodeAccelerator:: 0x1081000a = IMEM[0x89]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8b]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x8f]
+Info: McodeMachine:Run_Machine PC=0x88
+Info: McodeMachine:Run_Machine: new bundle pc=0x88 (size=8)
+Info: RunLog[0]: 0x0 = Get_Register(0)
+
+LOG:Get_Operands: 0x88  McodeBranchInstruction
+Info: RunLog[0]: 0x0 = Get_Register(0)
+
+Info: RunLog[0]: 0xb7 = Get_Register(10)
+
+LOG:Get_Operands: 0x89  McodeAluInstruction
+LOG:Get_Operands: 0x8a  McodeNullInstruction
+LOG:Get_Operands: 0x8b  McodeNullInstruction
+LOG:Get_Operands: 0x8c  McodeNullInstruction
+LOG:Get_Operands: 0x8d  McodeNullInstruction
+LOG:Get_Operands: 0x8e  McodeNullInstruction
+LOG:Get_Operands: 0x8f  McodeNullInstruction
+Info: ___execute_branch_operation___
+Info: 136: Branch!
+LOG:Execute     : 0x88  McodeBranchInstruction
+Info: ___execute_alu_operation___
+Info: 137: Alu!
+LOG:Execute     : 0x89  McodeAluInstruction
+Info: 138: Null!
+LOG:Execute     : 0x8a  McodeNullInstruction
+Info: 139: Null!
+LOG:Execute     : 0x8b  McodeNullInstruction
+Info: 140: Null!
+LOG:Execute     : 0x8c  McodeNullInstruction
+Info: 141: Null!
+LOG:Execute     : 0x8d  McodeNullInstruction
+Info: 142: Null!
+LOG:Execute     : 0x8e  McodeNullInstruction
+Info: 143: Null!
+LOG:Execute     : 0x8f  McodeNullInstruction
+LOG:Set_Results  : 0x88  McodeBranchInstruction
+Info: RunLog[0]: Set_Register(1, 0xb7)
+LOG:Set_Results  : 0x89  McodeAluInstruction
+LOG:Set_Results  : 0x8a  McodeNullInstruction
+LOG:Set_Results  : 0x8b  McodeNullInstruction
+LOG:Set_Results  : 0x8c  McodeNullInstruction
+LOG:Set_Results  : 0x8d  McodeNullInstruction
+LOG:Set_Results  : 0x8e  McodeNullInstruction
+LOG:Set_Results  : 0x8f  McodeNullInstruction
+RunLog[0]: l_136 pc=0x88  McodeInstructionBundle
+RunLog[0]: 0x88 $branch     0x0     ->   npc=0x90
+RunLog[0]: 0x89 +           0x0    0xb7     -> 0xb7    
+RunLog[0]: 0x8a $null        -> 
+RunLog[0]: 0x8b $null        -> 
+RunLog[0]: 0x8c $null        -> 
+RunLog[0]: 0x8d $null        -> 
+RunLog[0]: 0x8e $null        -> 
+RunLog[0]: 0x8f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x909b001a = IMEM[0x90]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x91]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x92]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x93]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x94]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x95]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x96]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x97]
+Info: McodeMachine:Run_Machine PC=0x90
+Info: McodeMachine:Run_Machine: new bundle pc=0x90 (size=1)
+Info: RunLog[0]: 0x0 = Get_Register(0)
+
+Info: RunLog[0]: 0x7ff8 = Get_Register(26)
+
+LOG:Get_Operands: 0x90  McodeAluInstruction
+Info: ___execute_alu_operation___
+Info: 144: Alu!
+LOG:Execute     : 0x90  McodeAluInstruction
+Info: RunLog[0]: Set_Register(27, 0x7ff8)
+LOG:Set_Results  : 0x90  McodeAluInstruction
+RunLog[0]: l_144 pc=0x90  McodeInstructionBundle
+RunLog[0]: 0x90 +           0x0    0x7ff8     -> 0x7ff8    
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x91
+Info: McodeMachine:Run_Machine: new bundle pc=0x91 (size=1)
+LOG:Get_Operands: 0x91  McodeNullInstruction
+Info: 145: Null!
+LOG:Execute     : 0x91  McodeNullInstruction
+LOG:Set_Results  : 0x91  McodeNullInstruction
+RunLog[0]: l_145 pc=0x91  McodeInstructionBundle
+RunLog[0]: 0x91 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x92
+Info: McodeMachine:Run_Machine: new bundle pc=0x92 (size=2)
+LOG:Get_Operands: 0x92  McodeNullInstruction
+LOG:Get_Operands: 0x93  McodeNullInstruction
+Info: 146: Null!
+LOG:Execute     : 0x92  McodeNullInstruction
+Info: 147: Null!
+LOG:Execute     : 0x93  McodeNullInstruction
+LOG:Set_Results  : 0x92  McodeNullInstruction
+LOG:Set_Results  : 0x93  McodeNullInstruction
+RunLog[0]: l_146 pc=0x92  McodeInstructionBundle
+RunLog[0]: 0x92 $null        -> 
+RunLog[0]: 0x93 $null        -> 
+Info: Tick on thread 0
+Info: McodeMachine:Run_Machine PC=0x94
+Info: McodeMachine:Run_Machine: new bundle pc=0x94 (size=4)
+LOG:Get_Operands: 0x94  McodeNullInstruction
+LOG:Get_Operands: 0x95  McodeNullInstruction
+LOG:Get_Operands: 0x96  McodeNullInstruction
+LOG:Get_Operands: 0x97  McodeNullInstruction
+Info: 148: Null!
+LOG:Execute     : 0x94  McodeNullInstruction
+Info: 149: Null!
+LOG:Execute     : 0x95  McodeNullInstruction
+Info: 150: Null!
+LOG:Execute     : 0x96  McodeNullInstruction
+Info: 151: Null!
+LOG:Execute     : 0x97  McodeNullInstruction
+LOG:Set_Results  : 0x94  McodeNullInstruction
+LOG:Set_Results  : 0x95  McodeNullInstruction
+LOG:Set_Results  : 0x96  McodeNullInstruction
+LOG:Set_Results  : 0x97  McodeNullInstruction
+RunLog[0]: l_148 pc=0x94  McodeInstructionBundle
+RunLog[0]: 0x94 $null        -> 
+RunLog[0]: 0x95 $null        -> 
+RunLog[0]: 0x96 $null        -> 
+RunLog[0]: 0x97 $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x8c000000 = IMEM[0x98]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x99]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9a]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9b]
+Info: McodeAccelerator:: 0x4c9adc00 = IMEM[0x9c]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9d]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9e]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x9f]
+Info: McodeMachine:Run_Machine PC=0x98
+Info: McodeMachine:Run_Machine: new bundle pc=0x98 (size=8)
+LOG:Get_Operands: 0x98  McodeReturnInstruction
+LOG:Get_Operands: 0x99  McodeNullInstruction
+LOG:Get_Operands: 0x9a  McodeNullInstruction
+LOG:Get_Operands: 0x9b  McodeNullInstruction
+Info: RunLog[0]: 0x7ff8 = Get_Register(27)
+
+LOG:Get_Operands: 0x9c  McodeLoadInstruction
+LOG:Get_Operands: 0x9d  McodeNullInstruction
+LOG:Get_Operands: 0x9e  McodeNullInstruction
+LOG:Get_Operands: 0x9f  McodeNullInstruction
+Info: ___execute_return_operation___
+Info: 152: Return!
+LOG:Execute     : 0x98  McodeReturnInstruction
+Info: 153: Null!
+LOG:Execute     : 0x99  McodeNullInstruction
+Info: 154: Null!
+LOG:Execute     : 0x9a  McodeNullInstruction
+Info: 155: Null!
+LOG:Execute     : 0x9b  McodeNullInstruction
+Info: McodeAccelerator:: 0x7ff8 = DMEM[0xfff]
+
+Info: ___execute_load_operation___
+Info: 156: Load!
+LOG:Execute     : 0x9c  McodeLoadInstruction
+Info: 157: Null!
+LOG:Execute     : 0x9d  McodeNullInstruction
+Info: 158: Null!
+LOG:Execute     : 0x9e  McodeNullInstruction
+Info: 159: Null!
+LOG:Execute     : 0x9f  McodeNullInstruction
+LOG:Set_Results  : 0x98  McodeReturnInstruction
+LOG:Set_Results  : 0x99  McodeNullInstruction
+LOG:Set_Results  : 0x9a  McodeNullInstruction
+LOG:Set_Results  : 0x9b  McodeNullInstruction
+Info: RunLog[0]: Set_Register(26, 0x7ff8)
+LOG:Set_Results  : 0x9c  McodeLoadInstruction
+LOG:Set_Results  : 0x9d  McodeNullInstruction
+LOG:Set_Results  : 0x9e  McodeNullInstruction
+LOG:Set_Results  : 0x9f  McodeNullInstruction
+RunLog[0]: l_152 pc=0x98  McodeInstructionBundle
+RunLog[0]: 0x98 $ret         ->   npc= 0x20
+RunLog[0]: 0x99 $null        -> 
+RunLog[0]: 0x9a $null        -> 
+RunLog[0]: 0x9b $null        -> 
+RunLog[0]: 0x9c $ld         0x7ff8    0x0     -> 0x7ff8    
+RunLog[0]: 0x9d $null        -> 
+RunLog[0]: 0x9e $null        -> 
+RunLog[0]: 0x9f $null        -> 
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0xec000000 = IMEM[0x20]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x21]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x22]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x23]
+Info: McodeAccelerator:: 0xe8000000 = IMEM[0x24]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x25]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x26]
+Info: McodeAccelerator:: 0x68000000 = IMEM[0x27]
+Info: McodeMachine:Run_Machine PC=0x20
+Info: McodeMachine:Run_Machine: new bundle pc=0x20 (size=1)
+LOG:Get_Operands: 0x20  McodeHaltInstruction
+Info: 32: Halt!
+LOG:Execute     : 0x20  McodeHaltInstruction
+LOG:Set_Results  : 0x20  McodeHaltInstruction
+RunLog[0]: l_32 pc=0x20  McodeInstructionBundle
+RunLog[0]: 0x20 $halt        -> 
+Info: Stopped after 42 ticks.
+Info: number of non-null instructions executed = 32
+Info: number of null instructions executed = 121

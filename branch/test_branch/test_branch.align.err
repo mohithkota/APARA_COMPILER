@@ -443,3 +443,23 @@ Info: added pad bundle pad_1__168 with size 1
 Info: added pad bundle pad_2__170 with size 2
 Info: added pad bundle pad_4__172 with size 4
 Info:  Bundle id=73 addr=239 pad amount 7
+Info: call label main translated to pc-relative 152
+Info: branch label if_t_1 translated to pc-relative 16
+Info: branch label if_f_3 translated to pc-relative 24
+Info: branch label if_e_2 translated to pc-relative 23
+Info: branch label if_t_4 translated to pc-relative 16
+Info: branch label if_f_6 translated to pc-relative 24
+Info: branch label if_e_5 translated to pc-relative 23
+Info: branch label if_t_7 translated to pc-relative 16
+Info: branch label if_f_9 translated to pc-relative 24
+Info: branch label if_e_8 translated to pc-relative 23
+Info: branch label if_t_10 translated to pc-relative 16
+Info: branch label if_f_12 translated to pc-relative 24
+Info: branch label if_e_11 translated to pc-relative 23
+Info: branch label if_t_13 translated to pc-relative 16
+Info: branch label if_f_15 translated to pc-relative 24
+Info: branch label if_e_14 translated to pc-relative 23
+Info: branch label if_t_16 translated to pc-relative 16
+Info: branch label if_f_18 translated to pc-relative 24
+Info: branch label if_e_17 translated to pc-relative 23
+Info: branch label main_epilogue translated to pc-relative 7

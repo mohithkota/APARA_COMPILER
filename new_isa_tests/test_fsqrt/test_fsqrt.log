@@ -1,17 +1,22 @@
-Info: pc = 0
+Info: Thread 0 pc = 0
 Info: imem file = test_fsqrt.obj
 Info: dmem file = data.map
 Info: results file = test_fsqrt.result
 Info: Loaded 0 instructions to i-mem
+Info: Init: DMEM[0] = 0x0
+Info: Init: DMEM[128] = 0x0
 Info: Loaded 2 words to d-mem
-Info: McodeMachine:: 0x0 = IMEM[0x0]
-Info: McodeMachine:: 0x0 = IMEM[0x1]
-Info: McodeMachine:: 0x0 = IMEM[0x2]
-Info: McodeMachine:: 0x0 = IMEM[0x3]
-Info: McodeMachine:: 0x0 = IMEM[0x4]
-Info: McodeMachine:: 0x0 = IMEM[0x5]
-Info: McodeMachine:: 0x0 = IMEM[0x6]
-Info: McodeMachine:: 0x0 = IMEM[0x7]
+Info: Info: activate thread 0 to pc 0
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x0 = IMEM[0x0]
+Info: McodeAccelerator:: 0x0 = IMEM[0x1]
+Info: McodeAccelerator:: 0x0 = IMEM[0x2]
+Info: McodeAccelerator:: 0x0 = IMEM[0x3]
+Info: McodeAccelerator:: 0x0 = IMEM[0x4]
+Info: McodeAccelerator:: 0x0 = IMEM[0x5]
+Info: McodeAccelerator:: 0x0 = IMEM[0x6]
+Info: McodeAccelerator:: 0x0 = IMEM[0x7]
 Info: McodeMachine:Run_Machine PC=0x0
-Info: McodeMachine run finished after 0 bundles
-
+Info: Stopped after 0 ticks.
+Info: number of non-null instructions executed = 0
+Info: number of null instructions executed = 0

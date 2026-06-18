@@ -77,97 +77,9 @@ mcode_load_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_vreduce_instruction
-mcode_instruction
-mcode_cast_instruction
-mcode_instruction
-mcode_mem_access_instruction
-mcode_store_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_mem_access_instruction
-mcode_store_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_mem_access_instruction
-mcode_load_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_vreduce_instruction
-mcode_instruction
-mcode_cast_instruction
+Parsing Exception: test_vreduce.mcode:71:14: unexpected token: $r6
+Parsing Exception: test_vreduce.mcode:72:1: expecting LPAREN, found ';'
+Parsing Exception: test_vreduce.mcode:74:22: expecting SEMICOLON, found '('
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -180,24 +92,6 @@ mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
 mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
 mcode_instruction
@@ -237,56 +131,6 @@ mcode_set_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_arithmetic_instruction
-mcode_alu_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
-mcode_instruction
-mcode_set_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_alu_instruction
@@ -323,8 +167,167 @@ mcode_load_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_vreduce_instruction
+Parsing Exception: test_vreduce.mcode:143:14: unexpected token: $r17
+Parsing Exception: test_vreduce.mcode:144:1: expecting LPAREN, found ';'
+Parsing Exception: test_vreduce.mcode:146:23: expecting SEMICOLON, found '('
 mcode_instruction
-mcode_cast_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_set_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_store_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_alu_instruction
+mcode_instruction
+mcode_mem_access_instruction
+mcode_load_instruction
+mcode_instruction
+mcode_arithmetic_instruction
+mcode_vreduce_instruction
+Parsing Exception: test_vreduce.mcode:273:14: unexpected token: $r8
+Parsing Exception: test_vreduce.mcode:274:1: expecting LPAREN, found ';'
+Parsing Exception: test_vreduce.mcode:276:22: expecting SEMICOLON, found '('
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -393,94 +396,38 @@ Info:  Bundle id=14 addr=4b pad amount 1
 Info:  Bundle id=15 addr=4e pad amount 0
 Info:  Bundle id=16 addr=50 pad amount 0
 Info:  Bundle id=17 addr=58 pad amount 0
-Info:  Bundle id=18 addr=60 pad amount 0
-Info:  Bundle id=19 addr=61 pad amount 0
-Info: Adding pad bundles to cover size 6
-Info: added pad bundle pad_2__24 with size 2
+Info: Adding pad bundles to cover size 24
+Info: added pad bundle pad_4__24 with size 4
 Info: added pad bundle pad_4__26 with size 4
-Info:  Bundle id=20 addr=62 pad amount 6
-Info:  Bundle id=21 addr=70 pad amount 0
-Info: Adding pad bundles to cover size 1
-Info: added pad bundle pad_1__28 with size 1
-Info:  Bundle id=22 addr=71 pad amount 1
-Info:  Bundle id=23 addr=74 pad amount 0
-Info:  Bundle id=24 addr=78 pad amount 0
-Info:  Bundle id=25 addr=79 pad amount 0
-Info:  Bundle id=26 addr=7a pad amount 0
-Info:  Bundle id=27 addr=7b pad amount 0
-Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__28 with size 4
 Info: added pad bundle pad_4__30 with size 4
-Info:  Bundle id=28 addr=7c pad amount 4
-Info:  Bundle id=29 addr=88 pad amount 0
-Info:  Bundle id=30 addr=89 pad amount 0
-Info:  Bundle id=31 addr=8a pad amount 0
-Info:  Bundle id=32 addr=8b pad amount 0
-Info:  Bundle id=33 addr=8c pad amount 0
-Info:  Bundle id=34 addr=8d pad amount 0
-Info:  Bundle id=35 addr=8e pad amount 0
-Info:  Bundle id=36 addr=90 pad amount 0
-Info:  Bundle id=37 addr=98 pad amount 0
-Info:  Bundle id=38 addr=a0 pad amount 0
-Info:  Bundle id=39 addr=a1 pad amount 0
-Info: Adding pad bundles to cover size 6
-Info: added pad bundle pad_2__32 with size 2
+Info: added pad bundle pad_4__32 with size 4
 Info: added pad bundle pad_4__34 with size 4
-Info:  Bundle id=40 addr=a2 pad amount 6
-Info:  Bundle id=41 addr=b0 pad amount 0
-Info:  Bundle id=42 addr=b4 pad amount 0
-Info:  Bundle id=43 addr=b5 pad amount 0
-Info: Adding pad bundles to cover size 2
-Info: added pad bundle pad_2__36 with size 2
-Info:  Bundle id=44 addr=b6 pad amount 2
-Info:  Bundle id=45 addr=bc pad amount 0
-Info:  Bundle id=46 addr=bd pad amount 0
-Info: Adding pad bundles to cover size 2
+Info:  Bundle id=18 addr=60 pad amount 24
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__36 with size 1
 Info: added pad bundle pad_2__38 with size 2
-Info:  Bundle id=47 addr=be pad amount 2
-Info:  Bundle id=48 addr=c4 pad amount 0
-Info:  Bundle id=49 addr=c5 pad amount 0
-Info:  Bundle id=50 addr=c6 pad amount 0
-Info:  Bundle id=51 addr=c7 pad amount 0
-Info:  Bundle id=52 addr=c8 pad amount 0
-Info:  Bundle id=53 addr=cc pad amount 0
-Info:  Bundle id=54 addr=cd pad amount 0
-Info:  Bundle id=55 addr=ce pad amount 0
-Info:  Bundle id=56 addr=cf pad amount 0
-Info:  Bundle id=57 addr=d0 pad amount 0
-Info:  Bundle id=58 addr=d8 pad amount 0
-Info:  Bundle id=59 addr=d9 pad amount 0
-Info:  Bundle id=60 addr=da pad amount 0
-Info:  Bundle id=61 addr=db pad amount 0
-Info:  Bundle id=62 addr=dc pad amount 0
-Info:  Bundle id=63 addr=dd pad amount 0
-Info: Adding pad bundles to cover size 2
-Info: added pad bundle pad_2__40 with size 2
-Info:  Bundle id=64 addr=de pad amount 2
-Info:  Bundle id=65 addr=e8 pad amount 0
-Info:  Bundle id=66 addr=e9 pad amount 0
-Info:  Bundle id=67 addr=ea pad amount 0
-Info:  Bundle id=68 addr=eb pad amount 0
-Info:  Bundle id=69 addr=ec pad amount 0
-Info:  Bundle id=70 addr=ed pad amount 0
-Info:  Bundle id=71 addr=ee pad amount 0
-Info:  Bundle id=72 addr=f0 pad amount 0
-Info:  Bundle id=73 addr=f8 pad amount 0
-Info:  Bundle id=74 addr=100 pad amount 0
-Info:  Bundle id=75 addr=101 pad amount 0
-Info: Adding pad bundles to cover size 6
-Info: added pad bundle pad_2__42 with size 2
+Info: added pad bundle pad_4__40 with size 4
+Info:  Bundle id=19 addr=79 pad amount 7
+Info:  Bundle id=20 addr=88 pad amount 0
+Info: Adding pad bundles to cover size 1
+Info: added pad bundle pad_1__42 with size 1
+Info:  Bundle id=21 addr=89 pad amount 1
+Info:  Bundle id=22 addr=8c pad amount 0
+Info:  Bundle id=23 addr=90 pad amount 0
+Info:  Bundle id=24 addr=91 pad amount 0
+Info:  Bundle id=25 addr=92 pad amount 0
+Info:  Bundle id=26 addr=93 pad amount 0
+Info: Adding pad bundles to cover size 4
 Info: added pad bundle pad_4__44 with size 4
-Info:  Bundle id=76 addr=102 pad amount 6
-Info:  Bundle id=77 addr=110 pad amount 0
-Info:  Bundle id=78 addr=118 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__46 with size 1
-Info: added pad bundle pad_2__48 with size 2
-Info: added pad bundle pad_4__50 with size 4
-Info:  Bundle id=79 addr=119 pad amount 7
-Info:  Bundle id=80 addr=128 pad amount 0
-Info: Adding pad bundles to cover size 7
-Info: added pad bundle pad_1__52 with size 1
-Info: added pad bundle pad_2__54 with size 2
-Info: added pad bundle pad_4__56 with size 4
-Info:  Bundle id=81 addr=129 pad amount 7
+Info:  Bundle id=27 addr=94 pad amount 4
+Info:  Bundle id=28 addr=a0 pad amount 0
+Info:  Bundle id=29 addr=a1 pad amount 0
+Info:  Bundle id=30 addr=a2 pad amount 0
+Info:  Bundle id=31 addr=a3 pad amount 0
+Info:  Bundle id=32 addr=a4 pad amount 0
+Info:  Bundle id=33 addr=a5 pad amount 0
+Info:  Bundle id=34 addr=a6 pad amount 0
+Info:  Bundle id=35 addr=a8 pad amount 0
+Info:  Bundle id=36 addr=b0 pad amount 0
+mcode_align: src/McodeBundle.cpp:232: int McodeInstructionBundle::Calculate_Pad_For_Alignment(uint32_t): Assertion `0' failed.

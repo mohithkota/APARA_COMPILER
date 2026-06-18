@@ -1,0 +1,68 @@
+// ── APARA startup (APARA C Compiler v6: 28-reg + spilling) ──────────────────
+// Fixed: $r0=ZERO $r28=GBASE=0x400  Reserved: $r26=FP $r27=SP
+// Pool:  $r1-$r25 $r29-$r31  (28 registers, all recycled dynamically)
+apara_start:
+||
+    $set $r28 0 1024
+    $set $r27 0 32760
+;
+||
+    + $r26 ($i64) $r0 $r27
+    $call main
+;
+||
+    $halt
+;
+f:
+||
+    $st ($i64) [$r27 + 0] $r26
+;
+||
+    + $r26 ($i64) $r0 $r27
+    $set $r1 0 808
+;
+||
+    - $r27 ($i64) $r27 $r1
+    + $r1 ($i64) $r0 6
+    ? ($i64) $r0 == $goto f_epilogue
+;
+f_epilogue:
+||
+    + $r27 ($i64) $r0 $r26
+;
+||
+    $halt
+;
+||
+    $ld ($i64) $r26 [$r27 + 0]
+    $return
+;
+main:
+||
+    $st ($i64) [$r27 + 0] $r26
+;
+||
+    + $r26 ($i64) $r0 $r27
+    $set $r1 0 808
+;
+||
+    - $r27 ($i64) $r27 $r1
+;
+||
+    $call f
+;
+||
+    + $r1 ($i64) $r0 $r1
+;
+||
+    + $r1 ($i64) $r0 $r1
+    ? ($i64) $r0 == $goto main_epilogue
+;
+main_epilogue:
+||
+    + $r27 ($i64) $r0 $r26
+;
+||
+    $ld ($i64) $r26 [$r27 + 0]
+    $return
+;

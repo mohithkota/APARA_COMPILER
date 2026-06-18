@@ -2,7 +2,342 @@
 
 ---
 
-## 2026-06-17 — STANDALONE INCIDENT REPORT: nested function calls are broken; six causes checked and ruled out compiler-side; needs simulator source (Latest)
+## 2026-06-18 — IMEM size bug CONFIRMED against the official ISA doc and fixed for real this time: simulator was [2048] (8KB), spec says 16KB; corrected to [4096]. test_struct/test_spill/test_scalar_full ALL pass (Latest)
+
+### What changed since the last entry
+User checked `AparaReference.pdf`, p.6, §1, Figure 1.1 directly: **"The instruction memory provides
+16KB of instruction space to each accelerator. Each instruction is 4-bytes."** 16KB ÷ 4 bytes/instr
+= **4096 words**. `McodeClasses.hpp` had `__instruction_memory[2048]` / `Instr_Mem_Size_In_Words()
+= 2*1024` — **half the documented size**, mislabeled with a stale `// 16KB` comment that never
+matched the actual 8KB the array provided. This is not a "maybe the simulator default is smaller
+than hardware" situation (the open question from the previous entry) — it's a confirmed, citable
+discrepancy between the simulator and the spec. (Data memory was already correct: `__data_memory[8
+* 1024]` qwords = 64KB, matching the doc's "data memory provides 64KB" exactly — only instruction
+memory was wrong.)
+
+### Fix applied (no longer "verification only")
+`McodeClasses.hpp:139,143`: `__instruction_memory[2048]` → `[4096]`,
+`Instr_Mem_Size_In_Words()` → `4*1024`. Rebuilt with `scons`.
+
+| Test | Before (8KB IMEM, the bug) | After (16KB IMEM, matches spec) | Expected |
+|---|---|---|---|
+| test_scalar_full | 0x7ff0 | **0xc** | 0xc (12) |
+| test_spill | 0x19 | **0x1d1** | 0x1d1 (465) |
+
+Both real program sizes (2688 / 2496 words) now fit comfortably under the corrected 4096-word
+budget — zero "beyond the i-mem size" errors. Full 19-test regression re-run: all 14
+runnable/passing tests produce exactly their expected values
+(`test_alu`=0xd, `test_array`=0x96, `test_struct`=0x0, `test_branch`=0x1, `test_ldst`=0x3e8,
+`test_pointer`=0xf, `test_subword`=0x1, `test_dot`=0x5a, `test_spill`=0x1d1,
+`test_scalar_full`=0xc, `test_vadd`=0x4, `test_slice`=0xb7, `test_cast`=0x78ab9bcd,
+`test_pack`=0xdead). Zero regressions from this change. `test_vreduce`/`test_cmov` still fail at
+the pipeline level for their already-documented, unrelated `engine_new`-divergence reason;
+`test_2d`/`test_logic`/`test_fsqrt` remain blocked for their own pre-existing, unrelated reasons.
+
+### Bottom line
+**All three originally-broken tests (`test_struct`, `test_spill`, `test_scalar_full`) are now fully
+fixed**, via two independent, confirmed root causes: (1) CALL's disassembler sign-extend using bit
+index 25 instead of 24 (`McodeDisassemble.cpp:266`), and (2) the simulator's instruction memory
+being built to half the size the ISA reference document specifies (`McodeClasses.hpp:139,143`).
+Both are precise, citable, reproducible bugs — not hypotheses. Still pending: confirming with the
+professor whether this IMEM correction should be applied to the distributed/official engine build
+(it should be, per the doc, but it's still his binary to update), and the separate, still-open
+`engine_new`-divergence issue behind `test_vreduce`/`test_cmov`'s pipeline failures.
+
+### Data-type coverage note (asked separately, recorded for the record)
+Confirmed: `i4`/`u4` are arithmetic-only, no load/store form (matches hardware — minimum transfer
+granularity is a byte). `$ld`/`$st` support `i8`/`u8` through `i64`/`u64`, plus `u128`/`u256` wide
+loads at the ISA level — but the **compiler** does not yet generate `u128`/`u256` loads/stores
+(confirmed via grep: zero references in `codegen.py`/`ir_gen.py`/`ir.py`); vector arithmetic
+(`$v`/`$dot`/`$vreduce`) only operates on values already manually packed into a 64-bit register.
+Tested/hardware-confirmed vector element widths: `vi32`/`vi16`/`vi8` for `$v` ops and `$vreduce`,
+`vi16` for `$dot`. Untested: `vi4`, any unsigned vector (`vu*`) type — the intrinsic parser
+(`ir_gen.py` `__vadd_`/`__dot_`/`__vreduce_` handlers) does no validation on the type suffix, so
+these would compile silently but have never actually been run.
+
+---
+
+## 2026-06-18 — IMEM bump reverted; confirmed by user that 2048 words IS the real hardware limit, not a simulator default (Latest)
+
+The 2048→16384-word IMEM bump from the previous entry was explicitly a verification-only change.
+**User confirmed 2048 words is the actual hardware IMEM capacity** — not something the simulator
+can legitimately just expand. Reverted `McodeClasses.hpp:139,143` back to `[2048]` / `2*1024`,
+rebuilt with `scons`, and re-confirmed `test_spill`/`test_scalar_full` are back to their original
+truncated-program values (`0x19` / `0x7ff0`) — i.e. the build is hardware-faithful again.
+
+**The diagnosis from the previous entry stands and is still useful**: both tests' wrongness is
+fully and exactly explained by program-too-big-for-IMEM (640 / 448 words silently dropped), not by
+any remaining logic bug. The fix now has exactly one viable path: reduce `bundler.py`'s padding
+overhead (currently >80% of `test_scalar_full`'s compiled size is mandatory 8-slot control-transfer
+padding) so real programs fit in the real 2048-word budget. Not started — this is compiler-side
+work, distinct from anything engine-side, and doesn't need the professor's involvement the way the
+IMEM question did.
+
+---
+
+## 2026-06-18 — SECOND ROOT CAUSE FOUND: fixed-size 2048-word IMEM silently truncates larger programs. With both fixes together, `test_struct` / `test_spill` / `test_scalar_full` ALL now produce exactly the expected values (Latest)
+
+### The bug
+`test_spill`'s and `test_scalar_full`'s remaining wrongness (`0x19`/`0x7ff0` after yesterday's CALL
+fix) was never a logic bug at all. `McodeClasses.hpp:139` declares a fixed
+`uint32_t __instruction_memory[2048]` (`Instr_Mem_Size_In_Words()` returns `2*1024`, line 143).
+`McodeAccelerator.cpp:88-101` (`Init_Instruction_Memory`) silently drops — logs an `Error:`, does
+not write, does not abort — any instruction whose `pc >= 2048`. Both programs are bigger than that:
+
+| Test | Real program size | Overflow ("beyond the i-mem size") errors |
+|---|---|---|
+| test_scalar_full | 2688 words | 640 |
+| test_spill | 2496 words | 448 |
+
+The actual `+ $r1 = $r0 + $r9` (the real return-value write, computed correctly from
+`g_arith+g_compare+g_logical`) for `test_scalar_full` lives at `pc=0xa68` (2664) — **never loaded**.
+Execution runs straight off the end of the truncated program at `pc=0x800`, into zero-filled
+("$null") memory, until the tick budget runs out, with r1 frozen at whatever it last held —
+in this case the address (`FP-8`, `0x7ff0`) of local `a`, computed many instructions earlier inside
+the `while(a>0)` loop's `a--;`, which only *looked* like a meaningful wrong value by coincidence.
+Same mechanism for `test_spill` (`0x19` was likewise a stale leftover, not a computed wrong sum).
+
+Both programs are this large mostly because of `bundler.py`'s mandatory full-8-slot padding on any
+bundle containing a control-transfer instruction: `test_scalar_full`'s own run reported
+"439 non-null / 1921 null" instructions executed — **over 80% of the program is padding**.
+
+### Verification fix (local build only — see caveat below)
+`McodeClasses.hpp:139,143`: `__instruction_memory[2048]` → `[16384]`,
+`Instr_Mem_Size_In_Words()` → `16*1024`. Rebuilt with `scons`. Re-ran both tests:
+
+| Test | Before (2048-word IMEM) | After (16384-word IMEM) | Expected |
+|---|---|---|---|
+| test_scalar_full | 0x7ff0 | **0xc** | 0xc (12) |
+| test_spill | 0x19 | **0x1d1** | 0x1d1 (465) |
+
+**Exact match, both of them.** Combined with yesterday's CALL sign-extend fix, all three originally
+broken tests (`test_struct`, `test_spill`, `test_scalar_full`) now produce exactly the expected
+value. Full 19-test re-run with the IMEM-bumped build: all 14 previously-runnable/passing tests
+still correct (`test_alu`=0xd, `test_array`=0x96, `test_branch`=0x1, `test_ldst`=0x3e8,
+`test_pointer`=0xf, `test_subword`=0x1, `test_dot`=0x5a, `test_cast`=0x78ab9bcd, `test_vadd`=0x4,
+`test_slice`=0xb7, `test_pack`=0xdead, plus the three above) — zero regressions from the IMEM bump
+itself. `test_vreduce`/`test_cmov` still fail at the pipeline level exactly as before (unrelated —
+already traced to `engine_new`'s broader divergence from the `engine_isp` baseline, not to IMEM
+size or either CALL/RAS fix). `test_2d`/`test_logic`/`test_fsqrt` remain blocked for their own
+pre-existing, unrelated reasons.
+
+### Important caveat — do not treat the IMEM bump as a verified real fix
+Unlike the CALL sign-extend bug (a clear-cut decode error against the ISA's own 25-bit field
+width), **it is not known whether 2048 words is a real hardware IMEM capacity limit or just an
+arbitrary simulator default smaller than the real chip.** Two very different correct fixes follow
+depending on which it is:
+- If 2048 words is *not* a real hardware limit: bumping the simulator's constant (as done here) is
+  the right, permanent fix.
+- If 2048 words *is* a real hardware limit: the simulator is correctly modeling the constraint, and
+  the actual fix belongs in `bundler.py` — cut the >80% control-transfer-bundle padding overhead so
+  compiled programs fit in the real budget, not in the simulator.
+**This must go back to the professor before either path is taken as official** — exactly the kind
+of "who fixes this" question flagged for later, now with a precise, numeric, reproducible bug
+report instead of a mystery. The constant bump here is a local verification build only, same status
+as yesterday's two engine-source edits.
+
+Stopping here — both originally-reported test_spill/test_scalar_full mysteries are now fully
+explained and numerically confirmed fixed on this verification build.
+
+---
+
+## 2026-06-18 — All `run.sh` scripts under `cmp_wd` repointed from the stale March-6 `engine_isp` snapshot to `engine_new`; 19-test regression re-run through the corrected scripts (Latest)
+
+### What was wrong
+Every `run.sh` under `cmp_wd` (and the `write_run_script` template in `compiler.py` that generates
+new ones) hardcoded `BIN_DIR=/home/mohithkota/engine_isp/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin`
+— a March 6th snapshot, untouched by any of today's work. The actual engine being built and patched
+all day lives at `complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin`.
+
+**Correction to the literal instruction this was actioned from**: this did *not* invalidate today's
+*reported numbers* — every regression result reported earlier today (the `Pop_From_Ras` checks, the
+CALL sign-extend fix verification, the 16-test table) was produced by invoking the `engine_new`
+binaries directly with explicit paths, never through a test's own stale `run.sh`. So today's prior
+numbers are not "wrong engine" results and don't need to be disregarded. What *was* true: any
+**future** run using a bare `./run.sh` (the normal, expected way to run these tests) would have
+silently gone back to the stale, unpatched March-6 engine and silently lost every fix from today.
+That's the real bug this fixes — a footgun for next time, not a correctness problem with anything
+already reported.
+
+### Fix applied
+Repointed `BIN_DIR` in every `run.sh` under `cmp_wd` that had the stale absolute path (26 files —
+all of `alu/`, `array/`, `branch/`, `ldst/`, `pointer/`, `new_isa_tests/`, including their top-level
+per-category scripts) to `complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin`.
+Left untouched: `mem_march/run.sh`, `not_used_files/**/run.sh` — these use an unrelated relative-path
+scheme (`../../../assembler/bin`) and aren't part of the test suite. (`compiler.py`'s `write_run_script`
+template itself was not changed in this pass — still emits the stale path for any newly-compiled test;
+flagging for a future pass, not fixed now.)
+
+### 19-test regression, run via the corrected `./run.sh` scripts (not direct binary calls this time)
+| Test | Result | Expected | Status |
+|---|---|---|---|
+| test_alu | 0xd | 13 | pass |
+| test_array | 0x96 | 150 | pass |
+| test_ldst | 0x3e8 | 1000 | pass |
+| test_branch | 0x1 | 1 | pass |
+| test_pointer | 0xf | 15 | pass |
+| test_subword | 0x1 | 1 | pass |
+| test_dot | 0x5a | 90 | pass |
+| test_cast | 0x78ab9bcd | 0x78ab9bcd | pass |
+| test_vadd | 0x4 | 4 | pass |
+| test_slice | 0xb7 | 183 | pass |
+| test_pack | 0xdead | 0xdead | pass |
+| test_struct | 0x0 | 0 | **pass** |
+| test_spill | 0x19 | 0x1d1 (465) | fail (wrong value, separate bug) |
+| test_scalar_full | 0x7ff0 | 0xc (12) | fail (wrong value, separate bug) |
+| test_vreduce | pipeline crash (`mcode_align` assertion) | 76 | fail — regression vs. historical baseline |
+| test_cmov | pipeline crash (parse exception + segfault) | 600 | fail — regression vs. historical baseline |
+| test_logic | pipeline crash (parse exception) | — | fail (pre-existing, held) |
+| test_2d | pipeline crash (`mcode_align` assertion) | — | fail (pre-existing, held) |
+| test_fsqrt | pipeline crash (`mcode_align` assertion) | — | fail (pre-existing, held) |
+
+**Every number is identical to today's already-reported results.** Running through the corrected
+`run.sh` scripts instead of direct binary invocation changed nothing — confirms the prior report was
+accurate. test_logic/test_2d/test_fsqrt remain blocked for their pre-existing, unrelated reasons
+(documented earlier in this file). test_vreduce/test_cmov remain newly broken — still attributed to
+`engine_new` being a diverged codebase from the historical `engine_isp` baseline (~15 files differ
+beyond today's two intentional edits), not to either of today's fixes. test_spill/test_scalar_full
+remain wrong for their own separate, unidentified reasons. test_struct remains the one confirmed fix.
+
+Stopping here as instructed — no new bugs, no new hypotheses, no further investigation tonight.
+
+---
+
+## 2026-06-18 — ROOT CAUSE CONFIRMED (found manually, not by Claude Code): CALL's disassembler sign-extend used the wrong bit index. Fix verified on a local build — test_struct now passes; test_spill/test_scalar_full still wrong for separate reasons; two new pipeline regressions traced to engine_new being a diverged codebase, not to either fix (Latest)
+
+**Root cause, found by tracing engine source directly (`McodeDisassemble.cpp`, `DisassembleToCallInstr`,
+line 266):**
+```cpp
+int32_t relative_jump = (int32_t) Sign_Extend(25, Get_Slice (24, 0, hex_instr));
+```
+`Sign_Extend`'s first argument is a bit **index** (`McodeUtils.cpp`: `pad_ones = (1 << sign_index) & x`).
+CALL's jump field is 25 bits wide, bits `24:0` — its real sign bit is at index 24, not 25. Calling it
+with 25 checks a bit that's always 0 on a value already masked to `24:0`, so negative/backward call
+offsets are never sign-extended. Every backward call (callee defined before caller — the normal C
+pattern, e.g. `f` before `main`) computes `target + 2^25` instead of `target`, landing in
+zero-filled garbage memory. This is exactly why all six engine-layer checks in the
+[[project_call_phase_hazard|standalone incident report]] came back clean — none of that code ever
+ran in the failing case; the call never reached the callee at all.
+
+**Confirmed precisely isolated to CALL, not systemic.** `DisassembleToBranchInstr` (same file,
+line 302) does `Sign_Extend(11, Get_Slice(16,5,...))` — a 12-bit field (bits `16:5`), real sign bit
+at index 11, called with 11. **Correct, no off-by-one.** Consistent with for/while loops (which use
+BRANCH, not CALL, for backward jumps) having worked correctly all along.
+
+### Fix applied and rebuilt (verification build only — not a replacement for the professor's distributed binaries)
+`complier_Apara/engine_new/.../McodeDisassemble.cpp:266`: `Sign_Extend(25, ...)` → `Sign_Extend(24, ...)`.
+Rebuilt with `scons` (11:58 timestamp) on top of the same local copy that already had today's
+earlier, separately-confirmed-inert `mc->Pop_From_Ras()` fix in `McodeExecute.cpp`.
+
+### Check 3 — noop_call.c halt-before-`f`'s-return probe
+**`f`'s body now executes, and r1 = 6 at the halt point.** Before the fix: `$call f` resolved to
+`npc=0x2000018`, ran 10 ticks into garbage, never entered `f`. After the fix: disassembly shows
+`$call l_24` (correct), the bundle at `pc=0x28` sets r1=6 and branches into `f_epilogue`, SP/FP
+restore runs, and the inserted `$halt` fires cleanly at `pc=0x31` after 17 ticks — **r1=6, confirmed**.
+
+### Check 4 — full regression (16 runnable tests; `test_logic`/`test_2d`/`test_fsqrt` excluded, pre-existing unrelated blockers)
+| Test | Before today | After fix | Expected | Status |
+|---|---|---|---|---|
+| test_alu | 0xd | 0xd | 13 | unchanged ✓ |
+| test_array | 0x96 | 0x96 | 150 | unchanged ✓ |
+| test_ldst | 0x3e8 | 0x3e8 | 1000 | unchanged ✓ |
+| test_branch | 0x1 | 0x1 | 1 | unchanged ✓ |
+| test_pointer | 0xf | 0xf | 15 | unchanged ✓ |
+| test_subword | 0x1 | 0x1 | 1 | unchanged ✓ |
+| test_dot | 0x5a | 0x5a | 90 | unchanged ✓ |
+| test_cast | 0x78ab9bcd | 0x78ab9bcd | 0x78ab9bcd | unchanged ✓ |
+| test_vadd | 0x4 | 0x4 | 4 | unchanged ✓ |
+| test_slice | 0xb7 | 0xb7 | 183 | unchanged ✓ |
+| test_pack | 0xdead | 0xdead | 0xdead | unchanged ✓ |
+| **test_struct** | 0xa | **0x0** | 0 | **NOW PASSES** |
+| test_spill | 0x328 | 0x19 | 0x1d1 (465) | changed, still wrong |
+| test_scalar_full | 0x7ff0 | 0x7ff0 | 0xc (12) | unchanged, still wrong |
+| test_vreduce | 0x4c (pass) | **crashes** | 76 | **NEW regression** |
+| test_cmov | 0x258 (pass) | **crashes** | 600 | **NEW regression** |
+
+**Only `test_struct` is actually fixed by today's change.** `test_spill` now runs to natural
+completion instead of jumping into garbage (confirmed: its final `$return` reaches `npc=0x800`
+cleanly, no `0x2000xxx` jump anywhere in the trace) — real structural progress — but its computed
+value (`0x19`) still doesn't match expected (`0x1d1`), so a second, separate bug remains in it.
+`test_scalar_full` was already running to natural completion before today (no garbage jump either
+before or after the fix) — its wrongness was never caused by the CALL bug, so the fix had no effect
+on it; a separate, still-unidentified bug remains.
+
+**`test_vreduce` and `test_cmov` are new pipeline-level failures — NOT caused by either of today's
+two edits.** Confirmed by running the identical, untouched `.mcode` source through the original
+pre-rebuild `engine_isp` binary: both align and run cleanly there. Only `engine_new`'s rebuilt
+toolchain crashes on them (`test_vreduce`: `mcode_align` aborts with the same pre-existing
+`Calculate_Pad_For_Alignment: Assertion '0' failed` that `test_2d`/`test_fsqrt` have always hit;
+`test_cmov`: a parser exception — `expecting QUESTION, found '('` — followed by a segfault, a
+different failure mode entirely). **Cause found, not chased further per instruction**: a direct
+`diff -rq` between `engine_isp/AjitHpcAccelRepo/.../assembler/src` and
+`complier_Apara/engine_new/AjitHpcAccelRepo/.../assembler/src` shows roughly 15 files differ beyond
+today's two intentional one-line edits — `McodeBundle.cpp`, `McodeParser.cpp`, `McodeOperations.cpp`,
+`McodeProgram.cpp`, `McodeRoot.cpp`, `McodeUtils.cpp`, `MachineRun.cpp`, `McodeBinaryCode.cpp`,
+`McodeInstructions.cpp`, plus two files (`McodeAccelerator.cpp`, `McodeFpuUtils.cpp`) that don't
+exist in the `engine_isp` tree at all. **`engine_new` is not "`engine_isp` plus two patches" — it's
+a separately-diverged codebase snapshot**, and today is the first time its toolchain has actually
+been built and exercised against `test_vreduce`/`test_cmov`. The regression is real but belongs to
+that pre-existing divergence, not to the CALL sign-extend fix or the `Pop_From_Ras` fix.
+
+### Bottom line for the professor report
+The CALL disassembler sign-extend bug (`Sign_Extend(25,...)` → should be `Sign_Extend(24,...)`,
+`McodeDisassemble.cpp:266`) is real, precisely isolated (BRANCH confirmed unaffected), and the fix
+measurably works — `noop_call.c` now executes `f` and gets r1=6, and `test_struct` now passes
+end-to-end on hardware-equivalent simulation. It is **not** a complete fix for the three originally
+broken tests: `test_spill` and `test_scalar_full` each have at least one more, separate, unidentified
+bug. **This verification build (`engine_new`) should not be treated as a clean baseline** — it
+diverges from the `engine_isp` binaries used for the original 13-test passing baseline in ~15 files
+unrelated to this fix, which is the most likely explanation for `test_vreduce`/`test_cmov` newly
+failing here. Recommend re-testing this exact one-line fix against the professor's actual
+distributed `engine_isp` source tree (not `engine_new`) before reporting it as the official fix.
+Stopping here as instructed — no further investigation this session.
+
+---
+
+## 2026-06-18 — Engine rebuilt with `mc->Pop_From_Ras()` fix in `McodeExecute.cpp`; three confirmation checks run, all unchanged
+
+Engine rebuilt (`mcode_run` timestamp Jun 18 11:18, in
+`complier_Apara/engine_new/AjitHpcAccelRepo/.../assembler/bin/`) with one change: a second source
+suggested adding `mc->Pop_From_Ras();` inside `___execute_return_operation___` in
+`McodeExecute.cpp`, right after `Top_Of_Ras_Stack()`, before `Set_Npc`, as a possible fix for the
+call-depth bug. Three checks run against the rebuilt binary, as instructed. No further
+investigation performed this session per explicit instruction.
+
+**1. `noop_call.c` with `$halt` placed right before `f`'s `$return` — r1 at that point now?**
+Could not observe r1 at the intended point, for a reason orthogonal to the fix being tested: the
+`$call f` instruction (`main`→`f`, a backward call — `f` is emitted at a lower address than the
+call site) does not transfer control into `f` at all. The runtime's own trace shows
+`npc=0x2000018` instead of `0x18` (`f`'s real address); PC then reads zero-filled memory and the
+run stops after 10 ticks, having never executed `f`'s body or the inserted `$halt`. r1 simply
+stays at `main`'s own pre-call prologue value, `0x328`, for the whole run. **Confirmed identical
+with the old (pre-rebuild) `mcode_run` on the exact same `.obj`** — same `npc=0x2000018`, same
+final r1=`0x328`. So this specific check is unaffected by today's rebuild either way — the rebuild
+neither fixes nor changes it, because the call never reaches the code path the fix touches.
+
+**2. test_struct / test_spill / test_scalar_full — did 0xa / 0x328 / 0x7ff0 change?**
+**No change.** Re-ran each existing `.obj` against the rebuilt `mcode_run`: final r1 =
+`0xa` (test_struct), `0x328` (test_spill), `0x7ff0` (test_scalar_full) — identical to the
+pre-rebuild baseline. Cross-checked with a clean control (same three `.obj` files run against the
+old pre-rebuild `mcode_run`): identical `0xa` / `0x328` / `0x7ff0`. The `Pop_From_Ras()` fix did
+not change any of these three results.
+
+**3. test_alu / test_pack sanity check — still pass on the rebuilt binary?**
+**Yes, both still pass**, no regressions from the rebuild itself. test_alu: final r1=`0xd` (13),
+matches expected, zero errors in the run log. test_pack: final r1=`0xdead`, matches expected, zero
+errors in the run log.
+
+### Bottom line
+The rebuilt engine changes nothing observable in any of these three checks — test_struct/
+test_spill/test_scalar_full remain exactly as wrong as before (still do not trust their results),
+test_alu/test_pack remain correct (rebuild introduced no regression), and the `noop_call.c` halt
+probe couldn't exercise the fixed code path because the backward `$call f` itself resolves to a
+wrong target (`0x2000018`) before execution ever reaches `f`. Stopping here as instructed — no
+further hypotheses or investigation this session.
+
+---
+
+## 2026-06-17 — STANDALONE INCIDENT REPORT: nested function calls are broken; six causes checked and ruled out compiler-side; needs simulator source
 
 **This entry is written to be self-contained — readable cold, without the rest of this file or
 any conversation history.** It documents one evening's investigation into why `test_struct`,

@@ -138,3 +138,5 @@ Info: added pad bundle pad_1__40 with size 1
 Info: added pad bundle pad_2__42 with size 2
 Info: added pad bundle pad_4__44 with size 4
 Info:  Bundle id=21 addr=91 pad amount 7
+Info: call label main translated to pc-relative 40
+Info: branch label main_epilogue translated to pc-relative 7

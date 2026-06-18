@@ -1,4 +1,4 @@
-apara_start:
+apara_start: // pc=0x0
     || 
     $set     $r28    0    1024
     $set     $r27    0    32760
@@ -7,7 +7,7 @@ apara_start:
     +            $r26    ($i64)    $r0    $r27
     +            $r30    ($i64)    $r0        10
     ;
-pad_4__0:
+pad_4__0: // pc=0x4
     || 
     $null
     $null
@@ -27,16 +27,16 @@ pad_4__0:
     || 
     +            $r30    ($i64)    $r0        20
     ;
-pad_1__2:
+pad_1__2: // pc=0x11
     || 
     $null
     ;
-pad_2__4:
+pad_2__4: // pc=0x12
     || 
     $null
     $null
     ;
-pad_4__6:
+pad_4__6: // pc=0x14
     || 
     $null
     $null
@@ -56,16 +56,16 @@ pad_4__6:
     || 
     +            $r30    ($i64)    $r0        30
     ;
-pad_1__8:
+pad_1__8: // pc=0x21
     || 
     $null
     ;
-pad_2__10:
+pad_2__10: // pc=0x22
     || 
     $null
     $null
     ;
-pad_4__12:
+pad_4__12: // pc=0x24
     || 
     $null
     $null
@@ -85,16 +85,16 @@ pad_4__12:
     || 
     +            $r30    ($i64)    $r0        40
     ;
-pad_1__14:
+pad_1__14: // pc=0x31
     || 
     $null
     ;
-pad_2__16:
+pad_2__16: // pc=0x32
     || 
     $null
     $null
     ;
-pad_4__18:
+pad_4__18: // pc=0x34
     || 
     $null
     $null
@@ -114,16 +114,16 @@ pad_4__18:
     || 
     +            $r30    ($i64)    $r0        50
     ;
-pad_1__20:
+pad_1__20: // pc=0x41
     || 
     $null
     ;
-pad_2__22:
+pad_2__22: // pc=0x42
     || 
     $null
     $null
     ;
-pad_4__24:
+pad_4__24: // pc=0x44
     || 
     $null
     $null
@@ -143,16 +143,16 @@ pad_4__24:
     || 
     +            $r30    ($i64)    $r0        0
     ;
-pad_1__26:
+pad_1__26: // pc=0x51
     || 
     $null
     ;
-pad_2__28:
+pad_2__28: // pc=0x52
     || 
     $null
     $null
     ;
-pad_4__30:
+pad_4__30: // pc=0x54
     || 
     $null
     $null
@@ -172,23 +172,23 @@ pad_4__30:
     || 
     $halt
     ;
-pad_1__32:
+pad_1__32: // pc=0x61
     || 
     $null
     ;
-pad_2__34:
+pad_2__34: // pc=0x62
     || 
     $null
     $null
     ;
-pad_4__36:
+pad_4__36: // pc=0x64
     || 
     $null
     $null
     $null
     $null
     ;
-main:
+main: // pc=0x68
     || 
     $null
     $null
@@ -203,7 +203,7 @@ main:
     +            $r26    ($i64)    $r0    $r27
     $set     $r1    0    816
     ;
-pad_2__38:
+pad_2__38: // pc=0x72
     || 
     $null
     $null
@@ -224,20 +224,20 @@ pad_2__38:
     $null
     $null
     ;
-fc_1:
+fc_1: // pc=0x80
     || 
     +            $r2    ($i64)    $r26        -8
     ;
-pad_1__40:
+pad_1__40: // pc=0x81
     || 
     $null
     ;
-pad_2__42:
+pad_2__42: // pc=0x82
     || 
     $null
     $null
     ;
-pad_4__44:
+pad_4__44: // pc=0x84
     || 
     $null
     $null
@@ -257,16 +257,16 @@ pad_4__44:
     || 
     -            $r5    ($i64)    $r4    $r3
     ;
-pad_1__46:
+pad_1__46: // pc=0x91
     || 
     $null
     ;
-pad_2__48:
+pad_2__48: // pc=0x92
     || 
     $null
     $null
     ;
-pad_4__50:
+pad_4__50: // pc=0x94
     || 
     $null
     $null
@@ -293,7 +293,7 @@ pad_4__50:
     $null
     $null
     ;
-fb_2:
+fb_2: // pc=0xa8
     || 
     +            $r5    ($i64)    $r26        -8
     $null
@@ -324,7 +324,7 @@ fb_2:
     || 
     +            $r10    ($i64)    $r28    $r10
     ;
-pad_4__52:
+pad_4__52: // pc=0xbc
     || 
     $null
     $null
@@ -344,16 +344,16 @@ pad_4__52:
     || 
     +            $r10    ($i64)    $r4    $r9
     ;
-pad_1__54:
+pad_1__54: // pc=0xc9
     || 
     $null
     ;
-pad_2__56:
+pad_2__56: // pc=0xca
     || 
     $null
     $null
     ;
-pad_4__58:
+pad_4__58: // pc=0xcc
     || 
     $null
     $null
@@ -370,20 +370,20 @@ pad_4__58:
     $null
     $null
     ;
-fi_3:
+fi_3: // pc=0xd8
     || 
     +            $r11    ($i64)    $r26        -8
     ;
-pad_1__60:
+pad_1__60: // pc=0xd9
     || 
     $null
     ;
-pad_2__62:
+pad_2__62: // pc=0xda
     || 
     $null
     $null
     ;
-pad_4__64:
+pad_4__64: // pc=0xdc
     || 
     $null
     $null
@@ -406,7 +406,7 @@ pad_4__64:
     +            $r15    ($i64)    $r26        -8
     $null
     ;
-pad_4__66:
+pad_4__66: // pc=0xec
     || 
     $null
     $null
@@ -423,7 +423,7 @@ pad_4__66:
     $null
     $null
     ;
-fe_4:
+fe_4: // pc=0xf8
     || 
     $null
     $null
@@ -444,20 +444,20 @@ fe_4:
     $null
     $null
     ;
-main_epilogue:
+main_epilogue: // pc=0x108
     || 
     +            $r27    ($i64)    $r0    $r26
     ;
-pad_1__68:
+pad_1__68: // pc=0x109
     || 
     $null
     ;
-pad_2__70:
+pad_2__70: // pc=0x10a
     || 
     $null
     $null
     ;
-pad_4__72:
+pad_4__72: // pc=0x10c
     || 
     $null
     $null
