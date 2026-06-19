@@ -2,6 +2,45 @@
 
 ---
 
+## 2026-06-19 — vi4 garbage value confirmed reproducible (4/4 runs); audited all other switch(nbits) blocks — CastToU64 appears to be an isolated bug, not a pattern (Latest)
+
+### Reproducibility check
+Re-ran the `test_vi4_check` repro 4 more times (fresh `run.sh` invocation each time, full
+align→assemble→run). **All 4 runs: `Set_Register(7, 0x0)` — identical every time.** Not
+coincidental; consistent with reading a deterministic (if uninitialized) stack slot reached via
+the exact same call path every run, not random garbage that happens to vary.
+
+### Audit of the other switch(nbits) blocks flagged yesterday
+Checked `McodeNumeric.cpp:493` and **all seven** `switch(nbits)` blocks in `McodeFpuUtils.cpp`
+(corrected count — said "five" yesterday without actually counting; there are 7) for the same
+missing-`case 4`-with-uninitialized-fallthrough pattern as `CastToU64`. None of them have it:
+
+| Location | Function | Has `case 4`? | Fallback if no match |
+|---|---|---|---|
+| `McodeNumeric.cpp:493` | `to_ufp64` | yes | `default:` reinterprets bits directly (defined behavior) |
+| `McodeFpuUtils.cpp:318` | `fp_mul` | yes | `result` pre-initialized to 0; `default:` no-op |
+| `McodeFpuUtils.cpp:344` | `fp_add` | yes | same |
+| `McodeFpuUtils.cpp:371` | `fp_sub` | yes | same |
+| `McodeFpuUtils.cpp:398` | `fp_div` | **no** (only 32/64) | `default: assert(0)` — **crashes loudly**, doesn't silently return garbage |
+| `McodeFpuUtils.cpp:417` | `fp_sqrt` | **no** (only 32/64) | `default: assert(0)` — same, loud crash |
+| `McodeFpuUtils.cpp:539` | `double_to_fp` | yes | `default: assert(0)` |
+| `McodeFpuUtils.cpp:553` | `fp_to_double` | yes | `default: assert(0)` |
+
+Also checked the three related cast helpers right next to these (`cast_int_to_float`,
+`cast_float_to_int`, `cast_float_to_float`, all in `McodeFpuUtils.cpp`) since they weren't in the
+original flagged list but are directly adjacent and relevant — all three have `case 4:` and
+`default: assert(0)`.
+
+**Conclusion: `CastToU64`'s bug looks isolated, not systemic.** Every other switch(nbits) either
+explicitly handles 4 bits, or fails loudly (`assert(0)`) instead of silently returning an
+uninitialized value. `fp_div`/`fp_sqrt` simply don't support 4-bit floats by design (consistent
+with there being no ISA-documented 4-bit float div/sqrt) and crash rather than corrupt — that's a
+deliberate restriction, not the same bug class as `CastToU64`. Only `CastToU64` declares `result`
+without an initializer and has no `default:` label at all, which is exactly why it alone returns
+silent garbage instead of crashing or working.
+
+---
+
 ## 2026-06-19 — Hand-verified vi4/vu8: vu8 correct, vi4 confirmed BROKEN (engine bug, exact line found) (Latest)
 
 Yesterday's "vi4/vu8 don't crash" claim was correctly challenged as insufficient. Wrote two
