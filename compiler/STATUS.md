@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-06-19 — u128 register-pair load: Stage 1 (load mechanics only) PASSES. Stopping here per the staged plan, awaiting confirmation before Stage 2 (Latest)
+
+### What was built
+- `ir.py`: new `IRLoad128(dest_lo, dest_hi, base, offset)` node.
+- `codegen.py`: `RegAlloc.reg_pair()` (permanent consecutive-pair allocation, mirrors the
+  existing transient `borrow_pair()` used by `$pack`) + `_alloc_reg_pair()` (spill-aware
+  wrapper) + `_gen_IRLoad128` (emits `$ld ($u128) {lo} [{base}+{offset}]`).
+- `bundler.py`: generalized the `$ld` hazard regex from `($iN)`-only to `($[iu]N)`, and made it
+  compute the write-set as a register *range* (`{rd..rd+nbits/64-1}`) instead of always `{rd}` --
+  needed because a single `$u128` load writes two registers, not one.
+- `ir_gen.py`: new intrinsic `__ld128(dst, src)` — one `$ld ($u128)` into a register pair, then
+  two plain 64-bit stores of the halves to `dst[0]`/`dst[8]`.
+
+### A real, separate, pre-existing bug found and fixed along the way
+Bare global array names passed to a call were never decaying to their address — only *local*
+arrays did. Root cause: `_array_elem` (the dict the call-arg decay check consults) gets reset to
+`{}` at the top of `visit_FuncDef` for per-function local scoping, which silently wiped out any
+global array registered before `main` was visited. (`_array_row_stride`, used for 2D arrays,
+already avoids this — it's never reset, which is exactly why global 2D arrays never had this bug.)
+**Fix**: new `self._global_array_elem` dict, populated by `_alloc_global`, never reset, consulted
+alongside `_array_elem`/`_array_row_stride` in the call-arg decay check. This was diagnosed in a
+few steps (read the IR dump, found values instead of addresses, found the exact reset line) — a
+contained, well-understood Python fix, not the kind of source-archaeology that warranted stopping
+to ask first. Verified zero regressions on every array-using test (`test_array`, `test_2d`,
+`test_struct`, `test_scalar_full`, `test_matmul`, `test_spill`).
+
+### Stage 1 verification — `new_isa_tests/test_u128_load.c`
+```c
+src[0] = 0x1111111111111111LL; src[1] = 0x2222222222222222LL;
+__ld128(dst, src);
+// dst[0] must equal src[0], dst[1] must equal src[1]
+```
+Register trace confirms exactly: `$ld ($u128) $r1 [...]` set `$r1=0x1111111111111111`,
+`$r2=0x2222222222222222` — lower register gets the lower address, matching every other
+consecutive-register convention already in this compiler ($pack, $cast). r1=`0x1` (both checks
+pass). Zero pipeline errors.
+
+### Stopping here per the staged plan
+Per explicit instruction: report back after each stage, don't continue without confirmation.
+**Stage 1 (load mechanics) is hardware-verified.** Stage 2 (auto-split `$dot`/`$v` across the pair
+into plain + `$accumulate`, matching the 16x16 reference) not started — awaiting go-ahead.
+
+---
+
 ## 2026-06-19 — $vreduce FIXED: missing sub-opcode token, same bug family as $cmov's missing '?'. All vector instructions now confirmed working (non-4-bit integer types) (Latest)
 
 ### Root cause (isolated the same way as $cmov: minimal repro, read the actual grammar)

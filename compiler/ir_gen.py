@@ -100,6 +100,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._frame_off    = 0
         self._var_offsets  = {}
         self._array_elem   = {}
+        # name -> stride for global 1D arrays. Separate from _array_elem because
+        # that dict is reset per-function (visit_FuncDef) for local scoping, which
+        # would otherwise wipe out global registrations the moment any function is
+        # visited. Mirrors _array_row_stride, which already persists this way for
+        # global 2D arrays.
+        self._global_array_elem = {}
         # name → elem_bytes for the variable's OWN scalar load/store width
         # (set by _alloc_local; used by _load_var/_store_var for the local-scalar path).
         self._local_elem_bytes = {}
@@ -163,6 +169,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._globals[name] = gd
         self._emit(gd)
         self._define(name, 'global', gd)
+        if n_elems > 1:
+            self._global_array_elem[name] = dmem_stride  # bare array name in a call
+            # now decays to its address instead of loading element 0 (see __init__)
         return gd
 
     def _alloc_local(self, name, total_bytes, elem_bytes):
@@ -924,7 +933,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 info = self._lookup(name)
                 if info:
                     kind, loc = info
-                    is_arr = name in self._array_elem or name in self._array_row_stride
+                    is_arr = (name in self._array_elem or name in self._array_row_stride
+                              or name in self._global_array_elem)
                     is_ptr = name in self._ptr_stride
                     if is_arr and not is_ptr:  # raw array: pass address of first element
                         tmp = self._tmp()
@@ -955,6 +965,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # ── NOP ───────────────────────────────────────────────────────────────
         if fname == '__nop':
             self._emit(IRNop()); return Const(0)
+
+        # ── Wide u128 load round-trip (Stage 1: load mechanics only) ───────────
+        # __ld128(dst, src): one $ld ($u128) into a register pair, then two plain
+        # 64-bit stores of the two halves to dst[0]/dst[8]. Proves the load+pair-
+        # allocation mechanism; no vector op involved yet.
+        if fname == '__ld128' and len(args) >= 2:
+            dst_addr, src_addr = args[0], args[1]
+            lo, hi = self._tmp(), self._tmp()
+            self._emit(IRLoad128(lo, hi, src_addr, Const(0)))
+            self._emit(IRStore(dst_addr, Const(0), lo, 8))
+            self._emit(IRStore(dst_addr, Const(8), hi, 8))
+            return Const(0)
 
         # ── Float sqrt ────────────────────────────────────────────────────────
         _FSQRT = {

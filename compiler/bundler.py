@@ -76,14 +76,19 @@ def _parse_deps(text):
         return (frozenset({m.group(1)}) if m else frozenset()), frozenset(), False, None, None
 
     if t.startswith('$ld'):
-        # $ld ($iN) $rd [$rb + off]   off = integer or $reg
-        m = re.match(r'\$ld\s+\(\$i\d+\)\s+(\$r\d+)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]', t)
+        # $ld ($[iu]N) $rd [$rb + off]   off = integer or $reg
+        # N>64 (u128/u256) writes a register PAIR/QUAD starting at rd, not just rd --
+        # a single $ld fills multiple consecutive registers in that case.
+        m = re.match(r'\$ld\s+\(\$[iu](\d+)\)\s+(\$r\d+)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]', t)
         if m:
-            rd, rb, off = m.group(1), m.group(2), m.group(3)
+            nbits, rd, rb, off = m.group(1), m.group(2), m.group(3), m.group(4)
+            n_regs = max(1, int(nbits) // 64)
+            rd_num = int(rd[2:])
+            writes = {f'$r{rd_num + i}' for i in range(n_regs)}
             reads = {rb}
             if off.startswith('$r'):
                 reads.add(off)
-            return frozenset({rd}), frozenset(reads), False, (rb, off), None
+            return frozenset(writes), frozenset(reads), False, (rb, off), None
         return frozenset(), frozenset(), False, None, None
 
     if t.startswith('$st'):

@@ -84,6 +84,15 @@ class IRStore:
         self.elem_bytes = elem_bytes
     def __repr__(self): return f"*({self.base}+{self.offset}) = {self.src}"
 
+class IRLoad128:
+    """dest_lo, dest_hi = load 128 bits from mem[base + offset] as a register pair
+    ($ld ($u128) is a single instruction that fills two consecutive registers --
+    dest_hi is always allocated as dest_lo's register + 1, a hardware requirement)."""
+    def __init__(self, dest_lo, dest_hi, base, offset):
+        self.dest_lo = dest_lo; self.dest_hi = dest_hi
+        self.base = base; self.offset = offset
+    def __repr__(self): return f"{self.dest_lo}:{self.dest_hi} = *128({self.base}+{self.offset})"
+
 class IRGlobalLoad:
     """dest = DMEM[dmem_addr + offset]  (global variable access)"""
     def __init__(self, dest, dmem_addr, offset=None, *, elem_bytes):

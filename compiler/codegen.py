@@ -118,6 +118,36 @@ class RegAlloc:
             "No consecutive register pair available for $pack. "
             f"Free pool: {sorted(self._pool)}")
 
+    def has_free_pair(self):
+        """True if the free pool currently has two physically consecutive registers."""
+        by_num = sorted(self._pool, key=lambda r: int(r[2:]))
+        return any(int(by_num[i + 1][2:]) == int(by_num[i][2:]) + 1
+                   for i in range(len(by_num) - 1))
+
+    def reg_pair(self, temp_lo, temp_hi):
+        """
+        Permanently allocate a consecutive register pair to two NAMED temps
+        (e.g. a $u128 load's two halves) -- unlike borrow_pair(), this maps
+        into self._map so the pair behaves like ordinary allocated registers
+        (freed normally via free() at each temp's last use).
+        """
+        name_lo = temp_lo.name if isinstance(temp_lo, Temp) else str(temp_lo)
+        name_hi = temp_hi.name if isinstance(temp_hi, Temp) else str(temp_hi)
+        by_num = sorted(self._pool, key=lambda r: int(r[2:]))
+        for i in range(len(by_num) - 1):
+            n1 = int(by_num[i][2:])
+            n2 = int(by_num[i + 1][2:])
+            if n2 == n1 + 1:
+                r_lo, r_hi = by_num[i], by_num[i + 1]
+                self._pool.remove(r_lo)
+                self._pool.remove(r_hi)
+                self._map[name_lo] = r_lo
+                self._map[name_hi] = r_hi
+                return r_lo, r_hi
+        raise RuntimeError(
+            "No consecutive register pair available for a u128 load. "
+            f"Free pool: {sorted(self._pool)}")
+
     def items(self):
         """Return list of (name, reg) for all currently allocated temps."""
         return list(self._map.items())
@@ -183,6 +213,7 @@ class CodeGen:
         elif cls == 'IRBinOp':      ops = [ir.left, ir.right]
         elif cls == 'IRUnaryOp':    ops = [ir.operand]
         elif cls == 'IRLoad':       ops = [ir.base, ir.offset]
+        elif cls == 'IRLoad128':    ops = [ir.base, ir.offset]
         elif cls == 'IRStore':      ops = [ir.base, ir.offset, ir.src]
         elif cls == 'IRGlobalLoad': ops = [ir.offset]
         elif cls == 'IRGlobalStore':ops = [ir.offset, ir.src]
@@ -287,6 +318,18 @@ class CodeGen:
         if not self._ra.has_free():
             self._spill_evict(protect=set(protect))
         return self._ra.borrow()
+
+    def _alloc_reg_pair(self, temp_lo, temp_hi, protect=()):
+        """
+        Permanently allocate a consecutive register pair for a $u128 load's two
+        halves, spilling live temps one at a time (bounded by pool size) until
+        a free adjacent pair exists.
+        """
+        tries = len(POOL_REGS)
+        while not self._ra.has_free_pair() and tries > 0:
+            self._spill_evict(protect=set(protect))
+            tries -= 1
+        return self._ra.reg_pair(temp_lo, temp_hi)
 
     # ── startup / init ─────────────────────────────────────────────────────────
 
@@ -590,6 +633,26 @@ class CodeGen:
         else:
             off_reg = self._alloc_reg(ir.offset, protect=[d, base])
             self._emit(f"$ld {at} {dest} [{base} + {off_reg}]")
+
+        if b_bor: self._ra.unborrow(base)
+
+    def _gen_IRLoad128(self, ir):
+        sn  = [t.name for t in [ir.base, ir.offset] if isinstance(t, Temp)]
+        lo, hi = self._alloc_reg_pair(ir.dest_lo, ir.dest_hi, protect=sn)
+        base, b_bor = self._operand_reg(ir.base, protect=[ir.dest_lo.name, ir.dest_hi.name] + sn)
+
+        if isinstance(ir.offset, Const):
+            off = ir.offset.value
+            if -512 <= off <= 511:
+                self._emit(f"$ld ($u128) {lo} [{base} + {off}]")
+            else:
+                scr = self._safe_borrow(protect=[ir.dest_lo.name, ir.dest_hi.name, base])
+                self._load_const(scr, off)
+                self._emit(f"$ld ($u128) {lo} [{base} + {scr}]")
+                self._ra.unborrow(scr)
+        else:
+            off_reg = self._alloc_reg(ir.offset, protect=[ir.dest_lo.name, ir.dest_hi.name, base])
+            self._emit(f"$ld ($u128) {lo} [{base} + {off_reg}]")
 
         if b_bor: self._ra.unborrow(base)
 
