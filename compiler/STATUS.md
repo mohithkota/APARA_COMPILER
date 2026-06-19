@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-06-19 — $vreduce FIXED: missing sub-opcode token, same bug family as $cmov's missing '?'. All vector instructions now confirmed working (non-4-bit integer types) (Latest)
+
+### Root cause (isolated the same way as $cmov: minimal repro, read the actual grammar)
+`$vreduce $rd ($type) $rs` (what we emitted, and what the ISA doc's own example shows) fails to
+parse: `unexpected token: $r6` right after `$vreduce`. The real grammar
+(`mcode_vreduce_instruction` in `isa.g`) is:
+```
+opcode = mcode_vreduce_op_code        // consumes the $vreduce mnemonic itself
+sub_opcode = mcode_vreduce_sub_op_code  // REQUIRED: one of + * | & ^ ~^ $max $min
+rd = mcode_reg_specifier
+mcode_type_specifier
+rs1 = mcode_reg_specifier
+```
+The sub-opcode selects *what kind* of reduction (`+`=sum, `*`=product, `\|`/`&`/`^`/`~^`=bitwise,
+`$max`/`$min`). The ISA doc's example (§5.5) omits it entirely — third time this exact failure
+mode has shown up (`$cmov`'s missing `?`, now this), all because the doc's own examples are
+incomplete relative to the actual grammar. Our `__vreduce_*` intrinsics only ever do sum-reduce,
+so the fix is to always emit the `+` sub-opcode.
+
+### Fix
+`codegen.py`'s `_gen_IRVecReduce`: `$vreduce {dest} ({type}) {src}` → `$vreduce + {dest} ({type})
+{src}`. `bundler.py`'s `$vreduce` hazard regex updated to skip the new sub-opcode token.
+
+### Verification
+`test_vec_reduce2.c` (6 checks: vi8/vi16/vi32/vu8/vu16/vu32 sum-reduce): all pass, r1=`0x1`.
+Original `test_vreduce.c`: r1=`0x4c` (76) — exact match with the historical expected value, now
+running cleanly instead of crashing the aligner. Full 19-test regression: zero regressions.
+
+### Bottom line: every non-4-bit-integer vector instruction is now confirmed working
+`$v` (add/sub/mul): all of `vi8`/`vi16`/`vi32`/`vu8`/`vu16`/`vu32`. `$dot`/`$dot $accumulate`:
+`vi8`/`vi16`/`vu8`/`vu16` (the only widths the ISA defines dot for). `$vreduce`: all six widths.
+`vi4`/`vu4` remain known-broken/skipped per explicit direction (not used frequently). Float
+vectors (`vf*`) deferred entirely per explicit direction. **Vectors are now solid enough to build
+matrix multiplication on top of** — next step per the user's plan.
+
+---
+
 ## 2026-06-19 — $dot/$dot $accumulate fully hand-verified for matmul readiness (8/8 exact); $vreduce hits a second, separate, not-yet-root-caused bundler/aligner crash (Latest)
 
 Per explicit direction: skip `vi4`/`vu4` (not used frequently), prioritize `$dot`/`$dot $accumulate`

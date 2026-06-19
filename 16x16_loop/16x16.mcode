@@ -1,0 +1,154 @@
+initial:
+||
+$set $r31 0 16     // Outer loop runs exactly 16 times
+$set $r30 0 0      // Matrix A Base Pointer Offset
+$set $r29 0 512    // Matrix C Base Pointer (Starts at Byte 512)
+;
+
+row_loop:
+||
+$set $r28 0 256                      // RESET Matrix B to Col 1 for this row
+$ld ($u128) $r2 [$r0 + $r30 ++1]     // Load Row of Matrix A
+;
+
+//loading rows from 1 to 8
+load1:
+||
+$ld ($u128) $r4  [$r28 + 0]          // Col 1 (or 9)
+$ld ($u128) $r6  [$r28 + 16]         // Col 2 (or 10)
+$ld ($u128) $r8  [$r28 + 32]         // Col 3 (or 11)
+$ld ($u128) $r10 [$r28 + 48]         // Col 4 (or 12)
+;
+
+load2:
+||
+$ld ($u128) $r12 [$r28 + 64]         // Col 5
+$ld ($u128) $r14 [$r28 + 80]         // Col 6
+$ld ($u128) $r16 [$r28 + 96]         // Col 7
+$ld ($u128) $r18 [$r28 + 112]        // Col 8
+;
+
+//dotproduct of 1 to 8 rows
+dot1:
+||
+$dot $r20 ($vu8) $r2 $r4
+$dot $r21 ($vu8) $r2 $r6
+$dot $r22 ($vu8) $r2 $r8
+$dot $r23 ($vu8) $r2 $r10
+;
+
+dot2:
+||
+$dot $accumulate $r20 ($vu8) $r3 $r5
+$dot $accumulate $r21 ($vu8) $r3 $r7
+$dot $accumulate $r22 ($vu8) $r3 $r9
+$dot $accumulate $r23 ($vu8) $r3 $r11
+;
+
+dot3:
+||
+$dot $r24 ($vu8) $r2 $r12
+$dot $r25 ($vu8) $r2 $r14
+$dot $r26 ($vu8) $r2 $r16
+$dot $r27 ($vu8) $r2 $r18
+;
+
+dot4:
+||
+$dot $accumulate $r24 ($vu8) $r3 $r13
+$dot $accumulate $r25 ($vu8) $r3 $r15
+$dot $accumulate $r26 ($vu8) $r3 $r17
+$dot $accumulate $r27 ($vu8) $r3 $r19
+;
+
+//storing the 1 to 8 rows results in the memory
+store1:
+||
+$st ($i64) [$r29 + 0]  $r20
+$st ($i64) [$r29 + 8]  $r21
+$st ($i64) [$r29 + 16] $r22
+$st ($i64) [$r29 + 24] $r23
+;
+
+store2:
+||
+$st ($i64) [$r29 + 32] $r24
+$st ($i64) [$r29 + 40] $r25
+$st ($i64) [$r29 + 48] $r26
+$st ($i64) [$r29 + 56] $r27
+;
+
+
+//loading the matb rows 9 to 16
+
+load3:
+||
+$ld ($u128) $r4  [$r28 + 128]
+$ld ($u128) $r6  [$r28 + 144]
+$ld ($u128) $r8  [$r28 + 160]
+$ld ($u128) $r10 [$r28 + 176]
+;
+
+load4:
+||
+$ld ($u128) $r12 [$r28 + 192]
+$ld ($u128) $r14 [$r28 + 208]
+$ld ($u128) $r16 [$r28 + 224]
+$ld ($u128) $r18 [$r28 + 240]
+;
+
+//dot product of the 9 to 18 rows
+dot5:
+||
+$dot $r20 ($vu8) $r2 $r4
+$dot $r21 ($vu8) $r2 $r6
+$dot $r22 ($vu8) $r2 $r8
+$dot $r23 ($vu8) $r2 $r10
+;
+
+dot6:
+||
+$dot $accumulate $r20 ($vu8) $r3 $r5
+$dot $accumulate $r21 ($vu8) $r3 $r7
+$dot $accumulate $r22 ($vu8) $r3 $r9
+$dot $accumulate $r23 ($vu8) $r3 $r11
+;
+
+dot7:
+||
+$dot $r24 ($vu8) $r2 $r12
+$dot $r25 ($vu8) $r2 $r14
+$dot $r26 ($vu8) $r2 $r16
+$dot $r27 ($vu8) $r2 $r18
+;
+
+dot8:
+||
+$dot $accumulate $r24 ($vu8) $r3 $r13
+$dot $accumulate $r25 ($vu8) $r3 $r15
+$dot $accumulate $r26 ($vu8) $r3 $r17
+$dot $accumulate $r27 ($vu8) $r3 $r19
+;
+
+//storing the 9 to 16 rows in the memory
+store3:
+||
+$st ($i64) [$r29 + 64]  $r20
+$st ($i64) [$r29 + 72]  $r21
+$st ($i64) [$r29 + 80]  $r22
+$st ($i64) [$r29 + 88]  $r23
+;
+
+store4:
+||
+$st ($i64) [$r29 + 96]  $r24
+$st ($i64) [$r29 + 104] $r25
+$st ($i64) [$r29 + 112] $r26
+$st ($i64) [$r29 + 120] $r27
+;
+
+outer_branch:
+||
+? ($i16) $r31 > --1 $goto row_loop
++ $r29 ($i64) $r29 128
+;

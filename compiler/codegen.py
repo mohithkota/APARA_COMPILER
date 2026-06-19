@@ -1029,10 +1029,13 @@ class CodeGen:
         if b1: self._ra.unborrow(rs1)
 
     def _gen_IRVecReduce(self, ir):
+        # $vreduce requires a sub-opcode token (+ for sum-reduce) between the
+        # mnemonic and rd -- not shown in the ISA doc's own example, but
+        # required by the actual grammar (mcode_vreduce_sub_op_code).
         sn       = [ir.src.name] if isinstance(ir.src, Temp) else []
         dest     = self._alloc_reg(ir.dest, protect=sn)
         src, bor = self._operand_reg(ir.src, protect=[ir.dest.name])
-        self._emit(f"$vreduce {dest} ({ir.type_str}) {src}")
+        self._emit(f"$vreduce + {dest} ({ir.type_str}) {src}")
         if bor: self._ra.unborrow(src)
 
     def _gen_IRHalt(self, ir):

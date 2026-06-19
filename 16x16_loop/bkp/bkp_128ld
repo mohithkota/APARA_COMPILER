@@ -1,0 +1,82 @@
+intial:
+||
+$set $r27  0 7   //rotating the matA 16 times to fetch 16 rows
+$set $r28  0 256 //starting byte index of the MatB
+$set $r29  0 1   //matb loop varible
+$set $r30  0 0   //matA off set bit
+;
+
+//Fetching the 1st half of the matrix B
+//I need to call this matrix B twice to read all the 16 rows
+
+matb_1st_1:
+||
+$ld ($u128) $r3 [$r28 + 0]
+$ld ($u128) $r5 [$r28 + 16]
+$ld ($u128) $r7 [$r28 + 32]
+$ld ($u128) $r9 [$r28 + 48]
+;
+
+matb_1st_2:
+||
+$ld ($u128) $r11 [$r28 + 64]
+$ld ($u128) $r13 [$r28 + 96]
+$ld ($u128) $r15 [$r28 + 112]
+$ld ($u128) $r17 [$r28 + 128]
+;
+
+//before going to the another loop rotation we need to comupte the dot products of the 1st 8 rows of mat A  with 1st 8 rows of mat B
+
+matA_row_fetch:
+||
+$set $r28 0 256
+$ld ($u128) $r1 [$r0 + $r30 ++1]
+;
+
+
+//dot product of the 1st 8 rows of mat a with 1st 8 rows of the mat b
+
+dot_prod_1:
+||
+$dot $r19 ($vi8) $r1 $r3
+$dot $accumulate $r19 ($vi8) $r2 $r4
+$dot $r20 ($vi8) $r1 $r5
+$dot $accumulate $r20 ($vi8) $r2 $r6
+$dot $r21 ($vi8) $r1 $r7
+$dot $accumulate $r21 ($vi8) $r2 $r8
+$dot $r22 ($vi8) $r1 $r9
+$dot $accumulate $r22 ($vi8) $r2 $r10
+;
+
+
+dot_prod_2:
+||
+$dot $r23 ($vi8) $r1 $r11
+$dot $accumulate $r23 ($vi8) $r2 $r12
+$dot $r24 ($vi8) $r1 $r13
+$dot $accumulate $r24 ($vi8) $r2 $r14
+$dot $r25 ($vi8) $r1 $r15
+$dot $accumulate $r25 ($vi8) $r2 $r16
+$dot $r26 ($vi8) $r1 $r17
+$dot $accumulate $r26 ($vi8) $r2 $r18
+;
+
+
+//this loop will call the mat_b for the second time so that i will get the 9 to 16 rows
+mat_b_loop:
+||
+$call matb_1st_1
+;
+
+//this is to rotate mat a for 8 times
+mat_a_rotate:
+||
+? ($i16) $r27 > --1 $goto matA_row_fetch
+;
+
+
+//calling the mat_a_rotate so it will now roatate for another 8 times.
+mat_a_loop:
+||
+$call mat_a_rotate
+;

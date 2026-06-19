@@ -163,8 +163,8 @@ def _parse_deps(text):
         return NONE3
 
     if t.startswith('$vreduce'):
-        # $vreduce rd (type) rs
-        m = re.match(r'\$vreduce\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)', t)
+        # $vreduce + rd (type) rs  (sub-opcode '+' required by the grammar)
+        m = re.match(r'\$vreduce\s+\S+\s+(\$r\d+)\s+\(\$\w+\)\s+(\$r\d+)', t)
         if m:
             rd, rs = m.group(1), m.group(2)
             return frozenset({rd}), frozenset({rs}), False, None, None

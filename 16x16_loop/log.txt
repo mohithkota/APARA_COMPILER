@@ -1,0 +1,480 @@
+initial:
+    || 
+    $set     $r31    0    16
+    $set     $r30    0    0
+    $set     $r29    0    512
+    $null
+    ;
+pad_4__0:
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+row_loop:
+    || 
+    $set     $r28    0    256
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r2    [$r0 + $r30    ++1]
+    $null
+    $null
+    $null
+    ;
+load1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r4    [$r28 + 0]
+    $ld    ($u128)   $r6    [$r28 + 16]
+    $ld    ($u128)   $r8    [$r28 + 32]
+    $ld    ($u128)   $r10    [$r28 + 48]
+    ;
+load2:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r12    [$r28 + 64]
+    $ld    ($u128)   $r14    [$r28 + 80]
+    $ld    ($u128)   $r16    [$r28 + 96]
+    $ld    ($u128)   $r18    [$r28 + 112]
+    ;
+dot1:
+    || 
+    $dot    $r20    ($vu8)    $r2    $r4    
+    $dot    $r21    ($vu8)    $r2    $r6    
+    $dot    $r22    ($vu8)    $r2    $r8    
+    $dot    $r23    ($vu8)    $r2    $r10    
+    ;
+dot2:
+    || 
+    $dot $accumulate $r20    ($vu8)    $r3    $r5    
+    $dot $accumulate $r21    ($vu8)    $r3    $r7    
+    $dot $accumulate $r22    ($vu8)    $r3    $r9    
+    $dot $accumulate $r23    ($vu8)    $r3    $r11    
+    ;
+dot3:
+    || 
+    $dot    $r24    ($vu8)    $r2    $r12    
+    $dot    $r25    ($vu8)    $r2    $r14    
+    $dot    $r26    ($vu8)    $r2    $r16    
+    $dot    $r27    ($vu8)    $r2    $r18    
+    ;
+dot4:
+    || 
+    $dot $accumulate $r24    ($vu8)    $r3    $r13    
+    $dot $accumulate $r25    ($vu8)    $r3    $r15    
+    $dot $accumulate $r26    ($vu8)    $r3    $r17    
+    $dot $accumulate $r27    ($vu8)    $r3    $r19    
+    ;
+store1:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 0]    $r20
+    $st   ($i64)   [$r29  + 8]    $r21
+    $st   ($i64)   [$r29  + 16]    $r22
+    $st   ($i64)   [$r29  + 24]    $r23
+    ;
+store2:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 32]    $r24
+    $st   ($i64)   [$r29  + 40]    $r25
+    $st   ($i64)   [$r29  + 48]    $r26
+    $st   ($i64)   [$r29  + 56]    $r27
+    ;
+load3:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r4    [$r28 + 128]
+    $ld    ($u128)   $r6    [$r28 + 144]
+    $ld    ($u128)   $r8    [$r28 + 160]
+    $ld    ($u128)   $r10    [$r28 + 176]
+    ;
+load4:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r12    [$r28 + 192]
+    $ld    ($u128)   $r14    [$r28 + 208]
+    $ld    ($u128)   $r16    [$r28 + 224]
+    $ld    ($u128)   $r18    [$r28 + 240]
+    ;
+dot5:
+    || 
+    $dot    $r20    ($vu8)    $r2    $r4    
+    $dot    $r21    ($vu8)    $r2    $r6    
+    $dot    $r22    ($vu8)    $r2    $r8    
+    $dot    $r23    ($vu8)    $r2    $r10    
+    ;
+dot6:
+    || 
+    $dot $accumulate $r20    ($vu8)    $r3    $r5    
+    $dot $accumulate $r21    ($vu8)    $r3    $r7    
+    $dot $accumulate $r22    ($vu8)    $r3    $r9    
+    $dot $accumulate $r23    ($vu8)    $r3    $r11    
+    ;
+dot7:
+    || 
+    $dot    $r24    ($vu8)    $r2    $r12    
+    $dot    $r25    ($vu8)    $r2    $r14    
+    $dot    $r26    ($vu8)    $r2    $r16    
+    $dot    $r27    ($vu8)    $r2    $r18    
+    ;
+dot8:
+    || 
+    $dot $accumulate $r24    ($vu8)    $r3    $r13    
+    $dot $accumulate $r25    ($vu8)    $r3    $r15    
+    $dot $accumulate $r26    ($vu8)    $r3    $r17    
+    $dot $accumulate $r27    ($vu8)    $r3    $r19    
+    ;
+store3:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 64]    $r20
+    $st   ($i64)   [$r29  + 72]    $r21
+    $st   ($i64)   [$r29  + 80]    $r22
+    $st   ($i64)   [$r29  + 88]    $r23
+    ;
+store4:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 96]    $r24
+    $st   ($i64)   [$r29  + 104]    $r25
+    $st   ($i64)   [$r29  + 112]    $r26
+    $st   ($i64)   [$r29  + 120]    $r27
+    ;
+outer_branch:
+    || 
+    ? ($i16)  $r31 >     --1    $goto    row_loop
+    +            $r29    ($i64)    $r29        128
+    $null
+    $null
+    $null
+    $null
+    $null
+    $null
+    ;
+0: d41f0010
+1: 541e0000
+2: 541d0200
+3: 68000000
+4: e8000000
+5: 68000000
+6: 68000000
+7: 68000000
+8: d41c0100
+9: 68000000
+a: 68000000
+b: 68000000
+c: 4de2003e
+d: 68000000
+e: 68000000
+f: 68000000
+10: e8000000
+11: 68000000
+12: 68000000
+13: 68000000
+14: 4de4e400
+15: 4de6e410
+16: 4de8e420
+17: 4deae430
+18: e8000000
+19: 68000000
+1a: 68000000
+1b: 68000000
+1c: 4dece440
+1d: 4deee450
+1e: 4df0e460
+1f: 4df2e470
+20: c6541004
+21: 46551006
+22: 46561008
+23: 4657100a
+24: c6541c05
+25: 46551c07
+26: 46561c09
+27: 46571c0b
+28: c658100c
+29: 4659100e
+2a: 465a1010
+2b: 465b1012
+2c: c6581c0d
+2d: 46591c0f
+2e: 465a1c11
+2f: 465b1c13
+30: e8000000
+31: 68000000
+32: 68000000
+33: 68000000
+34: 5094ec00
+35: 5095ec08
+36: 5096ec10
+37: 5097ec18
+38: e8000000
+39: 68000000
+3a: 68000000
+3b: 68000000
+3c: 5098ec20
+3d: 5099ec28
+3e: 509aec30
+3f: 509bec38
+40: e8000000
+41: 68000000
+42: 68000000
+43: 68000000
+44: 4de4e480
+45: 4de6e490
+46: 4de8e4a0
+47: 4deae4b0
+48: e8000000
+49: 68000000
+4a: 68000000
+4b: 68000000
+4c: 4dece4c0
+4d: 4deee4d0
+4e: 4df0e4e0
+4f: 4df2e4f0
+50: c6541004
+51: 46551006
+52: 46561008
+53: 4657100a
+54: c6541c05
+55: 46551c07
+56: 46561c09
+57: 46571c0b
+58: c658100c
+59: 4659100e
+5a: 465a1010
+5b: 465b1012
+5c: c6581c0d
+5d: 46591c0f
+5e: 465a1c11
+5f: 465b1c13
+60: e8000000
+61: 68000000
+62: 68000000
+63: 68000000
+64: 5094ec40
+65: 5095ec48
+66: 5096ec50
+67: 5097ec58
+68: e8000000
+69: 68000000
+6a: 68000000
+6b: 68000000
+6c: 5098ec60
+6d: 5099ec68
+6e: 509aec70
+6f: 509bec78
+70: 8897f31f
+71: 109dec80
+72: 68000000
+73: 68000000
+74: 68000000
+75: 68000000
+76: 68000000
+77: 68000000
+l_0:
+    || 
+    $set     $r31    0    16
+    $set     $r30    0    0
+    $set     $r29    0    512
+    $null
+    ;
+l_4:
+    || 
+    $null
+    $null
+    $null
+    $null
+    ;
+l_8:
+    || 
+    $set     $r28    0    256
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r2    [$r0 + $r30    ++1]
+    $null
+    $null
+    $null
+    ;
+l_16:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r4    [$r28 + 0]
+    $ld    ($u128)   $r6    [$r28 + 16]
+    $ld    ($u128)   $r8    [$r28 + 32]
+    $ld    ($u128)   $r10    [$r28 + 48]
+    ;
+l_24:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r12    [$r28 + 64]
+    $ld    ($u128)   $r14    [$r28 + 80]
+    $ld    ($u128)   $r16    [$r28 + 96]
+    $ld    ($u128)   $r18    [$r28 + 112]
+    ;
+l_32:
+    || 
+    $dot    $r20    ($vu8)    $r2    $r4    
+    $dot    $r21    ($vu8)    $r2    $r6    
+    $dot    $r22    ($vu8)    $r2    $r8    
+    $dot    $r23    ($vu8)    $r2    $r10    
+    ;
+l_36:
+    || 
+    $dot $accumulate $r20    ($vu8)    $r3    $r5    
+    $dot $accumulate $r21    ($vu8)    $r3    $r7    
+    $dot $accumulate $r22    ($vu8)    $r3    $r9    
+    $dot $accumulate $r23    ($vu8)    $r3    $r11    
+    ;
+l_40:
+    || 
+    $dot    $r24    ($vu8)    $r2    $r12    
+    $dot    $r25    ($vu8)    $r2    $r14    
+    $dot    $r26    ($vu8)    $r2    $r16    
+    $dot    $r27    ($vu8)    $r2    $r18    
+    ;
+l_44:
+    || 
+    $dot $accumulate $r24    ($vu8)    $r3    $r13    
+    $dot $accumulate $r25    ($vu8)    $r3    $r15    
+    $dot $accumulate $r26    ($vu8)    $r3    $r17    
+    $dot $accumulate $r27    ($vu8)    $r3    $r19    
+    ;
+l_48:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 0]    $r20
+    $st   ($i64)   [$r29  + 8]    $r21
+    $st   ($i64)   [$r29  + 16]    $r22
+    $st   ($i64)   [$r29  + 24]    $r23
+    ;
+l_56:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 32]    $r24
+    $st   ($i64)   [$r29  + 40]    $r25
+    $st   ($i64)   [$r29  + 48]    $r26
+    $st   ($i64)   [$r29  + 56]    $r27
+    ;
+l_64:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r4    [$r28 + 128]
+    $ld    ($u128)   $r6    [$r28 + 144]
+    $ld    ($u128)   $r8    [$r28 + 160]
+    $ld    ($u128)   $r10    [$r28 + 176]
+    ;
+l_72:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $ld    ($u128)   $r12    [$r28 + 192]
+    $ld    ($u128)   $r14    [$r28 + 208]
+    $ld    ($u128)   $r16    [$r28 + 224]
+    $ld    ($u128)   $r18    [$r28 + 240]
+    ;
+l_80:
+    || 
+    $dot    $r20    ($vu8)    $r2    $r4    
+    $dot    $r21    ($vu8)    $r2    $r6    
+    $dot    $r22    ($vu8)    $r2    $r8    
+    $dot    $r23    ($vu8)    $r2    $r10    
+    ;
+l_84:
+    || 
+    $dot $accumulate $r20    ($vu8)    $r3    $r5    
+    $dot $accumulate $r21    ($vu8)    $r3    $r7    
+    $dot $accumulate $r22    ($vu8)    $r3    $r9    
+    $dot $accumulate $r23    ($vu8)    $r3    $r11    
+    ;
+l_88:
+    || 
+    $dot    $r24    ($vu8)    $r2    $r12    
+    $dot    $r25    ($vu8)    $r2    $r14    
+    $dot    $r26    ($vu8)    $r2    $r16    
+    $dot    $r27    ($vu8)    $r2    $r18    
+    ;
+l_92:
+    || 
+    $dot $accumulate $r24    ($vu8)    $r3    $r13    
+    $dot $accumulate $r25    ($vu8)    $r3    $r15    
+    $dot $accumulate $r26    ($vu8)    $r3    $r17    
+    $dot $accumulate $r27    ($vu8)    $r3    $r19    
+    ;
+l_96:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 64]    $r20
+    $st   ($i64)   [$r29  + 72]    $r21
+    $st   ($i64)   [$r29  + 80]    $r22
+    $st   ($i64)   [$r29  + 88]    $r23
+    ;
+l_104:
+    || 
+    $null
+    $null
+    $null
+    $null
+    $st   ($i64)   [$r29  + 96]    $r24
+    $st   ($i64)   [$r29  + 104]    $r25
+    $st   ($i64)   [$r29  + 112]    $r26
+    $st   ($i64)   [$r29  + 120]    $r27
+    ;
+l_112:
+    || 
+    ? ($i16)  $r31 >     --1    $goto    l_8
+    +            $r29    ($i64)    $r29        128
+    $null
+    $null
+    $null
+    $null
+    $null
+    $null
+    ;

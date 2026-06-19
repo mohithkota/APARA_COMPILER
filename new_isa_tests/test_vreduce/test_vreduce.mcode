@@ -68,7 +68,7 @@ main:
     $ld ($i64) $r5 [$r4 + 0]
 ;
 ||
-    $vreduce $r6 ($vi32) $r5
+    $vreduce + $r6 ($vi32) $r5
 ;
 ||
     $cast ($i32) $r7 ($i64) $r6
@@ -140,7 +140,7 @@ main:
     $ld ($i64) $r16 [$r15 + 0]
 ;
 ||
-    $vreduce $r17 ($vi16) $r16
+    $vreduce + $r17 ($vi16) $r16
 ;
 ||
     $cast ($i32) $r18 ($i64) $r17
@@ -270,7 +270,7 @@ main:
     $ld ($i64) $r7 [$r6 + 0]
 ;
 ||
-    $vreduce $r8 ($vi8) $r7
+    $vreduce + $r8 ($vi8) $r7
 ;
 ||
     $cast ($i32) $r9 ($i64) $r8

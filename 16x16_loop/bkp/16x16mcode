@@ -1,0 +1,178 @@
+intial:
+||
+$set $r31 0 15  // OUTER LOOP: 16 Rows of Mat A
+$set $r30 0 0      // Mat A offset pointer
+$set $r29 0 512    // Mat C base pointer
+;
+
+row_loop:
+||
+$set $r28 0 256                      // RESET Mat B to Col 1 for this row
+$set $r1  0  1                        // INNER LOOP: 2 passes per row (Cols 1-8, then 9-16)
+$ld ($u128) $r2 [$r0 + $r30 ++1]     // Load Row of Mat A
+;
+
+load1:
+||
+$ld ($u128) $r4  [$r28 + 0]          // Col 1
+$ld ($u128) $r6  [$r28 + 16]         // Col 2
+$ld ($u128) $r8  [$r28 + 32]         // Col 3
+$ld ($u128) $r10 [$r28 + 48]         // Col 4
+;
+
+load2:
+||
+$ld ($u128) $r12 [$r28 + 64]         // Col 5
+$ld ($u128) $r14 [$r28 + 80]         // Col 6
+$ld ($u128) $r16 [$r28 + 96]         // Col 7
+$ld ($u128) $r18 [$r28 + 112]        // Col 8
+;
+
+//add1:
+//||
+//+ $r28 ($i64) $r28 128
+//;
+
+dot1:
+||
+$dot $r20 ($vu8) $r2 $r4
+$dot $r21 ($vu8) $r2 $r6
+$dot $r22 ($vu8) $r2 $r8
+$dot $r23 ($vu8) $r2 $r10
+;
+
+dot2:
+||
+$dot $accumulate $r20 ($vu8) $r3 $r5
+$dot $accumulate $r21 ($vu8) $r3 $r7
+$dot $accumulate $r22 ($vu8) $r3 $r9
+$dot $accumulate $r23 ($vu8) $r3 $r11
+;
+
+// --- Cols 5 to 8 ---
+dot3:
+||
+$dot $r24 ($vu8) $r2 $r12
+$dot $r25 ($vu8) $r2 $r14
+$dot $r26 ($vu8) $r2 $r16
+$dot $r27 ($vu8) $r2 $r18
+;
+
+dot4:
+||
+$dot $accumulate $r24 ($vu8) $r3 $r13
+$dot $accumulate $r25 ($vu8) $r3 $r15
+$dot $accumulate $r26 ($vu8) $r3 $r17
+$dot $accumulate $r27 ($vu8) $r3 $r19
+;
+
+// store results of 1-4
+store1:
+||
+$st ($i64) [$r29 + 0]  $r20
+$st ($i64) [$r29 + 8]  $r21
+$st ($i64) [$r29 + 16] $r22
+$st ($i64) [$r29 + 24] $r23
+;
+
+store2:
+|| // Store Results 5-8 & Advance Pointers
+$st ($i64) [$r29 + 32] $r24
+$st ($i64) [$r29 + 40] $r25
+$st ($i64) [$r29 + 48] $r26
+$st ($i64) [$r29 + 56] $r27
+;
+
+// --- End of your store2 block ---
+
+//writing load store and dot by rewriting the ittr1
+
+//loading row 9 to 16 here
+load3:
+||
+$ld ($u128) $r4  [$r28 + 128]          // Col 9 i.e word index 0x60 i.e 384 dec
+$ld ($u128) $r6  [$r28 + 144]         // Col 10
+$ld ($u128) $r8  [$r28 + 160]         // Col 11
+$ld ($u128) $r10 [$r28 + 176]         // Col 12
+;
+
+load4:
+||
+$ld ($u128) $r12 [$r28 + 192]         // Col 13
+$ld ($u128) $r14 [$r28 + 208]         // Col 14
+$ld ($u128) $r16 [$r28 + 224]         // Col 15
+$ld ($u128) $r18 [$r28 + 240]         // Col 16
+;
+
+//add1:
+//||
+//+ $r28 ($i64) $r28 128
+//;
+
+// dot prod of 9 to 12
+dot5:
+||
+$dot $r20 ($vu8) $r2 $r4
+$dot $r21 ($vu8) $r2 $r6
+$dot $r22 ($vu8) $r2 $r8
+$dot $r23 ($vu8) $r2 $r10
+;
+
+dot6:
+||
+$dot $accumulate $r20 ($vu8) $r3 $r5
+$dot $accumulate $r21 ($vu8) $r3 $r7
+$dot $accumulate $r22 ($vu8) $r3 $r9
+$dot $accumulate $r23 ($vu8) $r3 $r11
+;
+
+// store results of 9-12
+store3:
+||
+$st ($i64) [$r29 + 64]  $r20
+$st ($i64) [$r29 + 72]  $r21
+$st ($i64) [$r29 + 80]  $r22
+$st ($i64) [$r29 + 88]  $r23
+;
+
+// --- Cols 13 to 16 ---
+dot7:
+||
+$dot $r24 ($vu8) $r2 $r12
+$dot $r25 ($vu8) $r2 $r14
+$dot $r26 ($vu8) $r2 $r16
+$dot $r27 ($vu8) $r2 $r18
+;
+
+dot8:
+||
+$dot $accumulate $r24 ($vu8) $r3 $r13
+$dot $accumulate $r25 ($vu8) $r3 $r15
+$dot $accumulate $r26 ($vu8) $r3 $r17
+$dot $accumulate $r27 ($vu8) $r3 $r19
+;
+
+// Store Results 13-16
+
+store4:
+||
+$st ($i64) [$r29 + 96]  $r24
+$st ($i64) [$r29 + 104] $r25
+$st ($i64) [$r29 + 112] $r26
+$st ($i64) [$r29 + 120] $r27
+;
+
+// --- End of your store4 block ---
+
+//inner_brach:
+//||
+//? ($i16) $r1 == --1 $goto col_loop      // CHANGED: Break when it hits 0, not -1
+//;
+
+//outer_branch:
+//||
+//- $r31 ($i16) $r31 1
+//? ($i16) $r31 > --1 $goto row_loop     // CHANGED: Break when it hits 0, not -1
+//+ $r29 ($i64) $r29 128
+//;
+
