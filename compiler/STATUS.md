@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-06-20 — Narrow fix built and verified: __dot128_direct_{type}(a_ptr, b_ptr), zero memory round-trip for the intermediate halves (Latest)
+
+### What was built — reuses existing IR/codegen entirely, no new nodes
+New `ir_gen.py` dispatch only: `__dot128_direct_{type}(a_ptr, b_ptr)` allocates four anonymous IR
+temps (`self._tmp()`, never bound to a named C variable, never touching `_alloc_local`), emits two
+`IRLoadWide` calls (a_lo/a_hi, b_lo/b_hi) feeding straight into one `IRVecDot128` — no `IRStore`
+anywhere in this lowering. Deliberately does not touch the named-variable memory model (every
+named local still round-trips through its own stack slot on every use; that's confirmed
+architectural, not in scope here per yesterday's finding).
+
+### Verified in the generated mcode, not just the result
+`test_dot128_direct.c` (same hand-computed case as Stage 2: 16-element `vu8` dot, A=1..16, B=all
+1s, expected 136=`0x88`). The `fe_4` block in the generated mcode shows the intermediate halves
+flowing purely through ALU register copies (`+r20=r0+r2`, `+r22=r0+r2`, etc.) straight into
+`$dot`/`$dot $accumulate` — **zero `$st`/`$ld` for a_lo/a_hi/b_lo/b_hi anywhere**. Only the final
+result (bound to named variable `r`) gets a store, exactly as expected and out of scope. Register
+trace confirms both intermediate steps exactly: `0x24` (36, lo-half sum) → `0x88` (136, after
+accumulate). `r1=0x1`, zero pipeline errors. Full regression, 22 tests: zero regressions.
+
+### Status: fix verified. Next: re-measure bundle density on the matmul using this intrinsic.
+
+---
+
 ## 2026-06-19 — Hand-unroll experiment: bundle count went UP (156→246), not down — real finding, not a dead end (Latest)
 
 ### What was tested

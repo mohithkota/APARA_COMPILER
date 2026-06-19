@@ -1041,6 +1041,25 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRVecArith(res, op, args[0], args[1], tstr, replicate))
                 return res
 
+        # ── Fused 128-bit-wide DOT, load straight into the dot (no memory
+        # round-trip): __dot128_direct_{type}(a_ptr, b_ptr) ─────────────────────
+        # Loads both 128-bit operands directly into anonymous IR temps and feeds
+        # them straight into IRVecDot128 -- no IRStore, no named C variable
+        # anywhere in this lowering. Reuses IRLoadWide/IRVecDot128 exactly as
+        # they already exist; this is purely a different ir_gen.py dispatch,
+        # not new IR/codegen. Stays inside the single-expression,
+        # register-resident path that already works for plain sub-expressions
+        # (e.g. f(a+b)) -- deliberately does not touch the named-variable
+        # memory model (every named local always round-trips through its own
+        # stack slot; that is out of scope here, see STATUS.md 2026-06-19).
+        if fname and fname.startswith('__dot128_direct_') and len(args) >= 2:
+            tstr = '$' + fname[16:]
+            a_lo, a_hi, b_lo, b_hi = self._tmp(), self._tmp(), self._tmp(), self._tmp()
+            self._emit(IRLoadWide([a_lo, a_hi], args[0], Const(0)))
+            self._emit(IRLoadWide([b_lo, b_hi], args[1], Const(0)))
+            self._emit(IRVecDot128(res, a_lo, a_hi, b_lo, b_hi, tstr))
+            return res
+
         # ── 128-bit-wide DOT: __dot128_{type}(a_lo, a_hi, b_lo, b_hi) ───────────
         # Auto-split into the exact two-instruction pattern confirmed from the
         # 16x16 reference: plain $dot on the lo halves, $dot $accumulate on hi.
