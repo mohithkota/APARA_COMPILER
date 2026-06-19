@@ -100,53 +100,64 @@ class RegAlloc:
         """Return a borrowed scratch register back to the head of the pool."""
         self._pool.insert(0, r)
 
-    def borrow_pair(self):
+    def _find_aligned_group(self, count, alignment):
         """
-        Find and borrow two physically consecutive registers (required by $pack).
-        Returns (r_low, r_high) where int(r_high[2:]) == int(r_low[2:]) + 1.
+        Return `count` consecutive free register NAMES (ascending) whose start
+        index is a multiple of `alignment`, or None if no such group exists.
+        Peek only -- does not remove anything from the pool.
+
+        ISA doc 12.2 ("Register accesses are aligned to natural indices"): a
+        register PAIR's start index must be even; a register QUAD's start
+        index must be a multiple of 4 -- NOT just "4 consecutive registers
+        starting anywhere". E.g. r2,r3,r4,r5 are consecutive but r2 is not a
+        multiple of 4, so that group is invalid for a quad even though
+        contiguous. One shared, explicitly-parameterized scan avoids ever
+        silently reusing the pair's weaker check for the quad case.
         """
-        by_num = sorted(self._pool, key=lambda r: int(r[2:]))
-        for i in range(len(by_num) - 1):
-            n1 = int(by_num[i][2:])
-            n2 = int(by_num[i + 1][2:])
-            if n2 == n1 + 1:
-                r_lo, r_hi = by_num[i], by_num[i + 1]
-                self._pool.remove(r_lo)
-                self._pool.remove(r_hi)
-                return r_lo, r_hi
-        raise RuntimeError(
-            "No consecutive register pair available for $pack. "
-            f"Free pool: {sorted(self._pool)}")
+        num_set = {int(r[2:]) for r in self._pool}
+        for n in sorted(num_set):
+            if n % alignment != 0:
+                continue
+            group = list(range(n, n + count))
+            if all(g in num_set for g in group):
+                return [f'$r{g}' for g in group]
+        return None
 
     def has_free_pair(self):
-        """True if the free pool currently has two physically consecutive registers."""
-        by_num = sorted(self._pool, key=lambda r: int(r[2:]))
-        return any(int(by_num[i + 1][2:]) == int(by_num[i][2:]) + 1
-                   for i in range(len(by_num) - 1))
+        """True if a free, EVEN-aligned consecutive register pair exists (ISA doc 12.2)."""
+        return self._find_aligned_group(2, 2) is not None
 
-    def reg_pair(self, temp_lo, temp_hi):
+    def has_free_quad(self):
+        """True if a free register quad exists whose start index is a multiple of 4 (ISA doc 12.2)."""
+        return self._find_aligned_group(4, 4) is not None
+
+    def borrow_pair(self):
         """
-        Permanently allocate a consecutive register pair to two NAMED temps
-        (e.g. a $u128 load's two halves) -- unlike borrow_pair(), this maps
-        into self._map so the pair behaves like ordinary allocated registers
-        (freed normally via free() at each temp's last use).
+        Find and borrow an EVEN-aligned consecutive register pair (ISA doc
+        12.2: "the register specified ... must have an even index"), e.g.
+        for $pack, $ld ($u128). Returns (r_low, r_high).
         """
-        name_lo = temp_lo.name if isinstance(temp_lo, Temp) else str(temp_lo)
-        name_hi = temp_hi.name if isinstance(temp_hi, Temp) else str(temp_hi)
-        by_num = sorted(self._pool, key=lambda r: int(r[2:]))
-        for i in range(len(by_num) - 1):
-            n1 = int(by_num[i][2:])
-            n2 = int(by_num[i + 1][2:])
-            if n2 == n1 + 1:
-                r_lo, r_hi = by_num[i], by_num[i + 1]
-                self._pool.remove(r_lo)
-                self._pool.remove(r_hi)
-                self._map[name_lo] = r_lo
-                self._map[name_hi] = r_hi
-                return r_lo, r_hi
-        raise RuntimeError(
-            "No consecutive register pair available for a u128 load. "
-            f"Free pool: {sorted(self._pool)}")
+        group = self._find_aligned_group(2, 2)
+        if group is None:
+            raise RuntimeError(
+                "No even-aligned consecutive register pair available. "
+                f"Free pool: {sorted(self._pool)}")
+        for r in group: self._pool.remove(r)
+        return group[0], group[1]
+
+    def borrow_quad(self):
+        """
+        Find and borrow a register quad whose start index is a MULTIPLE OF 4
+        (ISA doc 12.2: "the register specified ... must have an index which
+        is a multiple of 4"), e.g. for $ld ($u256). Returns a 4-tuple.
+        """
+        group = self._find_aligned_group(4, 4)
+        if group is None:
+            raise RuntimeError(
+                "No 4-aligned consecutive register quad available. "
+                f"Free pool: {sorted(self._pool)}")
+        for r in group: self._pool.remove(r)
+        return tuple(group)
 
     def items(self):
         """Return list of (name, reg) for all currently allocated temps."""
@@ -213,7 +224,7 @@ class CodeGen:
         elif cls == 'IRBinOp':      ops = [ir.left, ir.right]
         elif cls == 'IRUnaryOp':    ops = [ir.operand]
         elif cls == 'IRLoad':       ops = [ir.base, ir.offset]
-        elif cls == 'IRLoad128':    ops = [ir.base, ir.offset]
+        elif cls == 'IRLoadWide':   ops = [ir.base, ir.offset]
         elif cls == 'IRStore':      ops = [ir.base, ir.offset, ir.src]
         elif cls == 'IRGlobalLoad': ops = [ir.offset]
         elif cls == 'IRGlobalStore':ops = [ir.offset, ir.src]
@@ -319,17 +330,21 @@ class CodeGen:
             self._spill_evict(protect=set(protect))
         return self._ra.borrow()
 
-    def _alloc_reg_pair(self, temp_lo, temp_hi, protect=()):
-        """
-        Permanently allocate a consecutive register pair for a $u128 load's two
-        halves, spilling live temps one at a time (bounded by pool size) until
-        a free adjacent pair exists.
-        """
+    def _safe_borrow_pair(self, protect=()):
+        """Borrow an even-aligned register pair, spilling first if needed (ISA doc 12.2)."""
         tries = len(POOL_REGS)
         while not self._ra.has_free_pair() and tries > 0:
             self._spill_evict(protect=set(protect))
             tries -= 1
-        return self._ra.reg_pair(temp_lo, temp_hi)
+        return self._ra.borrow_pair()
+
+    def _safe_borrow_quad(self, protect=()):
+        """Borrow a 4-aligned register quad, spilling first if needed (ISA doc 12.2)."""
+        tries = len(POOL_REGS)
+        while not self._ra.has_free_quad() and tries > 0:
+            self._spill_evict(protect=set(protect))
+            tries -= 1
+        return self._ra.borrow_quad()
 
     # ── startup / init ─────────────────────────────────────────────────────────
 
@@ -636,24 +651,49 @@ class CodeGen:
 
         if b_bor: self._ra.unborrow(base)
 
-    def _gen_IRLoad128(self, ir):
-        sn  = [t.name for t in [ir.base, ir.offset] if isinstance(t, Temp)]
-        lo, hi = self._alloc_reg_pair(ir.dest_lo, ir.dest_hi, protect=sn)
-        base, b_bor = self._operand_reg(ir.base, protect=[ir.dest_lo.name, ir.dest_hi.name] + sn)
+    def _gen_IRLoadWide(self, ir):
+        """
+        $ld ($u128)/($u256): the hardware writes a register pair/quad in one
+        instruction, and that group must be even-aligned (pair) or 4-aligned
+        (quad) -- see RegAlloc.borrow_pair/borrow_quad (ISA doc 12.2). Mirrors
+        $pack's transient-borrow pattern exactly: borrow the aligned group
+        just for this one instruction, copy each half/quarter out to an
+        ordinary (unconstrained) register immediately, then release the
+        borrowed group right away so it doesn't tie up alignment-sensitive
+        registers for the loaded values' whole lifetime.
+        """
+        n = len(ir.dests)
+        assert n in (2, 4), f"IRLoadWide expects 2 or 4 dests, got {n}"
+        utype = '$u128' if n == 2 else '$u256'
+
+        dest_names = [d.name for d in ir.dests]
+        sn   = [t.name for t in [ir.base, ir.offset] if isinstance(t, Temp)]
+        base, b_bor = self._operand_reg(ir.base, protect=dest_names + sn)
+
+        pregs = (self._safe_borrow_pair(protect=[base] + sn) if n == 2
+                 else self._safe_borrow_quad(protect=[base] + sn))
 
         if isinstance(ir.offset, Const):
             off = ir.offset.value
             if -512 <= off <= 511:
-                self._emit(f"$ld ($u128) {lo} [{base} + {off}]")
+                self._emit(f"$ld ({utype}) {pregs[0]} [{base} + {off}]")
             else:
-                scr = self._safe_borrow(protect=[ir.dest_lo.name, ir.dest_hi.name, base])
+                scr = self._safe_borrow(protect=[base] + list(pregs))
                 self._load_const(scr, off)
-                self._emit(f"$ld ($u128) {lo} [{base} + {scr}]")
+                self._emit(f"$ld ({utype}) {pregs[0]} [{base} + {scr}]")
                 self._ra.unborrow(scr)
         else:
-            off_reg = self._alloc_reg(ir.offset, protect=[ir.dest_lo.name, ir.dest_hi.name, base])
-            self._emit(f"$ld ($u128) {lo} [{base} + {off_reg}]")
+            off_reg = self._alloc_reg(ir.offset, protect=[base] + list(pregs))
+            self._emit(f"$ld ({utype}) {pregs[0]} [{base} + {off_reg}]")
 
+        dest_regs = []
+        for dest_temp, preg in zip(ir.dests, pregs):
+            d = self._alloc_reg(dest_temp, protect=[base] + list(pregs) + dest_regs)
+            self._emit(f"+ {d} ($i64) {ZERO} {preg}")
+            dest_regs.append(d)
+
+        for p in reversed(pregs):
+            self._ra.unborrow(p)
         if b_bor: self._ra.unborrow(base)
 
     def _gen_IRStore(self, ir):

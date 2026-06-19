@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-06-19 — u128/u256 redesigned to transient borrow (mirroring $pack exactly); found and fixed a real latent alignment bug in borrow_pair() along the way; u256 now hardware-verified too (Latest)
+
+### borrow_pair() had NO alignment check at all -- not just "needs generalizing"
+Re-read the actual code before touching anything (per instruction): `borrow_pair()` only checked
+`n2 == n1+1` (consecutive). It never checked that the start index is even. ISA doc 12.2 confirmed
+verbatim: "When a pair of registers is used... the register specified... must have an even
+index... When a quad... an index which is a multiple of 4." So this wasn't "extend an existing
+even-check to also handle multiple-of-4" -- it was **add the missing even-check to `borrow_pair`
+itself** (a latent bug that happened not to bite `$pack` yet, presumably because the free pool's
+first consecutive run has so far always happened to start even) **and** add a correctly,
+independently-parameterized multiple-of-4 check for the new `borrow_quad`. Implemented both via
+one shared `_find_aligned_group(count, alignment)` scan so the two checks can't drift apart by
+accident.
+
+### Stage 1 reworked: permanent reg_pair() reverted, transient borrow like $pack
+Removed `RegAlloc.reg_pair()`/`_alloc_reg_pair()` entirely. `IRLoad128` generalized to
+`IRLoadWide(dests, base, offset)` (length 2 or 4). `_gen_IRLoadWide` now mirrors `_gen_IRPack`
+exactly: borrow an aligned pair/quad just for the one `$ld` instruction, copy each register out to
+an ordinary unconstrained register immediately, release the borrowed group right away. This means
+loaded values don't tie up alignment-sensitive registers for their whole lifetime -- important
+once Stage 2/3 need many loads live at once.
+
+### Unit test specifically targeting the trap flagged before implementing
+Direct `RegAlloc` test (not C-level): pool = `{$r2,$r3,$r4,$r5,$r8,$r9,$r10,$r11}` -- a tempting
+*contiguous* run at 2..5 (invalid, start=2 isn't a multiple of 4) alongside a genuinely valid one
+at 8..11. `borrow_quad()` returns `($r8,$r9,$r10,$r11)`, never touches `$r2`. Second case: pool =
+`{$r2,$r3,$r4,$r5}` only (no valid run anywhere) -- `has_free_quad()` is `False` and `borrow_quad()`
+raises rather than silently accepting the misaligned run. Third (bonus) case confirms
+`borrow_pair()` itself skips an odd-start pair (`$r3,$r4`) in favor of an even one (`$r6,$r7`) when
+both are present. All three pass.
+
+### Hardware verification, both widths
+`test_u128_load.c` (re-run after the rework): `$ld ($u128) $r6 [...]` (r6 is even) →
+`r1=0x1`, register trace `$r6=0x1111...111`, `$r7=0x2222...222`, exact match.
+`test_u256_load.c` (new): `$ld ($u256) $r8 [...]` (r8 is a multiple of 4) → `r1=0x1`, register trace
+`$r8=0x1111...`, `$r9=0x2222...`, `$r10=0x3333...`, `$r11=0x4444...`, exact match across all four
+quarters. Full 20-test regression (everything from the suite plus both new tests): zero
+regressions, including `test_pack` (also uses `borrow_pair()`) — unaffected by the new alignment
+check, consistent with it having always gotten lucky rather than ever needing an odd-start pair.
+
+### Status
+Both u128 and u256 load mechanics are now hardware-verified with correct ISA-mandated register
+alignment, proven by both a hardware test and a targeted allocator unit test. Stopping here per
+the staged plan — not touching the dot-split stage without confirmation.
+
+---
+
 ## 2026-06-19 — u128 register-pair load: Stage 1 (load mechanics only) PASSES. Stopping here per the staged plan, awaiting confirmation before Stage 2 (Latest)
 
 ### What was built

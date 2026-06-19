@@ -966,16 +966,19 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if fname == '__nop':
             self._emit(IRNop()); return Const(0)
 
-        # ── Wide u128 load round-trip (Stage 1: load mechanics only) ───────────
+        # ── Wide u128/u256 load round-trip (load mechanics only) ────────────────
         # __ld128(dst, src): one $ld ($u128) into a register pair, then two plain
-        # 64-bit stores of the two halves to dst[0]/dst[8]. Proves the load+pair-
+        # 64-bit stores of the halves to dst[0]/dst[8].
+        # __ld256(dst, src): same, $ld ($u256) into a register quad, four stores
+        # to dst[0]/dst[8]/dst[16]/dst[24]. Proves the load+aligned-group
         # allocation mechanism; no vector op involved yet.
-        if fname == '__ld128' and len(args) >= 2:
+        if fname in ('__ld128', '__ld256') and len(args) >= 2:
             dst_addr, src_addr = args[0], args[1]
-            lo, hi = self._tmp(), self._tmp()
-            self._emit(IRLoad128(lo, hi, src_addr, Const(0)))
-            self._emit(IRStore(dst_addr, Const(0), lo, 8))
-            self._emit(IRStore(dst_addr, Const(8), hi, 8))
+            n = 2 if fname == '__ld128' else 4
+            dests = [self._tmp() for _ in range(n)]
+            self._emit(IRLoadWide(dests, src_addr, Const(0)))
+            for i, d in enumerate(dests):
+                self._emit(IRStore(dst_addr, Const(i * 8), d, 8))
             return Const(0)
 
         # ── Float sqrt ────────────────────────────────────────────────────────

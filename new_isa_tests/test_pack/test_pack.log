@@ -82,7 +82,7 @@ Info: Init: IMEM[76] = 0x4c841c00
 Info: Init: IMEM[77] = 0x68000000
 Info: Init: IMEM[78] = 0x68000000
 Info: Init: IMEM[79] = 0x68000000
-Info: Init: IMEM[80] = 0x90810004
+Info: Init: IMEM[80] = 0x90820004
 Info: Init: IMEM[81] = 0x68000000
 Info: Init: IMEM[82] = 0x68000000
 Info: Init: IMEM[83] = 0x68000000
@@ -90,19 +90,19 @@ Info: Init: IMEM[84] = 0x4c862c00
 Info: Init: IMEM[85] = 0x68000000
 Info: Init: IMEM[86] = 0x68000000
 Info: Init: IMEM[87] = 0x68000000
-Info: Init: IMEM[88] = 0x90820006
+Info: Init: IMEM[88] = 0x90830006
 Info: Init: IMEM[89] = 0xe8000000
-Info: Init: IMEM[90] = 0xe0075801
-Info: Init: IMEM[91] = 0x1081d7e8
+Info: Init: IMEM[90] = 0xe0075802
+Info: Init: IMEM[91] = 0x1082d7e8
 Info: Init: IMEM[92] = 0xe8000000
 Info: Init: IMEM[93] = 0x68000000
 Info: Init: IMEM[94] = 0x68000000
 Info: Init: IMEM[95] = 0x68000000
-Info: Init: IMEM[96] = 0x9082d7e8
+Info: Init: IMEM[96] = 0x9083d7e8
 Info: Init: IMEM[97] = 0x68000000
 Info: Init: IMEM[98] = 0x68000000
 Info: Init: IMEM[99] = 0x68000000
-Info: Init: IMEM[100] = 0x50870c00
+Info: Init: IMEM[100] = 0x50871400
 Info: Init: IMEM[101] = 0x68000000
 Info: Init: IMEM[102] = 0x68000000
 Info: Init: IMEM[103] = 0x68000000
@@ -110,7 +110,7 @@ Info: Init: IMEM[104] = 0xe8000000
 Info: Init: IMEM[105] = 0x68000000
 Info: Init: IMEM[106] = 0x68000000
 Info: Init: IMEM[107] = 0x68000000
-Info: Init: IMEM[108] = 0x4c881400
+Info: Init: IMEM[108] = 0x4c881c00
 Info: Init: IMEM[109] = 0x68000000
 Info: Init: IMEM[110] = 0x68000000
 Info: Init: IMEM[111] = 0x68000000
@@ -758,7 +758,7 @@ RunLog[0]: 0x4d $null        ->
 RunLog[0]: 0x4e $null        -> 
 RunLog[0]: 0x4f $null        -> 
 Info: Tick on thread 0
-Info: McodeAccelerator:: 0x90810004 = IMEM[0x50]
+Info: McodeAccelerator:: 0x90820004 = IMEM[0x50]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x51]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x52]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x53]
@@ -802,7 +802,7 @@ Info: 86: Null!
 LOG:Execute     : 0x56  McodeNullInstruction
 Info: 87: Null!
 LOG:Execute     : 0x57  McodeNullInstruction
-Info: RunLog[0]: Set_Register(1, 0xbeef)
+Info: RunLog[0]: Set_Register(2, 0xbeef)
 LOG:Set_Results  : 0x50  McodeAluInstruction
 LOG:Set_Results  : 0x51  McodeNullInstruction
 LOG:Set_Results  : 0x52  McodeNullInstruction
@@ -822,10 +822,10 @@ RunLog[0]: 0x55 $null        ->
 RunLog[0]: 0x56 $null        -> 
 RunLog[0]: 0x57 $null        -> 
 Info: Tick on thread 0
-Info: McodeAccelerator:: 0x90820006 = IMEM[0x58]
+Info: McodeAccelerator:: 0x90830006 = IMEM[0x58]
 Info: McodeAccelerator:: 0xe8000000 = IMEM[0x59]
-Info: McodeAccelerator:: 0xe0075801 = IMEM[0x5a]
-Info: McodeAccelerator:: 0x1081d7e8 = IMEM[0x5b]
+Info: McodeAccelerator:: 0xe0075802 = IMEM[0x5a]
+Info: McodeAccelerator:: 0x1082d7e8 = IMEM[0x5b]
 Info: McodeAccelerator:: 0xe8000000 = IMEM[0x5c]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x5d]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x5e]
@@ -840,7 +840,7 @@ LOG:Get_Operands: 0x58  McodeAluInstruction
 Info: ___execute_alu_operation___
 Info: 88: Alu!
 LOG:Execute     : 0x58  McodeAluInstruction
-Info: RunLog[0]: Set_Register(2, 0xdead)
+Info: RunLog[0]: Set_Register(3, 0xdead)
 LOG:Set_Results  : 0x58  McodeAluInstruction
 RunLog[0]: l_88 pc=0x58  McodeInstructionBundle
 RunLog[0]: 0x58 +           0x0    0xdead     -> 0xdead    
@@ -856,9 +856,9 @@ RunLog[0]: 0x59 $null        ->
 Info: Tick on thread 0
 Info: McodeMachine:Run_Machine PC=0x5a
 Info: McodeMachine:Run_Machine: new bundle pc=0x5a (size=2)
-Info: RunLog[0]: 0xbeef = Get_Register(1)
+Info: RunLog[0]: 0xbeef = Get_Register(2)
 
-Info: RunLog[0]: 0xdead = Get_Register(2)
+Info: RunLog[0]: 0xdead = Get_Register(3)
 
 LOG:Get_Operands: 0x5a  McodePackInstruction
 Info: RunLog[0]: 0x7ff8 = Get_Register(26)
@@ -870,7 +870,7 @@ Info: 91: Alu!
 LOG:Execute     : 0x5b  McodeAluInstruction
 Info: RunLog[0]: Set_Register(7, 0xbeefdead)
 LOG:Set_Results  : 0x5a  McodePackInstruction
-Info: RunLog[0]: Set_Register(1, 0x7fe0)
+Info: RunLog[0]: Set_Register(2, 0x7fe0)
 LOG:Set_Results  : 0x5b  McodeAluInstruction
 RunLog[0]: l_90 pc=0x5a  McodeInstructionBundle
 RunLog[0]: 0x5a    0xbeef    0xdead     -> 0xbeefdead    
@@ -900,11 +900,11 @@ RunLog[0]: 0x5d $null        ->
 RunLog[0]: 0x5e $null        -> 
 RunLog[0]: 0x5f $null        -> 
 Info: Tick on thread 0
-Info: McodeAccelerator:: 0x9082d7e8 = IMEM[0x60]
+Info: McodeAccelerator:: 0x9083d7e8 = IMEM[0x60]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x61]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x62]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x63]
-Info: McodeAccelerator:: 0x50870c00 = IMEM[0x64]
+Info: McodeAccelerator:: 0x50871400 = IMEM[0x64]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x65]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x66]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x67]
@@ -916,7 +916,7 @@ LOG:Get_Operands: 0x60  McodeAluInstruction
 LOG:Get_Operands: 0x61  McodeNullInstruction
 LOG:Get_Operands: 0x62  McodeNullInstruction
 LOG:Get_Operands: 0x63  McodeNullInstruction
-Info: RunLog[0]: 0x7fe0 = Get_Register(1)
+Info: RunLog[0]: 0x7fe0 = Get_Register(2)
 
 Info: RunLog[0]: 0xbeefdead = Get_Register(7)
 
@@ -944,7 +944,7 @@ Info: 102: Null!
 LOG:Execute     : 0x66  McodeNullInstruction
 Info: 103: Null!
 LOG:Execute     : 0x67  McodeNullInstruction
-Info: RunLog[0]: Set_Register(2, 0x7fe0)
+Info: RunLog[0]: Set_Register(3, 0x7fe0)
 LOG:Set_Results  : 0x60  McodeAluInstruction
 LOG:Set_Results  : 0x61  McodeNullInstruction
 LOG:Set_Results  : 0x62  McodeNullInstruction
@@ -967,7 +967,7 @@ Info: McodeAccelerator:: 0xe8000000 = IMEM[0x68]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x69]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x6a]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x6b]
-Info: McodeAccelerator:: 0x4c881400 = IMEM[0x6c]
+Info: McodeAccelerator:: 0x4c881c00 = IMEM[0x6c]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x6d]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x6e]
 Info: McodeAccelerator:: 0x68000000 = IMEM[0x6f]
@@ -977,7 +977,7 @@ LOG:Get_Operands: 0x68  McodeNullInstruction
 LOG:Get_Operands: 0x69  McodeNullInstruction
 LOG:Get_Operands: 0x6a  McodeNullInstruction
 LOG:Get_Operands: 0x6b  McodeNullInstruction
-Info: RunLog[0]: 0x7fe0 = Get_Register(2)
+Info: RunLog[0]: 0x7fe0 = Get_Register(3)
 
 LOG:Get_Operands: 0x6c  McodeLoadInstruction
 LOG:Get_Operands: 0x6d  McodeNullInstruction
