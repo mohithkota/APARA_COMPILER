@@ -957,7 +957,7 @@ class CodeGen:
         tru, t_bor = self._operand_reg(ir.src_true,  protect=[d, chk, fls] + sn)
 
         self._emit(f"+ {dest} ($i64) {ZERO} {fls}")
-        self._emit(f"$cmov ({ir.type_str}) {chk} {ir.cond} {dest} {tru}")
+        self._emit(f"$cmov ? ({ir.type_str}) {chk} {ir.cond} {dest} {tru}")
 
         if t_bor: self._ra.unborrow(tru)
         if f_bor: self._ra.unborrow(fls)

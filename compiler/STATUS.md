@@ -2,6 +2,62 @@
 
 ---
 
+## 2026-06-19 — Three real compiler-side bugs found and fixed: $cmov operand grammar, and a bundler bug that was silently causing test_2d/test_fsqrt/test_matmul's aligner crashes (Latest)
+
+### 1. `$cmov` fixed — `codegen.py`'s `_gen_IRCmov`
+Professor's freshly-pulled engine (`10.107.90.220:/students/mohith/AjitHpc_new/...`) confirmed
+`$cmov` requires a `?` token right after the mnemonic, matching `engine_new`'s grammar (not the
+historical `engine_isp` grammar our codegen targeted). Traced the actual register-role wiring
+empirically (`McodeInstructions.cpp`'s `Get_Operands`/`Execute`) rather than trusting grammar
+comments, since theoretical grammar-position reasoning gave contradictory results twice. **Fix**:
+add `?`; the check/src_true register ORDER in the text is unchanged (`check` first, `src_true`
+last) — only the `?` was missing. `bundler.py`'s `$cmov` hazard regex updated to match. Verified:
+`test_cmov` now returns `0x258` (600), exact match, zero regressions on anything else.
+
+### 2. Real bundler bug found: consecutive labels on one bundle aren't valid syntax
+While building a matrix-multiply test (`new_isa_tests/test_matmul.c`, 3x3, flattened 1D arrays to
+avoid the already-known 2D-array aligner issue), hit the *same* `Calculate_Pad_For_Alignment`
+assertion crash that blocks `test_2d`/`test_fsqrt`/`test_vreduce`. Root-caused properly this time
+(bisected the mcode by bundle boundaries): `bundler.py`'s `_emit_bundles` prints **every** label
+attached to a bundle on its own line before `||` — but the assembler grammar only allows ONE label
+directly before a bundle (confirmed: `expecting PARALLEL, found <label>` when two appear in a
+row). This happens whenever, e.g., an inner loop's exit label lands on the exact same bundle as an
+outer loop's increment label with no real instruction between them — common in nested loops. The
+resulting parse error leaves a zero-instruction bundle, and `Calculate_Capacity()` in
+`McodeBundle.cpp` silently returns 0 for it (logs an error but doesn't abort) instead of crashing
+there — the crash only surfaces later in `Calculate_Pad_For_Alignment`'s division-by-zero guard,
+which is why this looked unrelated for so long.
+
+**Fix** (`bundler.py`, new `_merge_duplicate_labels`, wired into `bundle_mcode` between
+`_pack_bundles` and `_emit_bundles`): when a bundle ends up with multiple labels, collapse to one
+canonical label (the first) and rewrite every `$goto`/`$call` reference to the dropped labels so
+they point at the canonical one instead. (`$call $rN`, register-indirect, is never matched — the
+regex requires a bare identifier with no leading `$`.)
+
+**This one fix resolved four programs at once**: `test_matmul` now returns `0x26d` (621, exact —
+hand-verified 3x3 matrix multiply), and as a bonus, `test_2d` and `test_fsqrt` — both blocked by
+this exact crash for weeks — now align and run cleanly (`test_2d`=`0x0`, matching expected).
+`test_vreduce` still crashes, but confirmed via the same bisection technique that it has **no**
+consecutive-label pattern — a different, separate, not-yet-diagnosed cause.
+
+### 3. Vector type coverage: `vi4`/`vu8` confirmed not to crash (not bit-level verified)
+Wrote `new_isa_tests/test_vec_extra.c` exercising `__vadd_vi4`/`__vadd_vu8` (previously completely
+untested — the intrinsic parser does zero suffix validation). Compiles and runs cleanly, zero
+pipeline errors. **Not yet hand-verified bit-exact** — that needs dedicated test design, not a
+quick check; flagging honestly rather than claiming full confidence here.
+
+### Also fixed: `compiler.py`'s `write_run_script` template
+Was still emitting the stale March-6 `engine_isp` `BIN_DIR` for any newly-compiled test (flagged
+yesterday, actually bit us today recompiling `test_cmov`). Now points at `engine_new`.
+
+### Full regression after all of the above
+`test_alu`=0xd, `test_array`=0x96, `test_struct`=0x0, `test_branch`=0x1, `test_ldst`=0x3e8,
+`test_pointer`=0xf, `test_subword`=0x1, `test_dot`=0x5a, `test_spill`=0x1d1,
+`test_scalar_full`=0xc, `test_vadd`=0x4, `test_slice`=0xb7, `test_cast`=0x78ab9bcd,
+`test_pack`=0xdead, `test_cmov`=0x258 — all exactly correct, zero regressions from today's changes.
+
+---
+
 ## 2026-06-18 — IMEM size bug CONFIRMED against the official ISA doc and fixed for real this time: simulator was [2048] (8KB), spec says 16KB; corrected to [4096]. test_struct/test_spill/test_scalar_full ALL pass (Latest)
 
 ### What changed since the last entry

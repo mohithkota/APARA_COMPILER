@@ -31,12 +31,9 @@ mcode_alu_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_fsqrt_instruction 
-Parsing Exception: test_fsqrt.mcode:33:12: expecting LPAREN, found '$r1'
-Parsing Exception: test_fsqrt.mcode:34:5: expecting RUINTEGER, found '+'
 mcode_instruction
 mcode_arithmetic_instruction
-mcode_vreduce_instruction
-Parsing Exception: test_fsqrt.mcode:34:23: expecting SEMICOLON, found '-8'
+mcode_alu_instruction
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -46,12 +43,9 @@ mcode_alu_instruction
 mcode_instruction
 mcode_arithmetic_instruction
 mcode_fsqrt_instruction 
-Parsing Exception: test_fsqrt.mcode:41:12: expecting LPAREN, found '$r3'
-Parsing Exception: test_fsqrt.mcode:42:5: expecting RUINTEGER, found '+'
 mcode_instruction
 mcode_arithmetic_instruction
-mcode_vreduce_instruction
-Parsing Exception: test_fsqrt.mcode:42:23: expecting SEMICOLON, found '-16'
+mcode_alu_instruction
 mcode_instruction
 mcode_mem_access_instruction
 mcode_store_instruction
@@ -110,4 +104,32 @@ Info: added pad bundle pad_4__6 with size 4
 Info:  Bundle id=4 addr=11 pad amount 7
 Info:  Bundle id=5 addr=20 pad amount 0
 Info:  Bundle id=6 addr=22 pad amount 0
-mcode_align: src/McodeBundle.cpp:222: int McodeInstructionBundle::Calculate_Pad_For_Alignment(uint32_t): Assertion `0' failed.
+Info: Adding pad bundles to cover size 4
+Info: added pad bundle pad_4__8 with size 4
+Info:  Bundle id=7 addr=24 pad amount 4
+Info:  Bundle id=8 addr=30 pad amount 0
+Info:  Bundle id=9 addr=38 pad amount 0
+Info:  Bundle id=10 addr=40 pad amount 0
+Info:  Bundle id=11 addr=48 pad amount 0
+Info:  Bundle id=12 addr=50 pad amount 0
+Info:  Bundle id=13 addr=58 pad amount 0
+Info:  Bundle id=14 addr=59 pad amount 0
+Info: Adding pad bundles to cover size 6
+Info: added pad bundle pad_2__10 with size 2
+Info: added pad bundle pad_4__12 with size 4
+Info:  Bundle id=15 addr=5a pad amount 6
+Info:  Bundle id=16 addr=68 pad amount 0
+Info:  Bundle id=17 addr=70 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__14 with size 1
+Info: added pad bundle pad_2__16 with size 2
+Info: added pad bundle pad_4__18 with size 4
+Info:  Bundle id=18 addr=71 pad amount 7
+Info:  Bundle id=19 addr=80 pad amount 0
+Info: Adding pad bundles to cover size 7
+Info: added pad bundle pad_1__20 with size 1
+Info: added pad bundle pad_2__22 with size 2
+Info: added pad bundle pad_4__24 with size 4
+Info:  Bundle id=20 addr=81 pad amount 7
+Info: call label main translated to pc-relative 24
+Info: branch label main_epilogue translated to pc-relative 7

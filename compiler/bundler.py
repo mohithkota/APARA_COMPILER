@@ -126,9 +126,9 @@ def _parse_deps(text):
         return NONE3
 
     if t.startswith('$cmov'):
-        # $cmov (type) check cond rd src_true
+        # $cmov ? (type) check cond rd src_true
         # rd is BOTH read (kept unchanged if the condition is false) and written.
-        m = re.match(r'\$cmov\s+\(\$\w+\)\s+(\$r\d+)\s+\S+\s+(\$r\d+)\s+(\$r\d+)', t)
+        m = re.match(r'\$cmov\s+\?\s+\(\$\w+\)\s+(\$r\d+)\s+\S+\s+(\$r\d+)\s+(\$r\d+)', t)
         if m:
             check, rd, src_true = m.group(1), m.group(2), m.group(3)
             return frozenset({rd}), frozenset({check, rd, src_true}), False, None, None
@@ -339,6 +339,36 @@ def _pack_bundles(flat):
     return bundles
 
 
+def _merge_duplicate_labels(bundles):
+    """
+    The assembler grammar only allows one label directly before a bundle's '||'
+    (confirmed: "expecting PARALLEL, found <label>" if a second one follows).
+    When a bundle ends up with multiple labels — e.g. an inner for-loop's exit
+    label lands on the exact same bundle as an outer loop's increment label,
+    with no real instruction between them — collapse them to one canonical
+    label and rewrite every $goto/$call reference to the dropped labels so
+    they point at the canonical one instead. ($call $rN, register-indirect,
+    is never matched here since the regex requires a bare identifier with no
+    leading $.)
+    """
+    rename = {}
+    for b in bundles:
+        if len(b['labels']) > 1:
+            canonical = b['labels'][0]
+            for extra in b['labels'][1:]:
+                rename[extra] = canonical
+            b['labels'] = [canonical]
+    if not rename:
+        return bundles
+    pattern = re.compile(r'(\$goto|\$call)(\s+)(\w+)')
+    def _sub(m):
+        kw, sp, lbl = m.group(1), m.group(2), m.group(3)
+        return f"{kw}{sp}{rename.get(lbl, lbl)}"
+    for b in bundles:
+        b['instrs'] = [pattern.sub(_sub, itext) for itext in b['instrs']]
+    return bundles
+
+
 # ── Emitter ───────────────────────────────────────────────────────────────────
 
 def _emit_bundles(header, bundles):
@@ -365,6 +395,7 @@ def bundle_mcode(mcode_text):
     header, flat  = _parse_flat(mcode_text)
     n_before      = sum(1 for x in flat if x['text'] != '$null')
     bundles       = _pack_bundles(flat)
+    bundles       = _merge_duplicate_labels(bundles)
     n_after       = len(bundles)
     new_mcode     = _emit_bundles(header, bundles)
     return new_mcode, n_before, n_after
