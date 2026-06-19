@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-06-19 — Hand-unroll experiment: bundle count went UP (156→246), not down — real finding, not a dead end (Latest)
+
+### What was tested
+Before committing to building a general loop-unroller, validated the hypothesis cheaply by
+hand-unrolling `test_matmul_packed.c`'s inner `j`-loop by 4 (`test_matmul_packed_unrolled.c`,
+separate `buf0`..`buf3` so the 4 loads don't share a false memory dependency through one buffer).
+Correctness holds: `r1=0x1`, zero pipeline errors, same three corner spot-checks pass.
+
+### Result: bundle count went UP, not down
+| Version | Bundles |
+|---|---|
+| Original (real loop, no unroll) | 156 |
+| Hand-unrolled by 4 | **246** |
+| 16x16 reference | 19 |
+
+### Why — confirmed in the generated mcode, not guessed
+`__ld128`/`__ld256` (built in Stage 1) always round-trip the loaded pair through memory: load into
+a register pair → copy to ordinary registers → **store immediately out** to the destination buffer
+(`dst[0]`/`dst[8]`). Confirmed directly: `$ld ($u128) $r4 [...]` → `+r21=r0+r4; +r20=r0+r5` →
+`$st [$r13+0] $r21; $st [$r13+8] $r20`. When the caller then reads `buf[0]`/`buf[1]` back (to feed
+`__dot128_vu8`), that's a **second** load of the same data. `bundler.py` correctly refuses to pack
+a store with its own immediate reload (the exact memory-hazard fix from 2026-06-17) — so unrolling
+just multiplies this store+reload overhead by 4 instead of buying any parallelism. The hypothesis
+("does the existing bundler close the gap once given unrolled, independent work") is **answered:
+no — not because the bundler is weak, but because `__ld128`'s memory-round-trip design is the
+wrong shape for chaining straight into a vector op.** It was the right design for Stage 1's actual
+goal (verify the load mechanism by observing it through memory); it's the wrong tool here.
+
+### What this means for next steps (not started tonight, per instruction)
+The real fix isn't a loop unroller — it's a **different load primitive** that keeps the pair/quad
+live in registers for direct use by `__dot128_vu8`, with no forced memory round-trip (closer to
+what the reference does: `$ld` straight into `$rN`, fed straight into `$dot`). That's a smaller,
+better-understood change than a general unroller, but it's still new work. **Not started tonight**
+— stopping here as instructed. Next session: build that direct-use load primitive first, *then*
+revisit whether unrolling is still worth it on top of it.
+
+---
+
 ## 2026-06-19 — Step 4: bundle-count gap measured and explained, not chased (Latest)
 
 ### Raw numbers
