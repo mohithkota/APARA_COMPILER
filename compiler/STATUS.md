@@ -2,6 +2,59 @@
 
 ---
 
+## 2026-06-19 — Stage 3 (full matmul) blocked by a real architectural finding, not a bug to fix in passing: byte arrays are NOT tightly packed in this compiler, so u128/u256 loads can't see them as packed byte vectors (Latest)
+
+### What was attempted
+Composed the already-verified Stage 1 (`__ld128`) and Stage 2 (`__dot128_vu8`) pieces into an
+actual 16x16 `vu8` matmul (`new_isa_tests/test_matmul_u128.c`), matching the hand-written 16x16
+reference's data layout (B pre-transposed) and verified against its own checksum (67517440) and
+spot-checked output values. **Failed**: `C[0]` came out wrong.
+
+### Root cause — found, not guessed, and it's bigger than this stage
+Isolated with a minimal repro (`new_isa_tests/test_ld128_then_dot.c`: load two 16-byte `unsigned
+char` arrays via `__ld128`, dot them with `__dot128_vu8`, expect 136). Checked the actual IR:
+```
+GLOBAL A @0x400 (128B stride=8)
+...
+_t9 = _t8 * 8        // index k -> byte offset k*8, not k*1
+```
+**Every array element in this compiler — regardless of its C type's actual size — gets its own
+8-byte-aligned DMEM slot** (the established convention, documented elsewhere as working around an
+`$ld ($i32)` hardware quirk). A 16-element `unsigned char A[16]` therefore occupies 128 bytes in
+memory, not 16: each real byte is followed by 7 bytes of padding. A `$ld ($u128)` reads 16
+*physically consecutive bytes* — which under this layout is `A[0]`'s one real byte, 7 padding
+zeros, and 1 byte of `A[1]`'s slot. It never sees 16 packed logical elements. Confirmed in the
+runtime trace: the loaded "vector" came back as `0x0100000000000000` — exactly one real byte
+(value 1) followed by zeros, matching this explanation precisely.
+
+**Why Stage 1 didn't catch this**: it used `long long src[2]` — for an 8-byte C type, the 8-byte
+stride *is* the element size, so there's no padding to expose. Stage 2 was fed literal constants
+directly, no memory layout involved at all. Byte vectors are specifically what u128/u256 loads
+exist for, so this stage was the first one that could possibly hit it.
+
+### This is an architectural decision, not a quick fix — stopping per instruction
+This isn't "implement the obvious fix" — it's "decide how byte arrays meant for vector use should
+be laid out," which has real tradeoffs (a separate tightly-packed array kind? a `__packed`
+attribute? change the global stride rule only for `vu8`-tagged arrays?) that aren't mine to choose
+unilaterally. Flagging precisely and stopping here rather than guessing at a fix, per the explicit
+instruction for exactly this kind of finding.
+
+### What's verified and what's not (precise state, nothing half-applied)
+- **Verified, hardware-confirmed, solid**: `$ld ($u128)`/`$ld ($u256)` register-pair/quad load
+  mechanics (Stage 1), alignment-correct `borrow_pair`/`borrow_quad` (with a targeted unit test),
+  the `$dot`+`$dot $accumulate` split lowering for 128-bit-wide dot products fed from registers
+  directly (Stage 2, `test_dot128_split.c`, exact match).
+- **NOT verified, blocked**: composing a wide load's output into a vector op when the source data
+  is a C byte array — blocked by the stride-8-per-element layout above, not by anything in the
+  Stage 1/2 code itself.
+- **Test files left in place, not reverted**: `test_matmul_u128.c` and `test_ld128_then_dot.c` are
+  committed as-is (the latter with its one failing check) — they're the reproduction evidence for
+  this finding, not a regression to fix later. `test_matmul_u128.c`'s checksum check is commented
+  out (the spot-checks below it already fail first; left the comment explaining why rather than
+  deleting it).
+
+---
+
 ## 2026-06-19 — Dot-split stage DONE: u128-wide $dot auto-lowering implemented and hardware-verified (Latest)
 
 ### What was implemented (no re-derivation — emitted the proven 16x16 reference pattern exactly)
