@@ -240,6 +240,7 @@ class CodeGen:
         elif cls == 'IRVecArith':   ops = [ir.src1, ir.src2]
         elif cls == 'IRVecDot':     ops = [ir.src1, ir.src2] + (
                                         [ir.accum] if ir.accumulate and ir.accum else [])
+        elif cls == 'IRVecDot128':  ops = [ir.a_lo, ir.a_hi, ir.b_lo, ir.b_hi]
         elif cls == 'IRVecReduce':  ops = [ir.src]
         elif cls == 'IRIndirectCall': ops = ([ir.func_ptr] if isinstance(ir.func_ptr, Temp) else []) + list(ir.args)
         # IRFuncAddr has no source temps (it just names a label)
@@ -1130,6 +1131,32 @@ class CodeGen:
             self._emit(f"$dot {dest} ({ir.type_str}) {rs1} {rs2}")
         if b2: self._ra.unborrow(rs2)
         if b1: self._ra.unborrow(rs1)
+
+    def _gen_IRVecDot128(self, ir):
+        """
+        16-element dot product split across a u128 pair, confirmed correct
+        from the 16x16 reference (log.txt) -- emit exactly this, no
+        re-derivation:
+            $dot              dest (type) lo_a lo_b
+            $dot $accumulate  dest (type) hi_a hi_b
+        $dot's own operands have no register-pair alignment requirement
+        (unlike $ld ($u128)/($u256) and $pack) -- a_lo/a_hi/b_lo/b_hi are
+        ordinary, independently-allocated registers here.
+        """
+        sn   = [t.name for t in [ir.a_lo, ir.a_hi, ir.b_lo, ir.b_hi] if isinstance(t, Temp)]
+        dest = self._alloc_reg(ir.dest, protect=sn)
+        d    = ir.dest.name
+        lo_a, loa_b = self._operand_reg(ir.a_lo, protect=[d] + sn)
+        lo_b, lob_b = self._operand_reg(ir.b_lo, protect=[d, lo_a] + sn)
+        self._emit(f"$dot {dest} ({ir.type_str}) {lo_a} {lo_b}")
+        if lob_b: self._ra.unborrow(lo_b)
+        if loa_b: self._ra.unborrow(lo_a)
+
+        hi_a, hia_b = self._operand_reg(ir.a_hi, protect=[d] + sn)
+        hi_b, hib_b = self._operand_reg(ir.b_hi, protect=[d, hi_a] + sn)
+        self._emit(f"$dot $accumulate {dest} ({ir.type_str}) {hi_a} {hi_b}")
+        if hib_b: self._ra.unborrow(hi_b)
+        if hia_b: self._ra.unborrow(hi_a)
 
     def _gen_IRVecReduce(self, ir):
         # $vreduce requires a sub-opcode token (+ for sum-reduce) between the

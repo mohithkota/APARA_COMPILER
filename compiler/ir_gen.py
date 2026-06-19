@@ -1019,6 +1019,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRVecArith(res, op, args[0], args[1], tstr, replicate))
                 return res
 
+        # ── 128-bit-wide DOT: __dot128_{type}(a_lo, a_hi, b_lo, b_hi) ───────────
+        # Auto-split into the exact two-instruction pattern confirmed from the
+        # 16x16 reference: plain $dot on the lo halves, $dot $accumulate on hi.
+        if fname and fname.startswith('__dot128_') and len(args) >= 4:
+            tstr = '$' + fname[9:]
+            self._emit(IRVecDot128(res, args[0], args[1], args[2], args[3], tstr))
+            return res
+
         # ── DOT product:  __dot_{type}  /  __dot_acc_{type} ──────────────────
         if fname and fname.startswith('__dot_'):
             rest = fname[6:]                       # "vi4" or "acc_vi4"

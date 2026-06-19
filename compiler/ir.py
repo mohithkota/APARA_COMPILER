@@ -198,6 +198,21 @@ class IRVecDot:
         self.type_str = type_str; self.accumulate = accumulate; self.accum = accum
     def __repr__(self): return f"{self.dest} = dot({self.type_str}) {self.src1} . {self.src2}"
 
+class IRVecDot128:
+    """
+    dest = 16-element dot product across a u128-wide pair, split into the
+    exact two-instruction pattern confirmed from the 16x16 reference
+    (log.txt): a plain $dot on the lo halves, then $dot $accumulate on the
+    hi halves into the same dest. a_lo/a_hi hold elements 0-7/8-15 of vector
+    A; b_lo/b_hi the same for vector B.
+    """
+    def __init__(self, dest, a_lo, a_hi, b_lo, b_hi, type_str):
+        self.dest = dest
+        self.a_lo = a_lo; self.a_hi = a_hi; self.b_lo = b_lo; self.b_hi = b_hi
+        self.type_str = type_str
+    def __repr__(self):
+        return f"{self.dest} = dot128({self.type_str}) ({self.a_lo}:{self.a_hi}) . ({self.b_lo}:{self.b_hi})"
+
 class IRVecReduce:
     """dest = $vreduce (type_str) src  — sum all vector elements"""
     def __init__(self, dest, src, type_str):

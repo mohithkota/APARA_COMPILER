@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-06-19 — Dot-split stage DONE: u128-wide $dot auto-lowering implemented and hardware-verified (Latest)
+
+### What was implemented (no re-derivation — emitted the proven 16x16 reference pattern exactly)
+New `IRVecDot128(dest, a_lo, a_hi, b_lo, b_hi, type_str)` + `_gen_IRVecDot128` in `codegen.py`,
+emitting exactly:
+```
+$dot              dest (type) lo_a lo_b
+$dot $accumulate  dest (type) hi_a hi_b
+```
+New intrinsic `__dot128_{type}(a_lo, a_hi, b_lo, b_hi)` in `ir_gen.py`. No bundler change needed —
+`$dot`/`$dot $accumulate` hazard tracking already existed and already matches this exact emitted
+form. `$dot`'s own operands have no register-pair alignment requirement (unlike `$ld ($u128)`/
+`$pack`), so `a_lo`/`a_hi`/`b_lo`/`b_hi` are ordinary, independently-allocated registers here —
+no borrow_pair/borrow_quad involved in this stage.
+
+### Verification — `new_isa_tests/test_dot128_split.c`
+16-element `vu8` dot: A = 1..16, B = all 1s. Hand-computed: sum(1..16)×1 = 136 = `0x88`.
+Emitted mcode confirmed exact target pattern: `$dot $r13 ($vu8) $r6 $r10` then
+`$dot $accumulate $r13 ($vu8) $r8 $r12`. Register trace: `$r13` goes `0x24` (36, lo-half sum,
+matches 1+2+...+8 by hand) → `0x88` (136, after accumulate, matches 36+100 by hand) — exact match
+at both steps, not just the final aggregate. `r1=0x1`, zero pipeline errors. Quick regression on
+overlapping tests (`test_dot`, `test_pack`, `test_u128_load`, `test_u256_load`, `test_matmul`):
+unchanged.
+
+### Status: dot-split stage verified and committed. Ready for Stage 3 (full matmul) on confirmation.
+All three staged pieces (u128/u256 load mechanics, alignment-correct borrow_pair/borrow_quad, and
+now the dot-split lowering) are independently hardware-verified. Not yet wired into an actual
+matrix multiply — that's the next stage, not started, awaiting go-ahead per the staged plan.
+
+---
+
 ## 2026-06-19 — u128/u256 redesigned to transient borrow (mirroring $pack exactly); found and fixed a real latent alignment bug in borrow_pair() along the way; u256 now hardware-verified too (Latest)
 
 ### borrow_pair() had NO alignment check at all -- not just "needs generalizing"
