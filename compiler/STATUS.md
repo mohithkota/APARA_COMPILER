@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-06-19 — Hand-verified vi4/vu8: vu8 correct, vi4 confirmed BROKEN (engine bug, exact line found) (Latest)
+
+Yesterday's "vi4/vu8 don't crash" claim was correctly challenged as insufficient. Wrote two
+minimal, hand-computable tests (`new_isa_tests/test_vi4_check.c`, `test_vu8_check.c`) and compared
+the exact hardware register value against a hand-computed expected value — not just "did it run."
+
+| Type | a | b | Expected (hand-computed) | Hardware actual | Result |
+|---|---|---|---|---|---|
+| `vu8` | `0x0102030405060708` | `0x1010101010101010` | `0x1112131415161718` (each byte +0x10, no overflow) | `0x1112131415161718` | **exact match** |
+| `vi4` | `0x1111111111111111` | `0x2222222222222222` | `0x3333333333333333` (each nibble 1+2=3, no overflow) | `0x0` | **WRONG** |
+
+### Root cause for vi4 — found, not guessed (engine bug)
+Traced `$v +` for `(vi4)` through `___execute_valu_operation___` → `__valu_operation__` →
+`__alu_operation__` → `CastToU64()` (all in `McodeOperations.cpp`). `CastToU64(int signed_flag,
+uint32_t nbits, uint64_t ival)` (line 50) has a `switch(nbits)` with cases for **8, 16, 32, 64
+only** — no `case 4`. For any 4-bit-wide result (every `vi4`/`vu4`/`vf4` element op), the switch
+falls through with no case matching, `result` is declared but **never assigned**, and the function
+returns whatever garbage was already on the stack — which happened to be `0` in this run, hence
+every element of the vi4 add silently became `0`, concatenating to a final `0x0`. `vu8`/`vi8`/etc.
+all hit the `case 8` (or 16/32/64) branch correctly, which is why every other tested vector width
+is fine and only the 4-bit path is broken.
+
+Type parsing itself is correct (confirmed in `isa.g`'s `mcode_type_specifier` rule: `vi4_t` →
+`nbits=4, vector_flag=1`) — the bug is purely in this one switch statement's missing case, not in
+how `vi4` is recognized or decoded.
+
+**Not fixed** (engine-side, same protocol as today's other engine findings — needs the professor).
+The fix is mechanical: add a `case 4:` doing a manual 4-bit sign-extend/mask (no native C++ `int4_t`
+to reuse the existing `___signed_cast___`/`___unsigned_cast___` macros with). **Flagging, not
+guessing further**: there are similar `switch(nbits)` statements in `McodeNumeric.cpp:493` (used by
+`$cast`) and five in `McodeFpuUtils.cpp` (float ops) — not checked for the same missing-case-4 gap;
+don't assume `i4`/`u4`/`f4` scalar casts or float-4 ops are safe until checked the same way.
+
+### Bottom line on vectors
+`vi8`/`vi16`/`vi32` (signed) and `vu8` (unsigned, newly hand-verified) are confirmed correct.
+**`vi4` is confirmed broken with a precise, citable root cause** — do not use it, and don't claim
+4-bit vector types work in general until `CastToU64` is fixed and re-verified. `vu4`/`vf4` are
+untested but share the exact same code path, so should be assumed broken too until checked.
+
+---
+
 ## 2026-06-19 — Three real compiler-side bugs found and fixed: $cmov operand grammar, and a bundler bug that was silently causing test_2d/test_fsqrt/test_matmul's aligner crashes (Latest)
 
 ### 1. `$cmov` fixed — `codegen.py`'s `_gen_IRCmov`
