@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-06-19 — Step 4: bundle-count gap measured and explained, not chased (Latest)
+
+### Raw numbers
+Our `test_matmul_packed.mcode`: 232 bundles before VLIW packing, **156 after**. Reference
+`16x16.mcode`: **19 bundles** total. Comparing these two numbers directly is unfair, though — the
+reference's data is pre-loaded via `data.map` before the program even starts (no runtime
+initialization at all), while our test computes `A`/`BT` at runtime via a nested loop with two
+`% 256` modulo operations (each needing a div/mul/sub synthesis sequence, since there's no native
+MOD instruction).
+
+### Fair comparison: matmul loop body only
+Broke our 156 bundles down by label range: **47** bundles are the data-init double-loop (not
+present in the reference at all), **65** are the actual matmul double-loop, **44** are
+prologue/epilogue/spot-checks. So the real comparison is **65 (ours) vs 19 (reference)** for
+logically equivalent work — still a ~3.4x gap, and here's precisely why:
+
+1. **The reference fully unrolls its inner 16-column loop.** Its outer loop (16 row iterations)
+   contains zero inner branches — all 16 output columns per row are computed via straight-line
+   code. Our C source has a real `for(j=0;j<16;j++)` inner loop, so every one of our 65 bundles
+   includes the recurring cost of the inner loop's branch + counter increment + bounds check,
+   paid once per source-level loop body rather than amortized away by unrolling.
+2. **The reference batches 4 independent `$ld ($u128)` calls into a single bundle** (`load1`/
+   `load2`/`load3`/`load4`, each 4 parallel loads in one VLIW bundle) — maximum use of per-bundle
+   parallelism. Our C source issues exactly one `__ld128` per loop iteration, so there is no
+   *static* 4-way-parallel code for `bundler.py` to discover and pack together — the bundler can
+   only pack what the source actually expresses; it can't see "4 loop iterations from now" and
+   pull work forward across iterations.
+3. **Same story for `$dot`/`$dot $accumulate`**: the reference's `dot1`-`dot8` blocks batch 4 dot
+   operations per bundle; ours does one dot-pair per inner-loop iteration.
+
+### Not chasing this further, per instruction
+Closing this gap would mean either hand-unrolling the inner loop in the C source (tedious, and
+arguably defeats the point of writing it as a loop) or building a real loop-unrolling optimization
+pass in the compiler (a substantial new feature, not a cheap fix). Neither qualifies as "obviously
+cheap," so — as instructed — not doing it now. The gap is fully explained and the cause is
+structural (unrolling + batched VLIW packing in the reference vs. a real loop in ours), not a
+compiler bug.
+
+### Status: all four numbered steps done and committed.
+
+---
+
 ## 2026-06-19 — Step 3 done: 16x16 vu8 matmul with packed arrays, PASSES (Latest)
 
 `new_isa_tests/test_matmul_packed.c` — identical algorithm to `test_matmul_u128.c` (the earlier,
