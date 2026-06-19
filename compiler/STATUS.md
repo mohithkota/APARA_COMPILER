@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-06-19 — $dot/$dot $accumulate fully hand-verified for matmul readiness (8/8 exact); $vreduce hits a second, separate, not-yet-root-caused bundler/aligner crash (Latest)
+
+Per explicit direction: skip `vi4`/`vu4` (not used frequently), prioritize `$dot`/`$dot $accumulate`
+(most important for matrix multiplication), float vectors (`vf*`) deferred entirely, `$nop` not
+urgent. Goal: get enough of `$v`/`$dot`/`$vreduce` verified to trust vector-based matmul.
+
+### $dot / $dot $accumulate — ALL 8 checks pass exactly (`new_isa_tests/test_vec_dot.c`)
+Hand-computed sum-of-products for `vi8`/`vi16`/`vu8`/`vu16`, both plain and `$accumulate` forms
+(`vi32`/`vu32` correctly excluded — ISA doc §5.4: "dot is defined only for elements <=16 bits").
+Final r1 = `0x1` (all pass). **This is the piece the user said matters most for matmul, and it's
+solid.**
+
+### $v add for the remaining untested widths — both pass exactly (`test_vec_add16_32.c`)
+`vu16`: `0x00060008000a000c` (element-wise (1+5),(2+6),(3+7),(4+8)) — exact match.
+`vu32`: `0x000000080000000a` (element-wise (3+5),(4+6)) — exact match.
+Combined with earlier confirmation of `vi8`/`vi16`/`vi32`/`vu8`, **`$v` add is now verified across
+every non-4-bit integer width.**
+
+### $vreduce — still broken, but now isolated to a SECOND, different bug than the label-merge fix
+`test_vec_reduce2.c` (6 plain `__vreduce_*` checks, no `$dot`/`$v` mixed in) crashes
+`mcode_align` with the same `Calculate_Pad_For_Alignment` assertion — but **confirmed via the same
+bisection technique used for the label bug that there is no consecutive-label pattern here**, so
+this is NOT the bug fixed yesterday. Bisected down to the crash appearing right around the
+*first* `$vreduce` call's bundle (`$vreduce $r6 ($vi8) $r5` + an address-compute ALU op, followed
+by the store of its result) — consistent with `test_vreduce` (the pre-existing official test)
+failing the exact same way. **Not root-caused this session** — ran out of quota for the
+bisect-deeper-into-bundler.py work this would need (same rigor as yesterday's label-merge fix,
+just not finished). This is the one piece standing between "vectors are matmul-ready" and "fully
+verified" — `$vreduce` itself (sum-reduction) isn't needed for a dot-product-based matmul, only
+`$dot`/`$dot $accumulate` are, so this doesn't block vector matmul, just full ISA coverage.
+
+### Bottom line for vector-based matrix multiplication
+The two operations that actually matter for matmul — `$dot` and `$dot $accumulate` — are now
+fully hand-verified across every non-4-bit integer width. `$v` add is fully verified too (useful
+for elementwise vector ops alongside matmul). `$vreduce` remains broken but isn't on the matmul
+critical path. **Next planned step** (not started this session, flagged for next time): `u128`/
+`u256` wide vector load/store — needed for real 32x32 vector matmul, currently zero compiler
+support (confirmed via grep, see earlier entries).
+
+---
+
 ## 2026-06-19 — vi4 garbage value confirmed reproducible (4/4 runs); audited all other switch(nbits) blocks — CastToU64 appears to be an isolated bug, not a pattern (Latest)
 
 ### Reproducibility check

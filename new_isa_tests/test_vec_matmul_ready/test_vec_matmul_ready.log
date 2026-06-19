@@ -1,0 +1,21 @@
+Info: Thread 0 pc = 0
+Info: imem file = test_vec_matmul_ready.obj
+Info: dmem file = data.map
+Info: results file = test_vec_matmul_ready.result
+Info: Loaded 0 instructions to i-mem
+Info: Init: DMEM[0] = 0x0
+Info: Loaded 1 words to d-mem
+Info: Info: activate thread 0 to pc 0
+Info: Tick on thread 0
+Info: McodeAccelerator:: 0x0 = IMEM[0x0]
+Info: McodeAccelerator:: 0x0 = IMEM[0x1]
+Info: McodeAccelerator:: 0x0 = IMEM[0x2]
+Info: McodeAccelerator:: 0x0 = IMEM[0x3]
+Info: McodeAccelerator:: 0x0 = IMEM[0x4]
+Info: McodeAccelerator:: 0x0 = IMEM[0x5]
+Info: McodeAccelerator:: 0x0 = IMEM[0x6]
+Info: McodeAccelerator:: 0x0 = IMEM[0x7]
+Info: McodeMachine:Run_Machine PC=0x0
+Info: Stopped after 0 ticks.
+Info: number of non-null instructions executed = 0
+Info: number of null instructions executed = 0
