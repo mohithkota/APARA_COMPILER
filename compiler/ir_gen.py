@@ -87,6 +87,23 @@ def _elem_size(node):
     if isinstance(node, A.PtrDecl):   return 8   # pointer itself is always 8 bytes
     return _type_size(node)
 
+# Opt-in marker typedefs (see compiler.py _FAKE_TYPEDEFS) requesting natural
+# (packed, no 8-byte-per-element padding) array stride. Plain char/short/int
+# arrays are NOT affected -- only arrays whose element is declared with one of
+# these exact type names. long long/pointer/struct never go through this path.
+_PACKED_ARRAY_TYPEDEFS = {'vu8_t', 'vi8_t', 'vu16_t', 'vi16_t', 'vu32_t', 'vi32_t'}
+
+def _is_packed_array_decl(array_decl_node):
+    """True if array_decl_node (an A.ArrayDecl) declares its element with one
+    of the opt-in packed-array typedef markers."""
+    if not isinstance(array_decl_node, A.ArrayDecl):
+        return False
+    t = array_decl_node.type
+    if isinstance(t, A.TypeDecl):
+        t = t.type
+    return isinstance(t, A.IdentifierType) and any(
+        n in _PACKED_ARRAY_TYPEDEFS for n in t.names)
+
 class IRGenerator(pycparser.c_ast.NodeVisitor):
     DEFAULT_GLOBAL_BASE = 0x400
 
@@ -147,9 +164,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if name in scope: return scope[name]
         return None
 
-    def _alloc_global(self, name, total_bytes, elem_bytes, init_vals):
+    def _alloc_global(self, name, total_bytes, elem_bytes, init_vals, packed=False):
         # APARA: $ld ($i32) always reads bits[63:32] of the 8-byte DMEM word.
         # Each element must be at byte_off=0 of its own word → stride = 8.
+        # EXCEPT for opt-in `packed` arrays (see _is_packed_array_decl): these use
+        # the natural element size, no padding, so $ld ($u128)/($u256) can see N
+        # tightly-packed bytes as N real vector elements. Default unchanged.
         #
         # Use len(init_vals) as the ground truth for n_elems when available,
         # because _elem_size() returns 4 for ALL scalar TypeDecl nodes (including
@@ -159,7 +179,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         else:
             n_elems = max(1, total_bytes // max(elem_bytes, 1))
         c_elem = total_bytes // max(n_elems, 1)  # actual C element size
-        dmem_stride = max(c_elem, 8)
+        dmem_stride = c_elem if packed else max(c_elem, 8)
         total_dmem = n_elems * dmem_stride
         addr = self._next_global
         self._next_global += total_dmem
@@ -174,10 +194,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             # now decays to its address instead of loading element 0 (see __init__)
         return gd
 
-    def _alloc_local(self, name, total_bytes, elem_bytes):
-        # Each element gets its own 8-byte-aligned DMEM word so byte_off=0 always.
+    def _alloc_local(self, name, total_bytes, elem_bytes, packed=False):
+        # Each element gets its own 8-byte-aligned DMEM word so byte_off=0 always,
+        # except for opt-in `packed` arrays -- see _alloc_global for why.
         n_elems = max(1, total_bytes // max(elem_bytes, 1))
-        dmem_stride = max(elem_bytes, 8)
+        dmem_stride = elem_bytes if packed else max(elem_bytes, 8)
         total_dmem = n_elems * dmem_stride
         self._frame_off += total_dmem
         fp_off = -self._frame_off
@@ -511,10 +532,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             esz = 8
 
         self._record_ptr(node.name, node.type)   # track pointer variables
+        is_packed = _is_packed_array_decl(node.type)  # opt-in only; False for 2D/struct/ptr
         if self._func_name is None:
-            self._alloc_global(node.name, total, esz, init_vals)
+            self._alloc_global(node.name, total, esz, init_vals, packed=is_packed)
         else:
-            fp_off = self._alloc_local(node.name, total, esz)
+            fp_off = self._alloc_local(node.name, total, esz, packed=is_packed)
             if is_struct_var:
                 self._array_elem.pop(node.name, None)  # struct is not an array
             if node.init:

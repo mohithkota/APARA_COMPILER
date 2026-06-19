@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-06-19 — Steps 1+2 done: confirmed no half-implementation existed, then added opt-in packed-array stride. Zero regressions (Latest)
+
+### Step 1 — checked for existing partial work first
+Grepped `ir_gen.py`/`codegen.py`/`ir.py`/`bundler.py` for "packed"/"natural stride"/anything
+narrow-type-stride related: nothing exists. `dmem_stride = max(elem_bytes, 8)` is hardcoded with
+no opt-out path anywhere, in both `_alloc_global` and `_alloc_local`. Confirmed before building
+anything new, as instructed.
+
+### Step 2 — opt-in natural stride for char/short/int arrays, long long/pointer/struct untouched
+`__attribute__((packed))` is not parseable by this pycparser setup (confirmed by testing it
+directly — hard parse error). Used the same mechanism the compiler already relies on for
+`int64_t`/etc. (`_FAKE_TYPEDEFS` in `compiler.py`): six new opt-in marker typedefs --
+`vu8_t`/`vi8_t`/`vu16_t`/`vi16_t`/`vu32_t`/`vi32_t` -- aliasing the obvious base types. An array
+declared with one of these specific type names gets `dmem_stride = elem_bytes` (no padding);
+**every other array, including plain `char`/`short`/`int`, is completely unaffected** (default
+unchanged: `max(elem_bytes, 8)`). `ir_gen.py`: new `_is_packed_array_decl()` checks the element's
+literal `IdentifierType` name against the marker set; naturally scoped to plain 1D arrays only —
+2D arrays (own separate `col_stride` path) and struct fields (forced `esz=8`) never match this
+check, so they're unaffected without needing extra exclusion logic. Wired through `visit_Decl` →
+`_alloc_global`/`_alloc_local`'s new `packed=` parameter.
+
+Verified directly: `vu8_t A[16]` → `GLOBAL A @0x400 (16B stride=1)`, indexing offset `+1` for
+`A[1]`. `unsigned char B[16]` (same probe file) → `GLOBAL B @0x410 (128B stride=8)`, completely
+unchanged. **Full regression, all 20 pre-existing tests**: zero regressions, every value exactly
+matches prior runs. `test_ld128_then_dot` (Stage 3's reproduction evidence, uses plain
+`unsigned char` deliberately) still fails exactly as documented — expected, since it never opts in.
+
+### Status: Steps 1-2 done and committed. Step 3 (16x16 matmul with packed arrays) next.
+
+---
+
 ## 2026-06-19 — Stage 3 (full matmul) blocked by a real architectural finding, not a bug to fix in passing: byte arrays are NOT tightly packed in this compiler, so u128/u256 loads can't see them as packed byte vectors (Latest)
 
 ### What was attempted

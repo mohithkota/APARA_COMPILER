@@ -10,6 +10,11 @@ Usage:
 
 import sys, os, argparse, subprocess
 
+# vu8_t/vi8_t/vu16_t/vi16_t/vu32_t/vi32_t are opt-in markers for naturally-strided
+# (packed, no 8-byte-per-element padding) arrays -- needed so $ld/$st ($u128)/
+# ($u256) can see N tightly-packed bytes as N vector elements. Plain char/short/
+# int arrays are UNCHANGED (still padded to 8 bytes/element) unless declared
+# with one of these specific type names. See ir_gen.py _is_packed_array_decl.
 _FAKE_TYPEDEFS = """
 typedef int size_t; typedef int ptrdiff_t;
 typedef unsigned int uint32_t;   typedef int          int32_t;
@@ -17,6 +22,9 @@ typedef unsigned char uint8_t;   typedef signed char  int8_t;
 typedef unsigned short uint16_t; typedef short        int16_t;
 typedef unsigned long long uint64_t; typedef long long int64_t;
 typedef float float32_t; typedef double float64_t;
+typedef unsigned char vu8_t;   typedef signed char  vi8_t;
+typedef unsigned short vu16_t; typedef short        vi16_t;
+typedef unsigned int vu32_t;   typedef int          vi32_t;
 """
 
 
