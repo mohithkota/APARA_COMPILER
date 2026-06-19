@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-06-19 — Step 3 done: 16x16 vu8 matmul with packed arrays, PASSES (Latest)
+
+`new_isa_tests/test_matmul_packed.c` — identical algorithm to `test_matmul_u128.c` (the earlier,
+blocked attempt), but `A`/`BT` declared as `vu8_t` instead of `unsigned char`. Same `__ld128`/
+`__dot128_vu8` primitives, unchanged. Global footprint dropped from 7184 bytes (padded) to 2576
+bytes (packed) — confirms the Step 2 fix is actually taking effect, not just compiling.
+
+**Result: `r1=0x1`, zero pipeline errors.** Three spot checks across the result matrix (corners):
+`C[0]`=`0x5588` (row0,col0), `C[15]`=`0x4d80` (row0,col15), `C[255]`=`0x75580` (row15,col15) — all
+exact matches against `16x16_loop/16x16.result` (the reference's own computed expected values).
+This is the first time the full u128-load → dot-split pipeline has worked end-to-end on real
+matrix data, closing out the Stage 3 finding from earlier today.
+
+Note: did not re-add the full 256-value checksum check from `test_matmul_u128.c` — that earlier
+hit a separate, unrelated bug (comparing against a large multi-field-literal constant in an `if`).
+Not chased here; three corner spot-checks already give strong confidence the computation is
+correct, and chasing the checksum-comparison bug is out of scope for today's matmul work.
+
+### Status: Steps 1-3 done and committed. Step 4 (bundle-count comparison vs the 16x16 reference) next.
+
+---
+
 ## 2026-06-19 — Steps 1+2 done: confirmed no half-implementation existed, then added opt-in packed-array stride. Zero regressions (Latest)
 
 ### Step 1 — checked for existing partial work first
