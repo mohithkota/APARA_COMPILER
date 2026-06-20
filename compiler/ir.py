@@ -96,6 +96,19 @@ class IRLoadWide:
     def __repr__(self):
         return f"{':'.join(str(d) for d in self.dests)} = *wide({self.base}+{self.offset})"
 
+class IRStoreWide:
+    """*wide(base+offset) = srcs: store len(srcs)*64 bits to mem[base + offset]
+    from a register group (len(srcs)==2 for $st ($u128), ==4 for $st ($u256)).
+    Mirrors IRLoadWide in reverse -- same consecutive/aligned register-group
+    requirement, confirmed from the assembler grammar (isa.g
+    mcode_store_instruction): $st takes a single rd token just like $ld, so
+    the hardware reads rd..rd+n-1 as the source group for the write."""
+    def __init__(self, srcs, base, offset):
+        self.srcs = srcs  # list of Temp/Const/value, length 2 or 4
+        self.base = base; self.offset = offset
+    def __repr__(self):
+        return f"*wide({self.base}+{self.offset}) = {':'.join(str(s) for s in self.srcs)}"
+
 class IRGlobalLoad:
     """dest = DMEM[dmem_addr + offset]  (global variable access)"""
     def __init__(self, dest, dmem_addr, offset=None, *, elem_bytes):

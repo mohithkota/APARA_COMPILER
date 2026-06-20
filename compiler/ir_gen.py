@@ -1003,6 +1003,22 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRStore(dst_addr, Const(i * 8), d, 8))
             return Const(0)
 
+        # __st128(dst, src): mirrors __ld128 in reverse -- two plain 64-bit
+        # loads of src[0]/src[8], then one $st ($u128) writing both halves to
+        # dst in one instruction.
+        # __st256(dst, src): same, four loads from src[0..24], one $st ($u256).
+        # Proves the store+aligned-group mechanism; no vector op involved.
+        if fname in ('__st128', '__st256') and len(args) >= 2:
+            dst_addr, src_addr = args[0], args[1]
+            n = 2 if fname == '__st128' else 4
+            srcs = []
+            for i in range(n):
+                t = self._tmp()
+                self._emit(IRLoad(t, src_addr, Const(i * 8), 8))
+                srcs.append(t)
+            self._emit(IRStoreWide(srcs, dst_addr, Const(0)))
+            return Const(0)
+
         # ── Float sqrt ────────────────────────────────────────────────────────
         _FSQRT = {
             'sqrt': '$f64', '__fsqrt_f64': '$f64',

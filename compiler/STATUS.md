@@ -2,7 +2,38 @@
 
 ---
 
-## 2026-06-20 — Fix: compiler now refuses to silently overlap globals with the stack (Latest)
+## 2026-06-20 — Implemented $st ($u128)/($u256) wide store (Latest)
+
+Closed the gap found during the full ISA-coverage audit: wide *load* (`$ld ($u128)/($u256)`) was
+built and hardware-proven weeks ago for the matmul work, but wide *store* was never built —
+every result so far had been scalar, so the need never came up.
+
+Verified the real semantics from the assembler grammar (`isa.g`, `mcode_store_instruction`)
+before writing anything: the ISA doc's own `$st ($u128)` example text is a copy-paste artifact
+from the load section ("will fetch... keep it in rd,rd+1" makes no sense for a store) — the
+grammar confirms `$st` takes a single `rd` token just like `$ld`, so the hardware reads
+`rd..rd+n-1` as the *source* register group being written to memory.
+
+- `ir.py`: new `IRStoreWide(srcs, base, offset)`, mirroring `IRLoadWide` in reverse.
+- `codegen.py`: new `_gen_IRStoreWide` — borrows an aligned pair/quad transiently (same
+  `_safe_borrow_pair`/`_safe_borrow_quad` as load), copies each source value into it, emits one
+  `$st`, releases the borrow immediately. Added to `_get_src_temps` for liveness (`srcs` are read).
+- `bundler.py`: the `$st` hazard regex only ever matched `\$i\d+` and captured a single source
+  register — exactly the same class of bug the wide-load fix addressed on 2026-06-17, just never
+  triggered until now. Fixed to match `\$[iu]\d+` and mark `rs..rs+n_regs-1` as read, not just `rs`.
+- `ir_gen.py`: new intrinsics `__st128(dst, src)` / `__st256(dst, src)`, mirroring `__ld128`/
+  `__ld256` in reverse (plain 64-bit loads of the source halves/quarters, one wide store).
+
+Verified end-to-end on hardware: `test_u128_store.c` / `test_u256_store.c` (mirrors of the
+existing load tests), both `r1=0x1`, zero pipeline errors, exact byte patterns confirmed in the
+generated mcode (`$st ($u128) [...] $r8`, `$st ($u256) [...] $r12`). Re-ran the full existing
+suite (compile-stage, 25 tests) plus hardware re-execution of the highest-risk subset
+(`test_matmul_packed_direct`, `test_spill`, `test_struct`, `test_cast` — all touch `$st` heavily
+via results/spilling/struct fields) — zero regressions.
+
+---
+
+## 2026-06-20 — Fix: compiler now refuses to silently overlap globals with the stack
 
 Root-caused and fixed the bug found while building the N=64 scaling case: the compiler had no
 check that the global data area actually fits below `--stack-top` before emitting code. Globals

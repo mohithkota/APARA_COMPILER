@@ -226,6 +226,7 @@ class CodeGen:
         elif cls == 'IRLoad':       ops = [ir.base, ir.offset]
         elif cls == 'IRLoadWide':   ops = [ir.base, ir.offset]
         elif cls == 'IRStore':      ops = [ir.base, ir.offset, ir.src]
+        elif cls == 'IRStoreWide':  ops = [ir.base, ir.offset] + list(ir.srcs)
         elif cls == 'IRGlobalLoad': ops = [ir.offset]
         elif cls == 'IRGlobalStore':ops = [ir.offset, ir.src]
         elif cls == 'IRGlobalAddrOf':ops= [ir.offset] if hasattr(ir, 'offset') else []
@@ -718,6 +719,46 @@ class CodeGen:
 
         if b_bor: self._ra.unborrow(base)
         if s_bor: self._ra.unborrow(src)
+
+    def _gen_IRStoreWide(self, ir):
+        """
+        $st ($u128)/($u256): mirrors _gen_IRLoadWide in reverse. The assembler
+        grammar (isa.g mcode_store_instruction) takes a single rd token, same
+        as $ld -- so the hardware reads rd..rd+n-1 as the source group.
+        Borrow the aligned pair/quad transiently, copy each source value INTO
+        it, emit one $st, then release the borrowed group right away.
+        """
+        n = len(ir.srcs)
+        assert n in (2, 4), f"IRStoreWide expects 2 or 4 srcs, got {n}"
+        utype = '$u128' if n == 2 else '$u256'
+
+        sn = [t.name for t in list(ir.srcs) + [ir.base, ir.offset] if isinstance(t, Temp)]
+        base, b_bor = self._operand_reg(ir.base, protect=sn)
+
+        pregs = (self._safe_borrow_pair(protect=[base] + sn) if n == 2
+                 else self._safe_borrow_quad(protect=[base] + sn))
+
+        for src_val, preg in zip(ir.srcs, pregs):
+            sreg, s_bor = self._operand_reg(src_val, protect=[base] + list(pregs))
+            self._emit(f"+ {preg} ($i64) {ZERO} {sreg}")
+            if s_bor: self._ra.unborrow(sreg)
+
+        if isinstance(ir.offset, Const):
+            off = ir.offset.value
+            if -512 <= off <= 511:
+                self._emit(f"$st ({utype}) [{base} + {off}] {pregs[0]}")
+            else:
+                scr = self._safe_borrow(protect=[base] + list(pregs))
+                self._load_const(scr, off)
+                self._emit(f"$st ({utype}) [{base} + {scr}] {pregs[0]}")
+                self._ra.unborrow(scr)
+        else:
+            off_reg = self._alloc_reg(ir.offset, protect=[base] + list(pregs))
+            self._emit(f"$st ({utype}) [{base} + {off_reg}] {pregs[0]}")
+
+        for p in reversed(pregs):
+            self._ra.unborrow(p)
+        if b_bor: self._ra.unborrow(base)
 
     # ── global variable access ─────────────────────────────────────────────────
 

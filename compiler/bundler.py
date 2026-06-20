@@ -92,11 +92,16 @@ def _parse_deps(text):
         return frozenset(), frozenset(), False, None, None
 
     if t.startswith('$st'):
-        # $st ($iN) [$rb + off] $rs   off = integer or $reg
-        m = re.match(r'\$st\s+\(\$i\d+\)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]\s+(\$r\d+)', t)
+        # $st ($[iu]N) [$rb + off] $rs   off = integer or $reg
+        # N>64 (u128/u256) READS a register PAIR/QUAD starting at rs, not just rs --
+        # a single $st reads multiple consecutive registers as its source group
+        # (same convention as $ld's dest group; see isa.g mcode_store_instruction).
+        m = re.match(r'\$st\s+\(\$[iu](\d+)\)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]\s+(\$r\d+)', t)
         if m:
-            rb, off, rs = m.group(1), m.group(2), m.group(3)
-            reads = {rb, rs}
+            nbits, rb, off, rs = m.group(1), m.group(2), m.group(3), m.group(4)
+            n_regs = max(1, int(nbits) // 64)
+            rs_num = int(rs[2:])
+            reads = {rb} | {f'$r{rs_num + i}' for i in range(n_regs)}
             if off.startswith('$r'):
                 reads.add(off)
             return frozenset(), frozenset(reads), False, (rb, off), (rb, off)
