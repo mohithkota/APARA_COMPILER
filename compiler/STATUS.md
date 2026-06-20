@@ -2,7 +2,37 @@
 
 ---
 
-## 2026-06-20 — All 25 pre-existing tests restructured to results[]: 393 independently-verified checks, 0 errors. Plus one more real compiler bug found and fixed (Latest)
+## 2026-06-20 — Clarification: engine_isp/assembler/bin/mcode_run is the authoritative simulator binary; verification/bin/mcode_run is not (Latest)
+
+Confirmed via `ls -lh` on both directories, in response to an earlier report draft that treated the
+two binaries as just "different" without saying which one is correct:
+
+```
+engine_isp/assembler/bin/mcode_run   1.8M  Jun 18 13:05   <- authoritative
+verification/bin/mcode_run           1.7M  Jun 20 12:22   <- NOT authoritative
+```
+
+`engine_isp/assembler/bin/mcode_run` is the binary this project's `run.sh` pipeline has used
+throughout, and is the one all 5992 verification checks across `isa_coverage_tests/`,
+`matmul_tests/`, and the pre-existing baseline suite were run against. `verification/bin/mcode_run`
+is a separate, non-canonical build (confirmed different MD5; the same directory also holds a `tb`
+binary and a 243MB `test_setup_test_bench`, pointing to a different RTL/testbench-oriented
+verification setup, not this project's compiler-targeted simulator) — despite having a *newer*
+file timestamp, which is not evidence of correctness on its own. It expects a different
+`PostCondition` file format (`<keyword> <args...>`, no leading thread-id) than the authoritative
+binary (`<thread-id> <keyword> <args...>`) — see `ENGINE_ISP_BUG_REPORT.md` for the full writeup,
+including the two confirmed code-level bugs in the authoritative binary's source
+(`McodeOperations.cpp`'s `__vreduce_operation__` unsigned sign-extension bug, and
+`McodeAccelerator.cpp`'s `Verify_Line` misleading error messages).
+
+Several pre-existing example result files elsewhere in this project tree (e.g. under
+`verification/lastsem/`) appear to have been written against the non-authoritative binary's format
+— worth keeping in mind if any of those are ever reused, since they won't verify correctly against
+the authoritative one.
+
+---
+
+## 2026-06-20 — All 25 pre-existing tests restructured to results[]: 393 independently-verified checks, 0 errors. Plus one more real compiler bug found and fixed
 
 Per request, ran the golden-verification treatment across every remaining pre-existing test (the
 22 that had ZERO real verification before today -- confirmed by checking each one's actual output:
