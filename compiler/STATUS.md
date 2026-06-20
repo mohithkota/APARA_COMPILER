@@ -2,7 +2,43 @@
 
 ---
 
-## 2026-06-20 — Implemented $st ($u128)/($u256) wide store (Latest)
+## 2026-06-20 — Fix: unsigned char/short/int were sign-extended on every load (Latest)
+
+Found while building a systematic ISA-coverage test suite (isa_coverage_tests/): `unsigned char
+uc = 255; if (uc != 255) ...` failed. Root cause: `codegen.py`'s `_atype`/`_WIDTH_TO_TYPE` mapped
+byte-width straight to the SIGNED type tag ($i8/$i16/$i32) with no unsigned variant at all --
+every load of a narrower-than-64-bit value sign-extended, regardless of the C-level `unsigned`
+qualifier. Confirmed at the simulator level too (`MachineRun.cpp`:
+`signed_flag = !t.Get_Float_Flag() && !t.Get_Unsigned_Flag()`) that `$ld ($u8)` vs `$ld ($i8)`
+is exactly the zero- vs sign-extend switch needed -- store doesn't need this fix (the grammar
+explicitly ignores `$u` there, truncation is the same either way).
+
+This affected every `unsigned char`/`unsigned short`/`unsigned int` scalar and 1D-array read in
+the entire compiler -- a real, previously-undiscovered correctness bug, not a new feature gap.
+
+Fix, scoped to LOAD only:
+- `ir.py`: `IRLoad`/`IRGlobalLoad` gained an `unsigned=False` flag.
+- `codegen.py`: `_atype(elem_bytes, unsigned=False)` now picks between `_WIDTH_TO_TYPE` and a new
+  `_WIDTH_TO_TYPE_U` ($u8/$u16/$u32/$u64); `_gen_IRLoad`/`_gen_IRGlobalLoad` pass it through.
+- `ir_gen.py`: new `_is_unsigned_decl()` (recurses into array element / pointer pointee types --
+  a bare pointer's own type always maps to `$u64` regardless of pointee, which would otherwise
+  make every pointer name look "unsigned" and leak into `p[i]`'s actual element signedness).
+  New `self._unsigned_vars` set, kept in sync by explicit add/discard on every `visit_Decl` rather
+  than reset-per-function, to avoid the exact global-wipe bug class `_global_array_elem` was
+  already split out to avoid. Wired into `_load_var` and `_arrayref` -- the only two paths that
+  ever load narrower than 8 bytes (struct fields, 2D array elements, and pointer-value-itself
+  loads are all confirmed always-8-byte, so signedness is moot there).
+
+Verified: the probe now reads back 255, not -1, with `$ld ($u8)` confirmed in the generated mcode.
+Re-ran the full existing suite (25 tests) on hardware, not just compile-stage -- all results
+unchanged (e.g. test_pack's `0xdead` vs its comment's expected `0xBEEF` is confirmed pre-existing
+and unrelated via a direct mcode diff with/without this fix -- likely just a wrong assumption
+about __pack's argument order in that test's comment, to be resolved properly in the new coverage
+suite). Zero regressions.
+
+---
+
+## 2026-06-20 — Implemented $st ($u128)/($u256) wide store
 
 Closed the gap found during the full ISA-coverage audit: wide *load* (`$ld ($u128)/($u256)`) was
 built and hardware-proven weeks ago for the matmul work, but wide *store* was never built —

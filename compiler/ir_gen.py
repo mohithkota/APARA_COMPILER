@@ -26,6 +26,19 @@ _CTYPE_TO_APARA = {
     'double': '$f64',       'float64_t': '$f64',
 }
 
+def _is_unsigned_decl(node):
+    """True if this type AST node (or an array/pointer's element type) maps
+    to an unsigned APARA type ($u8/$u16/$u32/$u64). Drives sign- vs
+    zero-extension on load -- see IRLoad/IRGlobalLoad's `unsigned` flag.
+    PtrDecl must recurse into the POINTEE type, not return early: a bare
+    PtrDecl maps to '$u64' in _c_decl_to_apara_type regardless of what it
+    points to (pointers are always unsigned 64-bit addresses), which would
+    otherwise make every pointer name look "unsigned" and leak into p[i]'s
+    element-access signedness, which actually depends on the pointee."""
+    if isinstance(node, (A.ArrayDecl, A.PtrDecl)):
+        return _is_unsigned_decl(node.type)
+    return _c_decl_to_apara_type(node).startswith('$u')
+
 def _c_decl_to_apara_type(node):
     """Return the APARA type string ($i8, $f32, …) for a C type AST node."""
     if node is None:
@@ -123,6 +136,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # visited. Mirrors _array_row_stride, which already persists this way for
         # global 2D arrays.
         self._global_array_elem = {}
+        # name -> True if declared unsigned (char/short/int, or an array of
+        # those). NOT reset per-function like _array_elem -- instead every
+        # visit_Decl explicitly add()s or discard()s its own name, so a
+        # same-named local in a later function always overwrites any stale
+        # entry rather than relying on a reset that would also wipe globals
+        # (the exact bug _global_array_elem above was already split out to
+        # avoid).
+        self._unsigned_vars = set()
         # name → elem_bytes for the variable's OWN scalar load/store width
         # (set by _alloc_local; used by _load_var/_store_var for the local-scalar path).
         self._local_elem_bytes = {}
@@ -218,16 +239,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 return res
             return Const(0)
         kind, loc = info
+        unsigned = name in self._unsigned_vars
         if kind == 'global':
             gd = loc
             res = self._tmp()
-            self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), elem_bytes=gd.elem_bytes))
+            self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), elem_bytes=gd.elem_bytes,
+                                     unsigned=unsigned))
             return res
         else:
             addr = self._tmp(); val = self._tmp()
             eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
-            self._emit(IRLoad(val, addr, Const(0), eb))
+            self._emit(IRLoad(val, addr, Const(0), eb, unsigned=unsigned))
             return val
 
     def _store_var(self, name, val):
@@ -514,6 +537,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # Detect struct variable BEFORE computing total/esz so _STRUCT_TOTAL is populated.
         self._record_struct_var(node.name, node.type)
         is_struct_var = node.name in self._var_struct_type
+
+        if _is_unsigned_decl(node.type):
+            self._unsigned_vars.add(node.name)
+        else:
+            self._unsigned_vars.discard(node.name)
 
         total = _type_size(node.type)
         esz   = _elem_size(node.type)
@@ -1136,17 +1164,20 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def _arrayref(self, node):
         base, off = self._array_base_off(node)
         res = self._tmp()
-        if isinstance(node.name, A.ID):
+        is_id = isinstance(node.name, A.ID)
+        unsigned = is_id and node.name.name in self._unsigned_vars
+        if is_id:
             name = node.name.name
             info = self._lookup(name)
             if info and info[0] == 'global' and name not in self._ptr_stride:
                 # Global array (not pointer): use direct global-load shortcut
                 gd = info[1]
-                self._emit(IRGlobalLoad(res, gd.dmem_addr, off, elem_bytes=gd.elem_bytes))
+                self._emit(IRGlobalLoad(res, gd.dmem_addr, off, elem_bytes=gd.elem_bytes,
+                                         unsigned=unsigned))
                 return res
         # Pointer variable or local array: load from computed address
-        eb = self._get_esz(node.name) if isinstance(node.name, A.ID) else 8
-        self._emit(IRLoad(res, base, off, eb))
+        eb = self._get_esz(node.name) if is_id else 8
+        self._emit(IRLoad(res, base, off, eb, unsigned=unsigned))
         return res
 
     def _ternary(self, node):

@@ -443,10 +443,15 @@ class CodeGen:
             return r, True
         return self._alloc_reg(op, protect=protect), False
 
-    _WIDTH_TO_TYPE = {1: '($i8)', 2: '($i16)', 4: '($i32)', 8: '($i64)'}
+    _WIDTH_TO_TYPE   = {1: '($i8)', 2: '($i16)', 4: '($i32)', 8: '($i64)'}
+    _WIDTH_TO_TYPE_U = {1: '($u8)', 2: '($u16)', 4: '($u32)', 8: '($u64)'}
 
-    def _atype(self, elem_bytes):
-        return self._WIDTH_TO_TYPE.get(elem_bytes, '($i64)')
+    def _atype(self, elem_bytes, unsigned=False):
+        # unsigned only matters for LOAD (zero- vs sign-extend on widths < 8
+        # bytes) -- STORE truncates the same way regardless (the grammar
+        # ignores $u there), so store call sites never pass unsigned=True.
+        table = self._WIDTH_TO_TYPE_U if unsigned else self._WIDTH_TO_TYPE
+        return table.get(elem_bytes, '($u64)' if unsigned else '($i64)')
 
     # ── unconditional / conditional branches ───────────────────────────────────
 
@@ -635,7 +640,7 @@ class CodeGen:
         sn   = [t.name for t in [ir.base, ir.offset] if isinstance(t, Temp)]
         dest = self._alloc_reg(ir.dest, protect=sn)
         d    = ir.dest.name
-        at   = self._atype(ir.elem_bytes)
+        at   = self._atype(ir.elem_bytes, getattr(ir, 'unsigned', False))
         base, b_bor = self._operand_reg(ir.base, protect=[d] + sn)
 
         if isinstance(ir.offset, Const):
@@ -766,7 +771,7 @@ class CodeGen:
         on   = [ir.offset.name] if isinstance(ir.offset, Temp) else []
         dest = self._alloc_reg(ir.dest, protect=on)
         d    = ir.dest.name
-        at   = self._atype(ir.elem_bytes)
+        at   = self._atype(ir.elem_bytes, getattr(ir, 'unsigned', False))
         goff = ir.dmem_addr - self._global_base
 
         if isinstance(ir.offset, Const) and ir.offset.value == 0:

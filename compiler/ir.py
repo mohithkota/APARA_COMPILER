@@ -71,10 +71,14 @@ class IRLoadAddr:
     def __repr__(self): return f"{self.dest} = &stack[FP{self.fp_offset:+d}]"
 
 class IRLoad:
-    """dest = mem[base + offset]"""
-    def __init__(self, dest, base, offset, elem_bytes):
+    """dest = mem[base + offset]. unsigned picks $u (zero-extend) over the
+    default $i (sign-extend) for the < 8-byte-width type tag -- store doesn't
+    need this (the grammar ignores $u on $st, truncation is the same either
+    way), only load has a sign/zero-extension boundary to get right."""
+    def __init__(self, dest, base, offset, elem_bytes, unsigned=False):
         self.dest = dest; self.base = base; self.offset = offset
         self.elem_bytes = elem_bytes
+        self.unsigned = unsigned
     def __repr__(self): return f"{self.dest} = *({self.base}+{self.offset})"
 
 class IRStore:
@@ -110,10 +114,12 @@ class IRStoreWide:
         return f"*wide({self.base}+{self.offset}) = {':'.join(str(s) for s in self.srcs)}"
 
 class IRGlobalLoad:
-    """dest = DMEM[dmem_addr + offset]  (global variable access)"""
-    def __init__(self, dest, dmem_addr, offset=None, *, elem_bytes):
+    """dest = DMEM[dmem_addr + offset]  (global variable access). See IRLoad
+    for why `unsigned` only matters here, not on IRGlobalStore."""
+    def __init__(self, dest, dmem_addr, offset=None, *, elem_bytes, unsigned=False):
         self.dest = dest; self.dmem_addr = dmem_addr
         self.offset = offset or Const(0); self.elem_bytes = elem_bytes
+        self.unsigned = unsigned
     def __repr__(self): return f"{self.dest} = DMEM[0x{self.dmem_addr:x}+{self.offset}]"
 
 class IRGlobalStore:
