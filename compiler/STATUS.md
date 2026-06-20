@@ -2,7 +2,36 @@
 
 ---
 
-## 2026-06-20 — MAJOR FIX: narrower-than-64-bit function parameters always read back as garbage (Latest)
+## 2026-06-20 — ISA coverage audit closed: 12 new test files, 6 real compiler bugs fixed, 1 simulator bug found and flagged (Latest)
+
+Closing entry for the systematic instruction-coverage sweep (`isa_coverage_tests/`, see its
+`README.md` for the full matrix). Final state: **12 new test files + the existing 25-test suite,
+37 tests total, all passing on hardware, zero regressions.**
+
+Bugs found and fixed in the compiler during this sweep (chronological, each already has its own
+detailed entry below):
+1. Unsigned char/short/int sign-extended on every load instead of zero-extending.
+2. `$cast` was a no-op whenever casting directly from a 64-bit value.
+3. Global data area could silently overlap the stack with no check.
+4. `$st ($u128)/($u256)` (wide store) didn't exist at all.
+5. **Function parameters narrower than 64 bits always read back as garbage** — the single most
+   significant finding, affecting every function with an `int`/`short`/`char` parameter.
+6. The calling convention's hard 4-argument ceiling silently dropped extra args with no error.
+
+Found but NOT fixed (simulator-side, flagged for a decision): `$vreduce` on unsigned vector types
+sign-extends instead of zero-extending, traced to a variable-shadowing bug in
+`McodeOperations.cpp`'s `__vreduce_operation__` — the compiler emits the correct type tag, the
+simulator's execution is wrong.
+
+Confirmed, intentionally not pursued: `$abs`, standalone `$max`, `$nop`'s parse bug, float
+arithmetic, `$vreduce`'s MAX/MUL/AND/OR/XOR/XNOR sub-ops, `vi4`/`vu4`.
+
+This is the closing state for this audit — see `isa_coverage_tests/README.md` for the full
+per-instruction coverage matrix suitable for the report.
+
+---
+
+## 2026-06-20 — MAJOR FIX: narrower-than-64-bit function parameters always read back as garbage
 
 The most significant finding of tonight's ISA-coverage audit. Found while building
 test_call_return_full.c: `int add1(int a) { return a + 100; }` called as `add1(7)` returned 100,
