@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-06-20 — Re-measured matmul density with the fused intrinsic: 65→38 bundles, no unrolling involved (Latest)
+
+### The numbers, matmul loop body only (data-init loop excluded both times, same methodology as before)
+| Version | Matmul-loop bundles | vs reference (19) |
+|---|---|---|
+| Original split (`__ld128` + `__dot128_vu8`, memory round-trip) | 65 | ~3.4x |
+| Hand-unrolled by 4 (same round-trip, just 4x more of it) | n/a (full count went 156→246, density *worse*) | — |
+| **Fused (`__dot128_direct_vu8`, no round-trip)** | **38** | **~2x** |
+
+`test_matmul_packed_direct.c`: same algorithm/data as `test_matmul_packed.c`, just
+`C[i*16+j] = __dot128_direct_vu8(&A[i*16], &BT[j*16])` instead of separate `__ld128`+copy-out+
+`__dot128_vu8`. `r1=0x1`, zero pipeline errors, same three corner spot-checks pass. Full program:
+186→129 bundles (was 232→156).
+
+### This confirms yesterday's diagnosis was right, and the unroller hypothesis was the wrong lever
+Eliminating the memory round-trip alone — with **zero loop unrolling** — closed most of the gap
+the hand-unroll experiment couldn't touch (that experiment made density *worse*, 156→246, because
+it was unrolling the wrong thing 4x). The remaining ~2x gap (38 vs 19) is now almost certainly just
+the unrolling/4-wide-batching difference described in Step 4 — the reference still fully unrolls
+its inner loop and packs 4 independent loads/dots per bundle; our fused version still has one real
+loop with one `__dot128_direct_vu8` per iteration, so the bundler still only ever sees one
+iteration's worth of independent work at a time. Closing that remaining gap *would* be the loop
+unroller's job — but that's exactly the next-session question, not tonight's.
+
+---
+
 ## 2026-06-20 — Narrow fix built and verified: __dot128_direct_{type}(a_ptr, b_ptr), zero memory round-trip for the intermediate halves (Latest)
 
 ### What was built — reuses existing IR/codegen entirely, no new nodes
