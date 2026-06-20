@@ -8,7 +8,7 @@ Usage:
     python3 compiler.py input.c --preprocess   # run gcc -E first
 """
 
-import sys, os, argparse, subprocess
+import sys, os, argparse, subprocess, tempfile
 
 # vu8_t/vi8_t/vu16_t/vi16_t/vu32_t/vi32_t are opt-in markers for naturally-strided
 # (packed, no 8-byte-per-element padding) arrays -- needed so $ld/$st ($u128)/
@@ -232,18 +232,101 @@ def eval_ir(instructions):
     return ret_val, final_dmem
 
 
+# Stable location relative to this file -- see isa_coverage_tests/golden/
+# golden_stubs.h's own header for what's in it and why each piece is there
+# ("no bias": every implementation is derived from the ISA spec / confirmed
+# hardware behavior, never from reading this compiler's own source).
+_GOLDEN_STUBS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    '..', 'isa_coverage_tests', 'golden', 'golden_stubs.h')
+
+
+def try_golden_verify(source, ir_globals, out_dir, base_name):
+    """
+    If this test follows the results[] convention (a global literally named
+    "results"), get independent ground truth by compiling `source` natively
+    with gcc against golden_stubs.h and running it, then write a REAL
+    .result file from the captured values -- one "mem" PostCondition line
+    per results[] slot, in the format confirmed against the simulator
+    (STATUS.md 2026-06-20).
+
+    This compiler never computes the expected values itself; it only
+    supplies the DMEM address it assigned to results[] (from ir_globals,
+    already known internally -- no extra subprocess round-trip needed).
+
+    Returns True if it wrote a real golden .result (falls back to the
+    existing static-eval/placeholder path on any failure -- missing gcc,
+    missing golden_stubs.h, a test that doesn't use this convention, or a
+    genuine compile/run error in the native build, which gets printed
+    so it's never a silent fallback).
+    """
+    results_global = next((g for g in ir_globals if g.name == 'results'), None)
+    if results_global is None:
+        return False
+    if not os.path.isfile(_GOLDEN_STUBS_PATH):
+        return False
+
+    n_results = results_global.total_bytes // results_global.elem_bytes
+    base_word = results_global.dmem_addr // 8
+
+    try:
+        with tempfile.TemporaryDirectory(prefix='golden_verify_') as scratch:
+            driver_path = os.path.join(scratch, '_driver.c')
+            with open(driver_path, 'w') as f:
+                f.write(f'#include "{_GOLDEN_STUBS_PATH}"\n')
+                f.write('#define main __test_main\n')
+                f.write(source)
+                f.write('\n#undef main\n#include <stdio.h>\n')
+                f.write('int main(void) {\n')
+                f.write('    __test_main();\n')
+                f.write(f'    for (int i = 0; i < {n_results}; i++) {{\n')
+                f.write('        printf("%016llx\\n", (unsigned long long) results[i]);\n')
+                f.write('    }\n    return 0;\n}\n')
+
+            bin_path = os.path.join(scratch, '_driver')
+            cc = subprocess.run(['gcc', '-O0', '-o', bin_path, driver_path],
+                                 capture_output=True, text=True)
+            if cc.returncode != 0:
+                print(f"\n[GOLDEN VERIFY] gcc failed -- falling back to placeholder .result:\n{cc.stderr}")
+                return False
+
+            run = subprocess.run([bin_path], capture_output=True, text=True)
+            if run.returncode != 0:
+                print(f"\n[GOLDEN VERIFY] native binary exited {run.returncode} -- falling back:\n{run.stderr}")
+                return False
+
+            out_lines = [l.strip() for l in run.stdout.strip().splitlines() if l.strip()]
+            if len(out_lines) != n_results:
+                print(f"\n[GOLDEN VERIFY] expected {n_results} result lines, got "
+                      f"{len(out_lines)} -- falling back")
+                return False
+    except FileNotFoundError:
+        return False  # gcc not installed
+
+    result_path = os.path.join(out_dir, f'{base_name}.result')
+    with open(result_path, 'w') as f:
+        for i, val_hex in enumerate(out_lines):
+            f.write(f"0 mem 0x{base_word + i:x} 0x{val_hex}\n")
+    print(f"      golden    →  {result_path}  ({n_results} independently-verified "
+          f"PostCondition checks via gcc + golden_stubs.h)")
+    return True
+
+
 def write_result_file(path, ret_val, final_dmem, init_dmem):
     """
     Write result.txt.
 
-    Format (matching APARA verification conventions):
-      reg 0x1 0xVALUE           — expected return value in r1
-      mem 0xWORD_IDX 0xVALUE   — expected final DMEM word values
-                                  (only for globals that changed from init)
+    Format empirically confirmed against the real simulator binary
+    (engine_isp/assembler/bin/mcode_run) -- see compiler/STATUS.md: the
+    PostCondition keyword ("reg"/"mem") must be the SECOND token, with a
+    leading thread-id first (always 0 here, single-threaded programs):
+      0 reg 0xN 0xVALUE          — expected value in register N (r1 = return value)
+      0 mem 0xWORD_IDX 0xVALUE   — expected final DMEM word values
+                                   (only for globals that changed from init)
     """
     lines = []
     if ret_val is not None:
-        lines.append(f"reg 0x1 0x{ret_val & _MASK64:x}")
+        lines.append(f"0 reg 0x1 0x{ret_val & _MASK64:016x}")
 
     # emit mem lines for globals whose value changed during execution
     for word_idx in sorted(final_dmem):
@@ -251,7 +334,7 @@ def write_result_file(path, ret_val, final_dmem, init_dmem):
             continue   # skip the placeholder word
         val = final_dmem[word_idx]
         if val != init_dmem.get(word_idx, 0):
-            lines.append(f"mem 0x{word_idx:x} 0x{val:016x}")
+            lines.append(f"0 mem 0x{word_idx:x} 0x{val:016x}")
 
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
@@ -405,14 +488,20 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     write_run_script(run_script, base_name)
     write_clean_script(clean_script)
 
-    if ret_val is not None or final_dmem:
-        write_result_file(result_path, ret_val, final_dmem, init_dmem)
-    else:
-        # Program is too dynamic to evaluate statically.
-        # Write truly empty result file — assembler checks nothing.
-        # Fill in reg/mem lines manually after first hardware run.
-        with open(result_path, 'w') as f:
-            f.write("")
+    # Real, independent verification takes priority whenever the test
+    # follows the results[] convention; only fall back to static-eval /
+    # an empty placeholder when it doesn't (or golden verification can't
+    # run -- see try_golden_verify's own docstring for exactly when).
+    golden_done = try_golden_verify(source, ir_globals, out_dir, base_name)
+    if not golden_done:
+        if ret_val is not None or final_dmem:
+            write_result_file(result_path, ret_val, final_dmem, init_dmem)
+        else:
+            # Program is too dynamic to evaluate statically.
+            # Write truly empty result file — assembler checks nothing.
+            # Fill in reg/mem lines manually after first hardware run.
+            with open(result_path, 'w') as f:
+                f.write("")
 
     # ── Summary ──
     n_globals = len(ir_globals)
@@ -424,7 +513,9 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     if n_globals:
         print(f"      global area: 0x{global_base:x} – 0x{ir_gen._next_global:x}")
     print(f"      data.map  →  {data_map_path}  ({len(init_dmem)} words)")
-    if ret_val is not None:
+    if golden_done:
+        pass  # try_golden_verify already printed its own summary line
+    elif ret_val is not None:
         print(f"      result    →  {result_path}  (r1 = 0x{ret_val:x} = {ret_val})")
     else:
         print(f"      result    →  {result_path}  (placeholder — dynamic program)")

@@ -2,6 +2,15 @@
 """
 golden_gen.py -- independent .result generator for the APARA ISA coverage suite.
 
+SUPERSEDED FOR NORMAL USE (2026-06-20): compiler.py now does exactly this
+automatically on every compile (try_golden_verify(), same logic, reading
+results[]'s address straight from its own IR instead of a second subprocess
+call) -- a plain `python3 compiler.py test_X.c` is now the one command that
+produces a real, independently-verified .result. This script is kept as a
+standalone tool for regenerating just the golden file without a full
+recompile, and as an isolated reference for the methodology -- not the
+authoritative path going forward. Keep both in sync if either changes.
+
 This tool is deliberately separate from the APARA compiler (compiler/) and never
 reads its source. It establishes ground truth for a test_X.c file by:
 

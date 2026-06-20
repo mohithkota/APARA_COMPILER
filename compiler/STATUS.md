@@ -2,7 +2,39 @@
 
 ---
 
-## 2026-06-20 — ISA coverage audit closed: 12 new test files, 6 real compiler bugs fixed, 1 simulator bug found and flagged (Latest)
+## 2026-06-20 — Golden verification wired into compiler.py: one command now produces a real, independently-verified .result (Latest)
+
+Per explicit request: `python3 compiler.py test_X.c` is now the single command that produces both
+`data.map` (already automatic) and a REAL `.result` file, not a placeholder -- as long as the test
+follows the `results[]` convention used throughout `isa_coverage_tests/` and `matmul_tests/`.
+
+`try_golden_verify()` (new function in `compiler.py`) runs automatically after every compile:
+finds a global literally named `results` in `ir_globals` (no source-text parsing needed -- the
+address and element size are already known internally), compiles the same preprocessed source
+natively with `gcc` against `isa_coverage_tests/golden/golden_stubs.h`, captures every slot's
+ground-truth value, and writes the `.result` file. Falls back cleanly (with a printed reason, never
+silently) to the existing static-eval/placeholder path if there's no `results[]`, `gcc` isn't
+available, `golden_stubs.h` is missing, or the native build/run itself fails.
+
+Verified: re-running `compiler.py` alone (no separate `golden_gen.py` call) on `test_alu_full.c`,
+`matmul_n16.c`, and `test_vreduce_full.c` (the one with intentionally-architecturally-correct values
+for the known-buggy unsigned cases) produces `.result` files byte-identical to the ones already
+verified against the simulator. Full existing 25-test suite re-run -- zero regressions.
+
+**Also found and fixed, same investigation**: the pre-existing static-eval fallback
+(`write_result_file`, used for any branch-free program with no `results[]`) had the exact same
+missing-leading-thread-id format bug found and fixed earlier for `isa_coverage_tests` -- it wrote
+`reg 0x1 0x...`/`mem 0x... 0x...` (3 tokens), which the real simulator silently ignores entirely
+(confirmed: zero `PostCondition` output either way). Every branch-free program compiled by this
+project before today produced a `.result` that looked plausible but verified nothing. Fixed to
+`0 reg 0x1 0x...`/`0 mem 0x... 0x...`, confirmed against the simulator with a fresh static probe.
+
+`golden_gen.py` kept as a standalone tool (regenerate just the golden file without a full
+recompile) but marked superseded for normal use -- `compiler.py` is now the authoritative path.
+
+---
+
+## 2026-06-20 — ISA coverage audit closed: 12 new test files, 6 real compiler bugs fixed, 1 simulator bug found and flagged
 
 Closing entry for the systematic instruction-coverage sweep (`isa_coverage_tests/`, see its
 `README.md` for the full matrix). Final state: **12 new test files + the existing 25-test suite,
