@@ -844,7 +844,20 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if dest_type == '$i64':
                 return expr_val   # no narrowing needed
             res = self._tmp()
-            self._emit(IRCast(res, expr_val, dest_type, '$i64'))
+            # IRCast(dest, src, dest_type, src_type) maps straight to mcode
+            # text "$cast (dest_type) rd (src_type) rs". The simulator's
+            # scalar-cast execution (___cast_operation___, McodeOperations.cpp)
+            # masks/sign-or-zero-extends using the SECOND type tag's width and
+            # unsigned flag, not the first -- confirmed by tracing
+            # Break_Vector(src_type.nbits, ...): with src_type=$i64 (64 bits)
+            # this is always a no-op regardless of the narrow C-level dest
+            # type, which is why (unsigned char)(-1) silently passed through
+            # as -1 before this fix. So the narrow C type must go in the
+            # SECOND mcode position (src_type here) with a literal $i64 in
+            # the first -- backwards from the natural "cast FROM i64 TO u8"
+            # reading, but it's what actually makes the hardware narrow and
+            # sign/zero-extend correctly.
+            self._emit(IRCast(res, expr_val, '$i64', dest_type))
             return res
         if isinstance(node, A.TernaryOp): return self._ternary(node)
         if isinstance(node, A.ExprList):

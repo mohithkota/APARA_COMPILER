@@ -2,7 +2,42 @@
 
 ---
 
-## 2026-06-20 — Fix: unsigned char/short/int were sign-extended on every load (Latest)
+## 2026-06-20 — Fix: $cast was a no-op whenever casting straight from i64 (Latest)
+
+Found while building test_cast_full.c for the coverage suite: `long long r = (unsigned char)(-1);`
+gave -1, not 255 -- the cast did nothing. `int8_t a = (int8_t)big;` (the existing test_cast.c's
+pattern) never caught this because its result always gets assigned to a narrow named variable,
+and the subsequent store-truncate + load-extend round trip (the latter just fixed above) produces
+the correct value regardless of what $cast itself computed -- masking the bug completely whenever
+the cast's result lands in a narrow variable, and only exposing it when assigned to something wide
+(`long long`) or used directly in an expression.
+
+Root cause, traced into the simulator (`McodeOperations.cpp ___cast_operation___`): scalar cast
+execution masks/sign-or-zero-extends using the SECOND type tag's width and unsigned flag (i.e.
+`Break_Vector(src_type.Get_Nbits(), ...)`), not the first. `ir_gen.py` was emitting
+`$cast (narrow_type) rd ($i64) rs` -- with `$i64` (64 bits, always "signed") in the position that
+actually drives the computation, making it an unconditional no-op (mask to 64 bits + sign-extend
+from bit 63 are both no-ops on an already-64-bit value) regardless of the narrow C-level dest type.
+
+This isn't a hardware bug -- the mechanism is clearly designed for $cast's other documented use
+(vector element-width widening/narrowing, e.g. vi8->vi16), where "break the SOURCE register into
+its native element width, then sign/zero-extend each element per the source's signedness" is
+exactly right. The scalar narrowing use case just needs the narrow type fed into that same slot.
+
+Fix: swapped the call to `IRCast(res, expr_val, '$i64', dest_type)` -- one line in `ir_gen.py`,
+with a comment explaining the inversion since "$i64 first, narrow type second" reads backwards
+from the natural "cast FROM i64 TO u8" intuition. `IRCast`/`_gen_IRCast` themselves needed no
+change (they already just pass both type tags straight through to mcode text).
+
+Verified: `(unsigned char)(-1)` now gives 255, `(signed char)(-1)` still gives -1, `(signed
+char)(200)` gives -56, `(unsigned char)(200)` gives 200 -- all direct-use (no intermediate
+variable) cases. Re-ran the full existing suite (27 tests) on hardware -- every result identical
+to before this fix, confirming test_cast.c's narrow-variable pattern truly never exercised the
+buggy path. Zero regressions.
+
+---
+
+## 2026-06-20 — Fix: unsigned char/short/int were sign-extended on every load
 
 Found while building a systematic ISA-coverage test suite (isa_coverage_tests/): `unsigned char
 uc = 255; if (uc != 255) ...` failed. Root cause: `codegen.py`'s `_atype`/`_WIDTH_TO_TYPE` mapped

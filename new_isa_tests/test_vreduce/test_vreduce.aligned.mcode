@@ -172,7 +172,7 @@ pad_1__22: // pc=0x4b
 $vreduce  +          $r6    ($vi32)    $r5    
     ;
     || 
-    $cast    ($i32)    $r7    ($i64)    $r6
+    $cast    ($i64)    $r7    ($i32)    $r6
     ;
 pad_2__24: // pc=0x62
     || 
@@ -288,7 +288,7 @@ pad_4__30: // pc=0x7c
 $vreduce  +          $r17    ($vi16)    $r16    
     ;
     || 
-    $cast    ($i32)    $r18    ($i64)    $r17
+    $cast    ($i64)    $r18    ($i32)    $r17
     ;
 pad_2__32: // pc=0xa2
     || 
@@ -471,7 +471,7 @@ pad_2__40: // pc=0xde
 $vreduce  +          $r8    ($vi8)    $r7    
     ;
     || 
-    $cast    ($i32)    $r9    ($i64)    $r8
+    $cast    ($i64)    $r9    ($i32)    $r8
     ;
 pad_2__42: // pc=0x102
     || 
