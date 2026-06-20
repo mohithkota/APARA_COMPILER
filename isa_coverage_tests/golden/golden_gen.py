@@ -73,8 +73,12 @@ def native_ground_truth(test_c_path, n_results, workdir):
 
 
 def apara_results_base_addr(test_c_path, workdir):
+    # --stack-top is pushed to the top of DMEM for this probe only, so the
+    # global/stack-overlap safety check (compiler.py) never blocks large
+    # test cases here -- it only affects where the STACK starts, never
+    # where globals are placed, so it can't change results[]'s address.
     out = subprocess.run(
-        ["python3", COMPILER_PY, test_c_path, "-v",
+        ["python3", COMPILER_PY, test_c_path, "-v", "--stack-top", "0xfff8",
          "-o", os.path.join(workdir, "_probe.mcode")],
         capture_output=True, text=True)
     if out.returncode != 0:
