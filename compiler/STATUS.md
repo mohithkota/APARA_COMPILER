@@ -2,7 +2,42 @@
 
 ---
 
-## 2026-06-20 — Fix: $cast was a no-op whenever casting straight from i64 (Latest)
+## 2026-06-20 — FOUND (not fixed -- simulator-side, out of compiler scope): $vreduce unsigned sub-types sign-extend instead of zero-extend (Latest)
+
+Found while building test_vreduce_full.c. Unlike every other bug found tonight, this is a
+**hardware/simulator bug, not a compiler bug** -- the compiler correctly emits
+`$vreduce + rd ($vu8) rs` (confirmed in the generated mcode); the simulator's execution is wrong.
+
+Root cause, traced into `McodeOperations.cpp`'s `__vreduce_operation__` (~line 110): it
+unconditionally sign-extends each element into a local `r` (~line 151, *before* checking
+`signed_flag`), then the `if(signed_flag)` branch redeclares its own (identical, redundant) `r`
+and uses it -- but the `else` (unsigned) branch has no such redeclaration and silently reuses the
+*outer*, already-sign-extended `r` instead of the raw element value. So `$vreduce` on `$vu8`/
+`$vu16`/`$vu32` currently sign-extends exactly like the signed variant, with no zero-extension
+path actually reachable.
+
+Verified empirically across all three widths (not just assumed from reading the source): a vector
+with one negative-bit-pattern element gives the SAME sum for `__vreduce_vu8`/`vu16`/`vu32` as
+their signed counterparts (28/2/-1), not the architecturally-correct zero-extended sums
+(284/65538/4294967295).
+
+`isa_coverage_tests/test_vreduce_full.c` asserts the CONFIRMED actual behavior (not the
+architecturally-correct one), with comments explaining the discrepancy clearly, so the test suite
+reflects reality rather than silently failing or asserting something false. r1=0x1, zero pipeline
+errors -- 12 checks, 6 positive-only (signed/unsigned agree, as expected) + 6 documenting this bug.
+
+Also confirms a separate, already-known gap from the ISA audit: only the ADD sub-op is reachable
+from this compiler (`_gen_IRVecReduce` hardcodes `$vreduce +`) -- MAX/MUL/AND/OR/XOR/XNOR sub-ops
+are real per the ISA doc but never emitted, not tested here.
+
+**This needs your call**: fixing it means editing the simulator's C++ source
+(`engine_isp/assembler/src/McodeOperations.cpp`), which is a different codebase/scope than the
+Python compiler this whole project has been about. Flagging for your decision rather than
+silently fixing or silently ignoring it.
+
+---
+
+## 2026-06-20 — Fix: $cast was a no-op whenever casting straight from i64
 
 Found while building test_cast_full.c for the coverage suite: `long long r = (unsigned char)(-1);`
 gave -1, not 255 -- the cast did nothing. `int8_t a = (int8_t)big;` (the existing test_cast.c's
