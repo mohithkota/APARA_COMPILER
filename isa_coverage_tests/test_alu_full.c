@@ -5,6 +5,17 @@
 // ~&/~|/~^ (nand/nor/xnor) have NO C operator -- only reachable via the
 // __nand/__nor/__xnor intrinsics below. Zero prior test coverage anywhere
 // in the existing suite before this file.
+//
+// Each check writes its computed value into results[] (a global array, so
+// each slot lands at a known, predictable DMEM address) instead of an
+// if/return pass-fail code. golden/golden_gen.py independently computes
+// the expected value for every slot (via gcc + golden_stubs.h, NOT by
+// reading this project's own compiler source) and emits a .result file
+// with one "mem" PostCondition per slot, so the simulator itself verifies
+// every individual value -- not just an aggregate signal.
+#define N_RESULTS 13
+long long results[N_RESULTS];
+
 long long __nand(long long a, long long b);
 long long __nor(long long a, long long b);
 long long __xnor(long long a, long long b);
@@ -13,24 +24,24 @@ int main() {
     long long a = 17;
     long long b = 5;
 
-    if (a + b != 22) return -1;
-    if (a - b != 12) return -2;
-    if (a * b != 85) return -3;
-    if (a / b != 3)  return -4;
-    if (a % b != 2)  return -5;
+    results[0] = a + b;
+    results[1] = a - b;
+    results[2] = a * b;
+    results[3] = a / b;
+    results[4] = a % b;
 
     long long x = 12;   // 0b1100
     long long y = 10;   // 0b1010
 
-    if ((x & y)  != 8)   return -6;
-    if ((x | y)  != 14)  return -7;
-    if ((x ^ y)  != 6)   return -8;
-    if ((x << 2) != 48)  return -9;
-    if ((x >> 1) != 6)   return -10;
+    results[5] = x & y;
+    results[6] = x | y;
+    results[7] = x ^ y;
+    results[8] = x << 2;
+    results[9] = x >> 1;
 
-    if (__nand(x, y) != -9)  return -11;   // ~(12&10)  = ~8  = -9
-    if (__nor (x, y) != -15) return -12;   // ~(12|10)  = ~14 = -15
-    if (__xnor(x, y) != -7)  return -13;   // ~(12^10)  = ~6  = -7
+    results[10] = __nand(x, y);
+    results[11] = __nor(x, y);
+    results[12] = __xnor(x, y);
 
     return 1;
 }

@@ -5,3 +5,6 @@ __pycache__/
 cancelled_check.jpeg
 NMI_HYD_jun11.pdf
 NMI_HYD_TICKET.pdf
+
+# Reference/verification material (not ours to version -- includes large binaries)
+verification/
