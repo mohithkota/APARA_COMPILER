@@ -1060,6 +1060,33 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRVecDot128(res, a_lo, a_hi, b_lo, b_hi, tstr))
             return res
 
+        # ── ONE-OFF, hand-written for a single measurement (NOT a general
+        # pass): __dot128_batch4_vu8(a_ptr, b0,b1,b2,b3, c0,c1,c2,c3). Loads A
+        # once and all 4 B operands FIRST (matching the reference's load1/
+        # load2 batching, hitting the ISA's 4-loads-per-bundle ceiling), THEN
+        # issues all 4 dot products against the already-loaded, still
+        # register-resident halves, THEN stores each result straight to its
+        # own final C[] address (not an intermediate buffer, so no
+        # store-then-immediate-reload hazard on the results either). See
+        # STATUS.md 2026-06-20 for why this exists and that it is scoped to
+        # this one experiment, not meant to be generalized.
+        if fname == '__dot128_batch4_vu8' and len(args) >= 9:
+            a_ptr  = args[0]
+            b_ptrs = args[1:5]
+            c_ptrs = args[5:9]
+            a_lo, a_hi = self._tmp(), self._tmp()
+            self._emit(IRLoadWide([a_lo, a_hi], a_ptr, Const(0)))
+            b_halves = []
+            for bp in b_ptrs:
+                b_lo, b_hi = self._tmp(), self._tmp()
+                self._emit(IRLoadWide([b_lo, b_hi], bp, Const(0)))
+                b_halves.append((b_lo, b_hi))
+            for (b_lo, b_hi), cp in zip(b_halves, c_ptrs):
+                dot_res = self._tmp()
+                self._emit(IRVecDot128(dot_res, a_lo, a_hi, b_lo, b_hi, '$vu8'))
+                self._emit(IRStore(cp, Const(0), dot_res, 8))
+            return Const(0)
+
         # ── 128-bit-wide DOT: __dot128_{type}(a_lo, a_hi, b_lo, b_hi) ───────────
         # Auto-split into the exact two-instruction pattern confirmed from the
         # 16x16 reference: plain $dot on the lo halves, $dot $accumulate on hi.

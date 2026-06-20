@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-06-20 — FINAL experiment of tonight's sequence: hand-written load-batching (38→83, still short of the reference's 19). Closing summary below, no further changes after this entry (Latest)
+
+### The experiment
+One-off `__dot128_batch4_vu8(a_ptr, b0,b1,b2,b3, c0,c1,c2,c3)` (`ir_gen.py`, explicitly scoped to
+this single measurement, not a general pass): loads A's row and all 4 B columns first (5 loads
+total — hits the ISA's 4-loads-per-bundle ceiling regardless of order), *then* issues all 4 dot
+products against the still-register-resident halves, *then* stores each result straight to its
+own final `C[]` address (no intermediate buffer, so no store-then-reload hazard on the results
+either). `test_matmul_packed_batched.c` — same 16x16 case, same three corner spot-checks.
+
+**Result: `r1=0x1`, zero pipeline errors, `spill_counter=0`. Matmul-loop bundles: 83.**
+
+### Closing summary of tonight's full experiment sequence
+| Step | Change | Matmul-loop bundles | Verdict |
+|---|---|---|---|
+| Baseline | `__ld128`+`__dot128_vu8`, memory round-trip | 65 | starting point |
+| **Round-trip elimination** | Fused `__dot128_direct_vu8`, no round-trip | **38** | **the real win — confirmed correctness + zero regressions** |
+| Unroll attempt #1 | Unroll-by-4 on the *broken* (round-trip) primitive | 246 (full count, not loop-only) | wrong direction — diagnosed as 4x the round-trip overhead |
+| Unroll attempt #2 | Unroll-by-4 on the *fixed* (fused) primitive | 95 | wrong direction — diagnosed as the 4-loads-per-bundle ISA ceiling (§12.5), confirmed NOT register pressure (`spill_counter=0`, probe cross-checked against `test_spill.c`) |
+| Load-batching (this entry) | Load-4-then-dot-4 ordering on the fused primitive | 83 | still short of the reference (19) — beats interleaved unrolling by 12 bundles (confirms ordering has *some* effect) but the 5-loads-per-batch still exceeds the 4-per-bundle ceiling regardless of order |
+| Reference | hand-written, loads A once per row (not per batch), reuses across 2 batches of 4 | 19 | not matched |
+
+### What actually worked tonight, plainly
+**Eliminating the memory round-trip (`__ld128`→`__dot128_direct_vu8`) was the one real, durable
+improvement: 65→38 bundles, with correctness verified at every step and zero regressions across
+the full test suite.** Every subsequent attempt to close the remaining gap to the reference's 19
+(unrolling, twice; load-batching) made things worse or only marginally better, and each time the
+cause was identified precisely rather than guessed: round-trip overhead (first unroll), the
+hardware's 4-loads-per-bundle ceiling (second unroll, batching). The reference's actual edge isn't
+unrolling or reordering in the abstract — it's loading `A`'s row exactly *once per row* and reusing
+it across multiple 4-column batches, rather than once per batch the way every version built
+tonight does. That's a specific, identified, *not yet attempted* optimization, not a mystery.
+
+### Stopping here — no further changes tonight
+This closes tonight's experiment sequence per explicit instruction. The fused intrinsic
+(`__dot128_direct_vu8`) and its verified 38-bundle result remain the standing, correct baseline.
+The batch4 intrinsic built for this final measurement is left in place as-is (one-off,
+documented, not wired into anything else).
+
+---
+
 ## 2026-06-20 — Retried unroll-by-4 on the fused intrinsic: still worse, and confirmed NOT register pressure (Latest)
 
 ### Numbers
