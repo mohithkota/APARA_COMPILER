@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-06-20 — Retried unroll-by-4 on the fused intrinsic: still worse, and confirmed NOT register pressure (Latest)
+
+### Numbers
+| Version | Matmul-loop bundles | Register spilling? |
+|---|---|---|
+| Fused `__dot128_direct_vu8`, real loop (no unroll) | 38 | n/a |
+| **Fused, unrolled by 4** (`test_matmul_packed_direct_unrolled.c`) | **95** | **No** |
+| Reference | 19 | — |
+
+`r1=0x1`, zero pipeline errors, same three corner spot-checks pass — unrolling didn't break
+correctness, just density.
+
+### Spilling ruled out directly, not assumed
+Wrote a small probe that runs the actual `IRGenerator`→`CodeGen` pipeline in-process and reads
+`cg._spill_counter` after generation (the same counter `_get_spill_slot` increments on every new
+spill slot). Result: **0** for the unrolled matmul. Cross-checked the probe is actually sound by
+running it against `test_spill.c` (known to spill): **3**, as expected. So this isn't a blind
+spot in the check — the 28-register pool genuinely had enough room for all 16 live temps (4 calls
+× 4 temps each) plus loop/address bookkeeping, no eviction needed anywhere.
+
+### Why it's worse anyway: a hardware ceiling, not the bundler or register pressure
+`$ld` always forces its bundle to a full 8 slots (`Has_Load_Store()` → capacity 8), and ISA doc
+§12.5 caps any single bundle at **4 memory-access instructions**. Each `__dot128_direct_vu8` call
+issues 2 loads; 4 unrolled calls issue 8 — a hard floor of 2 full bundles for loads alone, before
+any dot/address-math instructions. Unrolling quadruples the *static* code (4 calls' worth instead
+of 1 call's worth reused via a loop), and the bundler's packing gains (95 vs a naive ~4×38) don't
+come close to covering that increase. The non-unrolled loop pays the load cost once per body and
+amortizes it across 16 dynamic iterations; unrolling front-loads 4x the static cost for 4x fewer
+iterations, and the load-bundle ceiling means that cost can't be packed away.
+
+### Conclusion
+**Naive unrolling is the wrong direction here, twice confirmed now** (first with the round-trip
+intrinsic: 156→246; now with the fused one: 38→95). The remaining gap to the reference's 19
+bundles is not closeable by unrolling our current load primitive at all — the reference's density
+comes from batching 4 loads into exactly one bundle (matching the §12.5 ceiling) *and* reusing
+each load's result across multiple dot products without reloading, neither of which a generic
+unroller would produce automatically from this C source. Any future work here needs to target the
+load-batching pattern specifically, not loop unrolling in general.
+
+---
+
 ## 2026-06-20 — Re-measured matmul density with the fused intrinsic: 65→38 bundles, no unrolling involved (Latest)
 
 ### The numbers, matmul loop body only (data-init loop excluded both times, same methodology as before)
