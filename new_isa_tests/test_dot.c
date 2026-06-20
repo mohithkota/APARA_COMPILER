@@ -1,9 +1,11 @@
 /* test_dot.c — tests $dot and $dot $accumulate
    $dot rd (type) rs1 rs2
-   rd = (rs1 dot rs2)   or   rd = (rs1 dot rs2) + rd  (accumulate) */
+   rd = (rs1 dot rs2)   or   rd = (rs1 dot rs2) + rd  (accumulate)
 
-int g_dot    = 0;
-int g_dotacc = 0;
+   Each check writes its computed value into results[] -- see
+   isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why. */
+#define N_RESULTS 2
+long long results[N_RESULTS];
 
 long long __dot_vi16(long long a, long long b);
 long long __dot_acc_vi16(long long acc, long long a, long long b);
@@ -16,11 +18,11 @@ int main() {
     long long b = 1LL | (2LL<<16) | (3LL<<32) | (4LL<<48);
 
     long long d = __dot_vi16(a, b);          /* d = 30 */
-    g_dot = (int)d;
+    results[0] = d;
 
     /* accumulate: acc=d(30) + dot(a,b)(30) = 60 */
     long long acc = __dot_acc_vi16(d, a, b);
-    g_dotacc = (int)acc;
+    results[1] = acc;
 
-    return g_dot + g_dotacc;   /* expected 90 = 0x5A */
+    return 1;
 }

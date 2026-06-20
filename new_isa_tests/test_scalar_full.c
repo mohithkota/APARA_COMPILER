@@ -5,16 +5,11 @@
 // Tests: +=, -=, *=, /=, &=, |=, ^=, <<=, >>=
 // Tests: ++, --, ternary, if/else, while, for, do-while, switch
 // Tests: local vars, global vars, function calls
-
-int g_arith;
-int g_bitwise;
-int g_compare;
-int g_logical;
-int g_compound;
-int g_loop;
-int g_ternary;
-int g_switch_res;
-int g_func_res;
+//
+// Each section's result is written into results[] -- see
+// isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why.
+#define N_RESULTS 11
+long long results[N_RESULTS];
 
 int add3(int a, int b, int c) {
     return a + b + c;
@@ -50,7 +45,7 @@ int main() {
     r = r * 3;     // 99
     r = r / 9;     // 11
     r = r % 3;     // 2
-    g_arith = r;   // expect 2
+    results[0] = r; // expect 2
 
     // ── 2. Bitwise ───────────────────────────────────────────────────
     a = 60;        // 0b00111100
@@ -61,7 +56,8 @@ int main() {
     r = r << 2;    // 32
     r = r >> 1;    // 16
     c = ~r;        // bitwise NOT of 16 = -17 (signed 64-bit)
-    g_bitwise = r; // expect 16
+    results[1] = r; // expect 16
+    results[2] = c; // expect -17
 
     // ── 3. Comparisons (each must produce 1 if true) ─────────────────
     r = 0;
@@ -71,7 +67,7 @@ int main() {
     if (5 < 10)   r = r + 1;
     if (10 >= 10) r = r + 1;
     if (5 <= 10)  r = r + 1;
-    g_compare = r; // expect 6
+    results[3] = r; // expect 6
 
     // ── 4. Logical operators ─────────────────────────────────────────
     r = 0;
@@ -80,7 +76,7 @@ int main() {
     if (!0)      r = r + 1;  // true
     if (0 && 1)  r = r + 10; // should NOT run
     if (1 || 0)  r = r + 1;  // true
-    g_logical = r; // expect 4
+    results[4] = r; // expect 4
 
     // ── 5. Compound assignments ──────────────────────────────────────
     r = 100;
@@ -94,7 +90,7 @@ int main() {
     r ^= 4;     // 7 ^ 4 = 3
     r <<= 3;    // 3 << 3 = 24
     r >>= 1;    // 24 >> 1 = 12
-    g_compound = r; // expect 12
+    results[5] = r; // expect 12
 
     // ── 6. Increment/decrement + loops ──────────────────────────────
     // while loop
@@ -123,13 +119,13 @@ int main() {
     } while (i < 3);
     // c = 3
 
-    g_loop = r + b + c; // 15 + 15 + 3 = 33
+    results[6] = r + b + c; // 15 + 15 + 3 = 33
 
     // ── 7. Ternary ───────────────────────────────────────────────────
     a = 10;
     b = 20;
     r = (a > b) ? a : b;
-    g_ternary = r; // expect 20
+    results[7] = r; // expect 20
 
     // ── 8. Switch ────────────────────────────────────────────────────
     r = 0;
@@ -140,13 +136,16 @@ int main() {
         case 3: r = 300; break;
         default: r = 999; break;
     }
-    g_switch_res = r; // expect 200
+    results[8] = r; // expect 200
 
     // ── 9. Function calls ────────────────────────────────────────────
     r = add3(10, 20, 30);         // 60
     r = r + max2(15, 25);         // 85
     r = r + fact(5);              // 85 + 120 = 205
-    g_func_res = r;               // expect 205
+    results[9] = r;               // expect 205
 
-    return g_arith + g_compare + g_logical; // 2 + 6 + 4 = 12
+    // ── 10. Final aggregate (matches the original test's return value) ──
+    results[10] = results[0] + results[3] + results[4]; // 2 + 6 + 4 = 12
+
+    return 1;
 }
