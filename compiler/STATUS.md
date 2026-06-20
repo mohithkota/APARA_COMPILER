@@ -2,7 +2,30 @@
 
 ---
 
-## 2026-06-20 — Scaling table: 38-bundle fused intrinsic + while-loop savings, at N=8/16/32/64. Final data for the report (Latest)
+## 2026-06-20 — Fix: compiler now refuses to silently overlap globals with the stack (Latest)
+
+Root-caused and fixed the bug found while building the N=64 scaling case: the compiler had no
+check that the global data area actually fits below `--stack-top` before emitting code. Globals
+grow up from `global_base`, the stack grows down from `stack_top` — if the global area's end
+address gets within (or past) `stack_top`, the two regions overlap and silently corrupt each
+other with no error, no crash, just wrong values in whichever variables happen to land in the
+overlap. This is exactly what happened with N=64's matmul: none of the original corner
+spot-checks touched the corrupted range, so it would have passed as "correct" without the
+follow-up check.
+
+Fix in `compiler.py` (`compile()`, right after IR generation so `ir_gen._next_global` is final):
+errors out with `sys.exit(1)` if `_next_global + 4096 > stack_top` (4KB safety margin — generous
+versus the actual frame costs seen in this compiler, ~800B for non-recursive functions), printing
+the exact byte counts and a concrete `--stack-top` suggestion. Verified both directions: N=64
+without an explicit `--stack-top` now fails loudly with a clear message instead of compiling
+silently-wrong code; N=64 with `--stack-top 0xfff8` still compiles normally. Re-ran all 23 existing
+tests (alu/array/struct/2d/branch/ldst/pointer/subword/dot/spill/scalar_full/vadd/vreduce/slice/
+cast/cmov/pack/matmul/u128_load/u256_load/dot128_split/matmul_packed/dot128_direct) — zero false
+positives, all still compile.
+
+---
+
+## 2026-06-20 — Scaling table: 38-bundle fused intrinsic + while-loop savings, at N=8/16/32/64. Final data for the report
 
 ### The table
 | N | Matmul-loop bundles | Reference | Notes |

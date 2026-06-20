@@ -332,6 +332,28 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     ir_gen = IRGenerator(global_base=global_base)
     ir_gen.visit(ast)
 
+    # Global data and the stack share the same 64KB DMEM: globals grow UP from
+    # global_base, the stack grows DOWN from stack_top. If the global area's
+    # end address is at or past stack_top, they overlap from the very start
+    # (found the hard way: a 64x64 matmul's globals reached past the default
+    # stack_top and silently corrupted stack data -- no error, no crash, just
+    # wrong results in whichever array elements happened to land in the
+    # overlap). A 4KB margin below stack_top is a conservative bound on
+    # worst-case frame usage (locals + 224B caller-save + 512B spill reserve
+    # is typically well under 1KB per call; 4KB leaves room for a few levels
+    # of nesting/recursion without claiming to bound it exactly).
+    if not no_startup:
+        STACK_SAFETY_MARGIN = 4096
+        if ir_gen._next_global + STACK_SAFETY_MARGIN > stack_top:
+            print(f"\n[COMPILE ERROR] Global data (0x{global_base:x}-0x{ir_gen._next_global:x}, "
+                  f"{ir_gen._next_global - global_base} bytes) leaves less than "
+                  f"{STACK_SAFETY_MARGIN} bytes of clearance before --stack-top (0x{stack_top:x}). "
+                  f"Globals and the stack would silently corrupt each other.")
+            print(f"Tip: pass a larger --stack-top, e.g. --stack-top "
+                  f"0x{min(0xFFF8, ir_gen._next_global + STACK_SAFETY_MARGIN + 8):x} "
+                  f"(must stay within the 64KB DMEM, max usable top is ~0xFFF8).")
+            sys.exit(1)
+
     if verbose:
         print("=== Three-Address IR ===")
         for i in ir_gen.instructions:
