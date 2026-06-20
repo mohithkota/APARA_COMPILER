@@ -1,5 +1,7 @@
+#define N_RESULTS 10
+long long results[N_RESULTS];
+
 long long arr[5];
-long long g_result = 0;
 
 int main() {
     long long x;
@@ -8,8 +10,7 @@ int main() {
     /* Test 1: pointer to local variable */
     x = 42;
     p = &x;
-    g_result = *p;
-    if (g_result != 42) return -1;
+    results[0] = *p;
 
     /* Test 2: pointer to global array, basic deref */
     arr[0] = 10;
@@ -18,46 +19,38 @@ int main() {
     arr[3] = 40;
     arr[4] = 50;
     p = &arr[0];
-    g_result = *p;
-    if (g_result != 10) return -2;
+    results[1] = *p;
 
     /* Test 3: pointer indexing p[i] */
-    g_result = p[1];
-    if (g_result != 20) return -3;
+    results[2] = p[1];
 
     /* Test 4: pointer arithmetic  p + n */
     p = p + 2;
-    g_result = *p;
-    if (g_result != 30) return -4;
+    results[3] = *p;
 
     /* Test 5: pointer increment p++ */
     p = &arr[0];
     p++;
-    g_result = *p;
-    if (g_result != 20) return -5;
+    results[4] = *p;
 
     /* Test 6: pointer += n */
     p = &arr[0];
     p += 3;
-    g_result = *p;
-    if (g_result != 40) return -6;
+    results[5] = *p;
 
     /* Test 7: write through pointer */
     p = &arr[0];
     *p = 99;
-    g_result = arr[0];
-    if (g_result != 99) return -7;
+    results[6] = arr[0];
 
     /* Test 8: address of array element &arr[i] */
     p = &arr[2];
-    g_result = *p;
-    if (g_result != 30) return -8;
+    results[7] = *p;
 
     /* Test 9: pointer decrement */
     p = &arr[4];
     p--;
-    g_result = *p;
-    if (g_result != 40) return -9;
+    results[8] = *p;
 
     /* Test 10: loop with pointer */
     long long sum;
@@ -69,8 +62,7 @@ int main() {
         sum = sum + *p;
         p++;
     }
-    g_result = sum;
-    if (g_result != 15) return -10;
+    results[9] = sum;
 
-    return g_result;
+    return 1;
 }

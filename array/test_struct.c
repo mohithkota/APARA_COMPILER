@@ -1,8 +1,6 @@
 /*
  * test_struct.c — struct member access tests for APARA compiler
  *
- * Returns 0 on full success; negative on the first failing sub-test.
- *
  * Tests:
  *  1. Local struct: write + read fields
  *  2. Global struct: write + read fields
@@ -12,7 +10,12 @@
  *  6. Struct passed as pointer argument and written inside function
  *  7. Nested struct (struct containing struct)
  *  8. Chained field access a.b.c
+ *
+ * Each check writes its computed value into results[] -- see
+ * isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why.
  */
+#define N_RESULTS 17
+long long results[N_RESULTS];
 
 struct Point {
     long long x;
@@ -50,40 +53,40 @@ long long main() {
     struct Point p1;
     p1.x = 10;
     p1.y = 20;
-    if (p1.x != 10) return -1;
-    if (p1.y != 20) return -1;
+    results[0] = p1.x;
+    results[1] = p1.y;
 
     /* ── Test 2: global struct write + read ────────────────────────────────── */
     gPt.x = 55;
     gPt.y = 77;
-    if (gPt.x != 55) return -2;
-    if (gPt.y != 77) return -2;
+    results[2] = gPt.x;
+    results[3] = gPt.y;
 
     /* ── Test 3: struct initializer ─────────────────────────────────────────── */
     struct Point p2;
     p2.x = 3;
     p2.y = 4;
-    if (p2.x != 3) return -3;
-    if (p2.y != 4) return -3;
+    results[4] = p2.x;
+    results[5] = p2.y;
 
     /* ── Test 4: pointer-to-struct (->) ────────────────────────────────────── */
     struct Point *pp;
     pp = &p1;
-    if (pp->x != 10) return -4;
-    if (pp->y != 20) return -4;
+    results[6] = pp->x;
+    results[7] = pp->y;
     pp->x = 99;
-    if (p1.x != 99) return -4;
+    results[8] = p1.x;
 
     /* ── Test 5: struct read via pointer param ─────────────────────────────── */
     p1.x = 42;
     long long v;
     v = get_x(&p1);
-    if (v != 42) return -5;
+    results[9] = v;
 
     /* ── Test 6: struct write via pointer param ────────────────────────────── */
     set_xy(&p2, 100, 200);
-    if (p2.x != 100) return -6;
-    if (p2.y != 200) return -6;
+    results[10] = p2.x;
+    results[11] = p2.y;
 
     /* ── Test 7: nested struct (Line contains two Points) ───────────────────── */
     struct Line ln;
@@ -92,15 +95,15 @@ long long main() {
     ln.end.x   = 3;
     ln.end.y   = 4;
     ln.id      = 7;
-    if (ln.start.x != 0) return -7;
-    if (ln.end.x   != 3) return -7;
-    if (ln.end.y   != 4) return -7;
-    if (ln.id      != 7) return -7;
+    results[12] = ln.start.x;
+    results[13] = ln.end.x;
+    results[14] = ln.end.y;
+    results[15] = ln.id;
 
     /* ── Test 8: function computing with nested struct via pointer ──────────── */
     long long lsq;
     lsq = line_len_sq(&ln);   /* (3-0)^2 + (4-0)^2 = 9 + 16 = 25 */
-    if (lsq != 25) return -8;
+    results[16] = lsq;
 
-    return 0;
+    return 1;
 }

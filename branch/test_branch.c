@@ -1,24 +1,26 @@
+#define N_RESULTS 6
+long long results[N_RESULTS];
+
 long long a=10, b=20, c=10;
-long long res1=0, res2=0, res3=0, res4=0, res5=0, res6=0;
 
 int main() {
-    if (a < b) res1 = 1;
-    else res1 = 99;
+    if (a < b) results[0] = 1;
+    else results[0] = 99;
 
-    if (a > b) res2 = 1;
-    else res2 = 99;
+    if (a > b) results[1] = 1;
+    else results[1] = 99;
 
-    if (a == c) res3 = 1;
-    else res3 = 99;
+    if (a == c) results[2] = 1;
+    else results[2] = 99;
 
-    if (a != b) res4 = 1;
-    else res4 = 99;
+    if (a != b) results[3] = 1;
+    else results[3] = 99;
 
-    if (a >= c) res5 = 1;
-    else res5 = 99;
+    if (a >= c) results[4] = 1;
+    else results[4] = 99;
 
-    if (a <= b) res6 = 1;
-    else res6 = 99;
+    if (a <= b) results[5] = 1;
+    else results[5] = 99;
 
-    return res1;
+    return 1;
 }

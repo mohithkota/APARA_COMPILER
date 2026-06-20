@@ -1,8 +1,6 @@
 /*
  * test_2d.c — 2D array support tests for APARA compiler
  *
- * Returns 0 on full success; negative on the first failing sub-test.
- *
  * Tests:
  *  1. Global 2D array: write + read
  *  2. Local 2D array: write + read
@@ -10,7 +8,12 @@
  *  4. matmul2: 2x2 matrix multiply  C = A * B
  *  5. Read via function parameter (read_elem)
  *  6. Write via function parameter (set_elem)
+ *
+ * Each check writes its computed value into results[] -- see
+ * isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why.
  */
+#define N_RESULTS 15
+long long results[N_RESULTS];
 
 /* 3x3 global for tests 1,3,5,6 */
 long long gMat[3][3];
@@ -50,26 +53,26 @@ long long main() {
     gMat[0][0] = 10;
     gMat[1][2] = 99;
     gMat[2][1] = 42;
-    if (gMat[0][0] != 10) return -1;
-    if (gMat[1][2] != 99) return -1;
-    if (gMat[2][1] != 42) return -1;
+    results[0] = gMat[0][0];
+    results[1] = gMat[1][2];
+    results[2] = gMat[2][1];
 
     /* ── Test 2: local 2D array write + read ───────────────────────────────  */
     long long loc[2][4];
     loc[0][0] = 7;
     loc[0][3] = 55;
     loc[1][1] = 13;
-    if (loc[0][0] != 7)  return -2;
-    if (loc[0][3] != 55) return -2;
-    if (loc[1][1] != 13) return -2;
+    results[3] = loc[0][0];
+    results[4] = loc[0][3];
+    results[5] = loc[1][1];
 
-    /* ── Test 3: row-major isolation ──────────────────────────────────────── */
+    /* ── Test 3: row-major isolation (must all be distinct) ─────────────────── */
     gMat[0][0] = 1;
     gMat[0][1] = 2;
     gMat[1][0] = 3;
-    if (gMat[0][0] == gMat[0][1]) return -3;
-    if (gMat[0][0] == gMat[1][0]) return -3;
-    if (gMat[0][1] == gMat[1][0]) return -3;
+    results[6] = gMat[0][0];
+    results[7] = gMat[0][1];
+    results[8] = gMat[1][0];
 
     /* ── Test 4: 2×2 matmul ───────────────────────────────────────────────── */
     /* A = [[1,2],[3,4]], B = [[5,6],[7,8]] */
@@ -79,20 +82,20 @@ long long main() {
     gB2[0][0] = 5; gB2[0][1] = 6;
     gB2[1][0] = 7; gB2[1][1] = 8;
     matmul2(gA2, gB2, gC2);
-    if (gC2[0][0] != 19) return -4;
-    if (gC2[0][1] != 22) return -4;
-    if (gC2[1][0] != 43) return -4;
-    if (gC2[1][1] != 50) return -4;
+    results[9]  = gC2[0][0];
+    results[10] = gC2[0][1];
+    results[11] = gC2[1][0];
+    results[12] = gC2[1][1];
 
     /* ── Test 5: read via function param ──────────────────────────────────── */
     gMat[2][2] = 77;
     long long v;
     v = read_elem(gMat, 2, 2);
-    if (v != 77) return -5;
+    results[13] = v;
 
     /* ── Test 6: write via function param ─────────────────────────────────── */
     set_elem(gMat, 0, 2, 123);
-    if (gMat[0][2] != 123) return -6;
+    results[14] = gMat[0][2];
 
-    return 0;
+    return 1;
 }
