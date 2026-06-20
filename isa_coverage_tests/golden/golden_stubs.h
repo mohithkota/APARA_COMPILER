@@ -57,6 +57,13 @@
 #ifndef GOLDEN_STUBS_H
 #define GOLDEN_STUBS_H
 
+/* vu8_t is one of compiler.py's _FAKE_TYPEDEFS (an opt-in marker requesting
+ * natural/packed array stride on the APARA side -- a DMEM-layout detail
+ * with no bearing on native memory layout or values). For gcc, it is
+ * simply unsigned char; test sources never redefine it themselves so
+ * there's no conflict either way. */
+typedef unsigned char vu8_t;
+
 /* ---- scalar ALU: nand/nor/xnor (no C operator reaches these) ---- */
 long long __nand(long long a, long long b) { return ~(a & b); }
 long long __nor (long long a, long long b) { return ~(a | b); }
