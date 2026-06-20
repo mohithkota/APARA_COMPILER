@@ -7,6 +7,12 @@
 //  2. A combined u128+u256 round trip (load THEN store) in one place --
 //     test_u128_load/store.c and test_u256_load/store.c each verify load
 //     and store independently, never chained together.
+//
+// Each check writes its computed value into results[] -- see
+// test_alu_full.c / golden/golden_gen.py for why.
+#define N_RESULTS 13
+long long results[N_RESULTS];
+
 unsigned char  g_uc;
 signed char    g_sc;
 unsigned short g_us;
@@ -25,39 +31,39 @@ int main() {
     // pointer-indirection: unsigned char
     unsigned char *puc = &g_uc;
     *puc = 255;
-    if (*puc != 255) return -1;
+    results[0] = *puc;
     long long x1 = *puc;
-    if (x1 != 255) return -2;
+    results[1] = x1;
 
     // pointer-indirection: signed char sign-extends
     signed char *psc = &g_sc;
     *psc = -1;
     long long x2 = *psc;
-    if (x2 != -1) return -3;
+    results[2] = x2;
 
     // pointer-indirection: unsigned short
     unsigned short *pus = &g_us;
     *pus = 65535;
     long long x3 = *pus;
-    if (x3 != 65535) return -4;
+    results[3] = x3;
 
     // pointer-indirection: signed short sign-extends
     short *pss = &g_ss;
     *pss = -1;
     long long x4 = *pss;
-    if (x4 != -1) return -5;
+    results[4] = x4;
 
     // pointer-indirection: unsigned int
     unsigned int *pui = &g_ui;
     *pui = 0xFFFFFFFF;
     long long x5 = *pui;
-    if (x5 != 0xFFFFFFFFLL) return -6;
+    results[5] = x5;
 
     // pointer-indirection: signed int sign-extends
     int *psi = &g_si;
     *psi = -1;
     long long x6 = *psi;
-    if (x6 != -1) return -7;
+    results[6] = x6;
 
     // combined u128 round trip: WIDE load (src128 -> mid128 via __ld128),
     // then WIDE store (mid128 -> dst128 via __st128) -- chains both new
@@ -66,8 +72,8 @@ int main() {
     src128[1] = 0x2222222222222222LL;
     __ld128(mid128, src128);
     __st128(dst128, mid128);
-    if (dst128[0] != 0x1111111111111111LL) return -8;
-    if (dst128[1] != 0x2222222222222222LL) return -9;
+    results[7] = dst128[0];
+    results[8] = dst128[1];
 
     // combined u256 round trip, same chaining
     src256[0] = 0x1111111111111111LL;
@@ -76,10 +82,10 @@ int main() {
     src256[3] = 0x4444444444444444LL;
     __ld256(mid256, src256);
     __st256(dst256, mid256);
-    if (dst256[0] != 0x1111111111111111LL) return -10;
-    if (dst256[1] != 0x2222222222222222LL) return -11;
-    if (dst256[2] != 0x3333333333333333LL) return -12;
-    if (dst256[3] != 0x4444444444444444LL) return -13;
+    results[9]  = dst256[0];
+    results[10] = dst256[1];
+    results[11] = dst256[2];
+    results[12] = dst256[3];
 
     return 1;
 }

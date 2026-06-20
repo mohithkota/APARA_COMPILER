@@ -8,24 +8,26 @@
 // passes through unchanged and arg2 is silently ignored. Confirmed
 // empirically, not assumed, since the ISA doc lists them as "legal"
 // without describing this degenerate behavior.
+//
+// Each check writes its computed value into results[] -- see
+// test_alu_full.c / golden/golden_gen.py for why.
+#define N_RESULTS 4
+long long results[N_RESULTS];
+
 long long __pack(long long a, long long b, int result_nbits, int src_nbits);
 
 int main() {
     // 32/16: 2 source registers, each contributing 16 bits -- arg1 high, arg2 low
-    long long p1 = __pack(0xBEEF, 0xDEAD, 32, 16);
-    if (p1 != 0xBEEFDEAD) return -1;
+    results[0] = __pack(0xBEEF, 0xDEAD, 32, 16);
 
     // 64/32: 2 source registers, each contributing 32 bits -- arg1 high, arg2 low
-    long long p2 = __pack(0x12345678, 0x9ABCDEF0, 64, 32);
-    if (p2 != 0x123456789ABCDEF0LL) return -2;
+    results[1] = __pack(0x12345678, 0x9ABCDEF0, 64, 32);
 
     // 32/32: degenerate, total/word=1 -- only arg1 used, arg2 ignored
-    long long p3 = __pack(0x12345678, 0xAAAAAAAA, 32, 32);
-    if (p3 != 0x12345678) return -3;
+    results[2] = __pack(0x12345678, 0xAAAAAAAA, 32, 32);
 
     // 64/64: degenerate, total/word=1 -- only arg1 used, arg2 ignored
-    long long p4 = __pack(0x123456789ABCDEFLL, 0x5555555555555555LL, 64, 64);
-    if (p4 != 0x123456789ABCDEFLL) return -4;
+    results[3] = __pack(0x123456789ABCDEFLL, 0x5555555555555555LL, 64, 64);
 
     return 1;
 }

@@ -16,6 +16,12 @@
 // _gen_IRIndirectCall) to fail loudly at compile time instead -- see
 // STATUS.md 2026-06-20. This file now tests the documented, enforced
 // 4-argument maximum rather than a 5th argument that's correctly rejected.
+//
+// Each call's return value is written into results[] -- see
+// test_alu_full.c / golden/golden_gen.py for why.
+#define N_RESULTS 8
+long long results[N_RESULTS];
+
 int add4(int a, int b, int c, int d) {
     return a + b + c + d;
 }
@@ -42,21 +48,20 @@ int fib_rec(int n) {
 
 int main() {
     // multiple args (4 is the calling convention's actual maximum)
-    if (add4(1, 2, 3, 4) != 10) return -1;
+    results[0] = add4(1, 2, 3, 4);
 
     // 3-level nested calls: level_a -> level_b -> level_c
-    // level_c(5)=10, level_b(5)=10+1=11, level_a(5)=11+1=12
-    if (level_a(5) != 12) return -2;
+    results[1] = level_a(5);
 
     // genuine recursion: factorial
-    if (fact_rec(5) != 120) return -3;
-    if (fact_rec(1) != 1)   return -4;   // base case
-    if (fact_rec(6) != 720) return -5;
+    results[2] = fact_rec(5);
+    results[3] = fact_rec(1);   // base case
+    results[4] = fact_rec(6);
 
     // genuine recursion: fibonacci (two recursive calls per invocation)
-    if (fib_rec(0) != 0)  return -6;    // base case
-    if (fib_rec(1) != 1)  return -7;    // base case
-    if (fib_rec(10) != 55) return -8;   // fib(10) = 55
+    results[5] = fib_rec(0);    // base case
+    results[6] = fib_rec(1);    // base case
+    results[7] = fib_rec(10);
 
     return 1;
 }

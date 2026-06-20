@@ -4,6 +4,13 @@
 // boundary/overflow values (everything fit trivially in any width, so it
 // could never have caught the unsigned sign-extension bug fixed alongside
 // this file -- see STATUS.md 2026-06-20).
+//
+// Each check writes its computed value into results[] instead of an
+// if/return pass-fail code -- see test_alu_full.c / golden/golden_gen.py
+// for why (independent, per-value PostCondition verification).
+#define N_RESULTS 21
+long long results[N_RESULTS];
+
 unsigned char  g_uc;
 unsigned short g_us;
 unsigned int   g_ui;
@@ -12,93 +19,76 @@ short          g_ss;
 unsigned char  g_uc_arr[3];
 
 int main() {
-    // unsigned char: max value must read back positive, not sign-extended
     unsigned char uc = 255;
-    if (uc != 255) return -1;
+    results[0] = uc;
     long long x1 = uc;
-    if (x1 != 255) return -2;
+    results[1] = x1;
 
-    // signed char: -1 sign-extends to a full 64-bit -1
     signed char sc = -1;
     long long x2 = sc;
-    if (x2 != -1) return -3;
+    results[2] = x2;
 
-    // unsigned char wraparound: 255 + 1 = 0
     unsigned char uc2 = 255;
     uc2 = uc2 + 1;
-    if (uc2 != 0) return -4;
+    results[3] = uc2;
 
-    // signed char wraparound: 127 + 1 = -128
     signed char sc2 = 127;
     sc2 = sc2 + 1;
-    if (sc2 != -128) return -5;
+    results[4] = sc2;
 
-    // unsigned short: max value
     unsigned short us = 65535;
-    if (us != 65535) return -6;
+    results[5] = us;
     long long x3 = us;
-    if (x3 != 65535) return -7;
+    results[6] = x3;
 
-    // signed short: -1 sign-extends
     short ss = -1;
     long long x4 = ss;
-    if (x4 != -1) return -8;
+    results[7] = x4;
 
-    // unsigned short wraparound
     unsigned short us2 = 65535;
     us2 = us2 + 1;
-    if (us2 != 0) return -9;
+    results[8] = us2;
 
-    // signed short wraparound: 32767 + 1 = -32768
     short ss2 = 32767;
     ss2 = ss2 + 1;
-    if (ss2 != -32768) return -10;
+    results[9] = ss2;
 
-    // unsigned int: large value, no sign-extension
     unsigned int ui = 0xFFFFFFFF;
     long long x5 = ui;
-    if (x5 != 0xFFFFFFFFLL) return -11;
+    results[10] = x5;
 
-    // signed int: -1 sign-extends (baseline, should already work)
     int si = -1;
     long long x6 = si;
-    if (x6 != -1) return -12;
+    results[11] = x6;
 
-    // global unsigned char
     g_uc = 255;
-    if (g_uc != 255) return -13;
+    results[12] = g_uc;
 
-    // global signed char sign-extension
     g_sc = -1;
     long long x7 = g_sc;
-    if (x7 != -1) return -14;
+    results[13] = x7;
 
-    // global unsigned short
     g_us = 65535;
-    if (g_us != 65535) return -15;
+    results[14] = g_us;
 
-    // global unsigned int
     g_ui = 0xFFFFFFFF;
     long long x8 = g_ui;
-    if (x8 != 0xFFFFFFFFLL) return -16;
+    results[15] = x8;
 
-    // global signed short sign-extension
     g_ss = -1;
     long long x9 = g_ss;
-    if (x9 != -1) return -17;
+    results[16] = x9;
 
-    // local unsigned char array element
     unsigned char arr[3];
     arr[0] = 255;
-    if (arr[0] != 255) return -18;
+    results[17] = arr[0];
     long long x10 = arr[0];
-    if (x10 != 255) return -19;
+    results[18] = x10;
 
-    // global unsigned char array element
     g_uc_arr[0] = 255;
-    if (g_uc_arr[0] != 255) return -20;
+    results[19] = g_uc_arr[0];
     long long x11 = g_uc_arr[0];
-    if (x11 != 255) return -21;
+    results[20] = x11;
 
     return 1;
 }
