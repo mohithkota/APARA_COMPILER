@@ -2,7 +2,57 @@
 
 ---
 
-## 2026-06-20 — FOUND (not fixed -- simulator-side, out of compiler scope): $vreduce unsigned sub-types sign-extend instead of zero-extend (Latest)
+## 2026-06-20 — MAJOR FIX: narrower-than-64-bit function parameters always read back as garbage (Latest)
+
+The most significant finding of tonight's ISA-coverage audit. Found while building
+test_call_return_full.c: `int add1(int a) { return a + 100; }` called as `add1(7)` returned 100,
+not 107 -- the parameter `a` was reading as 0 inside the function, regardless of what was passed
+(confirmed with both a literal and a variable argument; confirmed pre-existing on the unmodified
+compiler via git stash, not something introduced tonight).
+
+**Root cause**: the function prologue stores each incoming argument register to the parameter's
+stack slot via a hardcoded `$st ($i64) [...]` (full 64-bit store) regardless of the parameter's
+actual C-level type, while reads of that parameter correctly use its real width (`$ld ($i32)` for
+a plain `int`). Per this compiler's established DMEM convention (`_alloc_global`'s comment: "$ld
+($i32) always reads bits[63:32] of the 8-byte DMEM word"), a 32-bit load reads the *upper* 32 bits
+of the 8-byte word -- so a parameter stored as a full 64-bit value (lower bits = the real value,
+upper bits = 0 for any small value) gets read back as 0, the upper half. `IRFuncBegin.params` only
+ever carried `(name, fp_offset)` -- the parameter's width was computed correctly elsewhere
+(`_alloc_local`'s `esz`) but never threaded through to the prologue's store.
+
+**Why no existing test caught this**: `test_scalar_full.c` calls `add3`/`max2`/`fact` (all `int`
+params) and stores results in `g_func_res` -- but never actually asserts `g_func_res` against its
+expected value (205, per its own comment). Verified directly: the exact same call pattern,
+isolated, returns `1` (wrong) on the unmodified compiler and `0xcd`=205 (correct) after this fix.
+Every C function with a parameter narrower than `long long` was silently broken.
+
+**Fix**:
+- `ir_gen.py` (`visit_FuncDef`): `param_list` entries are now `(name, fp_offset, elem_bytes)` --
+  3-tuples instead of 2; also now registers parameters in `self._unsigned_vars` (a related,
+  previously-missed gap: an `unsigned int` parameter was never tracked there either, since
+  `visit_FuncDef`'s parameter loop never called `_is_unsigned_decl`, only `visit_Decl` did).
+- `codegen.py` (`_gen_IRFuncBegin`): prologue store now uses `self._atype(width)` per parameter
+  instead of a hardcoded `($i64)`.
+
+Verified end-to-end: the minimal probe (7+100=107), the real test_scalar_full.c pattern in
+isolation (205), and the new test_call_return_full.c (4-arg call, 3-level nesting, factorial AND
+fibonacci recursion -- the latter stressing the RAS with two recursive calls per invocation, a
+different push/pop pattern than a single recursive chain). Re-ran the full existing suite (34
+tests) on hardware -- every result identical to before, zero regressions, including
+test_scalar_full.c's outer r1=0xc (the bug was in a value that test's own pass/fail signal never
+depended on, exactly why it went undetected).
+
+Also fixed alongside (same investigation, smaller and unrelated to the width bug): the calling
+convention hardcodes exactly 4 argument registers (r2-r5) on both caller and callee sides -- a 5th+
+argument/parameter was previously silently dropped with no error. `_gen_IRFuncBegin`/`_gen_IRCall`/
+`_gen_IRIndirectCall` now fail loudly at compile time instead (`sys.exit(1)` with a clear message),
+matching the global/stack-overlap check added earlier tonight. Not a capacity fix (no stack-passed
+args), just fail-loudly instead of silently-wrong, by design -- extending the ABI to support 5+
+args via stack passing would be a separate, bigger feature.
+
+---
+
+## 2026-06-20 — FOUND (not fixed -- simulator-side, out of compiler scope): $vreduce unsigned sub-types sign-extend instead of zero-extend
 
 Found while building test_vreduce_full.c. Unlike every other bug found tonight, this is a
 **hardware/simulator bug, not a compiler bug** -- the compiler correctly emits

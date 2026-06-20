@@ -26,6 +26,7 @@ Register spilling (v6):
   prologue so the spill area is always available without patching the frame size.
 """
 
+import sys
 from ir import *
 
 # ── ABI-fixed names (never change) ────────────────────────────────────────────
@@ -569,6 +570,21 @@ class CodeGen:
     # ── function prologue / epilogue ───────────────────────────────────────────
 
     def _gen_IRFuncBegin(self, ir):
+        # Calling convention is hardcoded to exactly 4 argument registers
+        # (ARG = r2..r5, see both here and _gen_IRCall). Before this check,
+        # a 5th+ parameter was SILENTLY dropped (the old code just did
+        # "if i >= len(ARG): break") -- the parameter's stack slot was never
+        # written, so it held garbage with no error at all. Found via
+        # isa_coverage_tests/test_call_return_full.c's add5(): it silently
+        # computed the wrong sum instead of failing to compile. Fail loudly
+        # instead, matching the global/stack-overlap check in compiler.py.
+        if len(ir.params) > len(ARG):
+            print(f"\n[COMPILE ERROR] Function '{ir.name}' has {len(ir.params)} parameters; "
+                  f"this calling convention only supports up to {len(ARG)} (passed in "
+                  f"{', '.join(ARG)}). 5th+ parameters are silently dropped, not spilled to "
+                  f"the stack -- not implemented.")
+            sys.exit(1)
+
         self._ra            = RegAlloc()   # fresh 28-reg pool for this function
         self._decl_frame    = ir.frame_size
         self._current_epilogue = f"{ir.name}_epilogue"
@@ -592,10 +608,9 @@ class CodeGen:
 
         # No ONE register — unconditional branch uses $r0 == $r0
 
-        for i, (pname, fp_off) in enumerate(ir.params):
-            if i >= len(ARG):
-                break
-            self._emit(f"$st ($i64) [{FP} + {fp_off}] {ARG[i]}")
+        # len(ir.params) <= len(ARG) is guaranteed by the check above.
+        for i, (pname, fp_off, width) in enumerate(ir.params):
+            self._emit(f"$st {self._atype(width)} [{FP} + {fp_off}] {ARG[i]}")
 
     def _gen_IRFuncEnd(self, ir):
         self._pending_labels.append(self._current_epilogue)
@@ -931,6 +946,15 @@ class CodeGen:
             self._emit("$halt")
             return
 
+        # See the matching check in _gen_IRFuncBegin -- same hard 4-argument
+        # ceiling, same "fail loudly instead of silently dropping" fix.
+        if len(ir.args) > len(ARG):
+            print(f"\n[COMPILE ERROR] Call to '{fname}' passes {len(ir.args)} arguments; "
+                  f"this calling convention only supports up to {len(ARG)} (passed in "
+                  f"{', '.join(ARG)}). 5th+ arguments are silently dropped, not spilled to "
+                  f"the stack -- not implemented.")
+            sys.exit(1)
+
         # 1. Save all currently live allocated temps to the caller-save area.
         saved = list(self._ra.items())
         saved_name_slot = {}     # name → caller-save FP offset
@@ -1001,6 +1025,16 @@ class CodeGen:
 
     def _gen_IRIndirectCall(self, ir):
         """Indirect function call through a register: $call $rN"""
+        # Same hard 4-argument ceiling and fail-loudly fix as _gen_IRCall /
+        # _gen_IRFuncBegin (function pointers are currently blocked at the
+        # assembler level anyway -- see memory/project_function_pointers_blocked
+        # -- but keep this path consistent in case that changes).
+        if len(ir.args) > len(ARG):
+            print(f"\n[COMPILE ERROR] Indirect call passes {len(ir.args)} arguments; "
+                  f"this calling convention only supports up to {len(ARG)} (passed in "
+                  f"{', '.join(ARG)}).")
+            sys.exit(1)
+
         # 1. Save all currently live temps to caller-save area.
         saved = list(self._ra.items())
         saved_name_slot = {}

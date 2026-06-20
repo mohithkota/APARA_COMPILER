@@ -627,15 +627,29 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._array_elem[p.name]       = col_stride
                 fp_off = self._alloc_local(p.name, 8, 8)
                 self._ptr_stride[p.name] = 8   # holds a pointer value
-                param_list.append((p.name, fp_off))
+                param_list.append((p.name, fp_off, 8))
                 continue
             esz = _elem_size(p.type)
             fp_off = self._alloc_local(p.name, max(_type_size(p.type), 4), esz)
-            param_list.append((p.name, fp_off))
+            # Prologue must store the incoming ARG register with the SAME width
+            # the parameter will later be read back with (esz here), not a fixed
+            # $i64 -- otherwise a narrower-than-64-bit parameter (e.g. plain
+            # "int") gets written as a full 64-bit value but read back via
+            # $ld ($i32), which reads bits[63:32] of the 8-byte DMEM word (see
+            # _alloc_global's comment on this convention) -- i.e. the upper
+            # half of whatever was stored, which is 0 for any small value.
+            # Confirmed via isa_coverage_tests/test_call_return_full.c: a
+            # single "int a" parameter read back as 0 regardless of what was
+            # passed. See STATUS.md 2026-06-20.
+            param_list.append((p.name, fp_off, esz))
             if isinstance(p.type, A.ArrayDecl):
                 self._array_elem[p.name] = esz
             self._record_ptr(p.name, p.type)        # track pointer variables
             self._record_struct_var(p.name, p.type) # track struct / ptr-to-struct params
+            if _is_unsigned_decl(p.type):
+                self._unsigned_vars.add(p.name)
+            else:
+                self._unsigned_vars.discard(p.name)
 
         begin = IRFuncBegin(name, param_list, {}, 0)
         self._emit(begin)
