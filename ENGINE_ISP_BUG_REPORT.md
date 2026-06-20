@@ -195,19 +195,34 @@ McodeRoot::Error ("Incomplete mem line in Verify_Line", this);
 
 ---
 
-## Additional finding (not a code bug, but relevant): two simulator binaries in this project disagree on the `PostCondition` file format
+## Additional finding (not a code bug, but relevant): a second, non-authoritative simulator binary exists elsewhere in this project tree
 
-`engine_isp/assembler/bin/mcode_run` (the binary actually used by this compiler project's
-`run.sh` scripts) requires `<thread-id> <keyword> <args...>` as shown above. A second,
-different binary present in this same project tree, `verification/bin/mcode_run`
-(confirmed different file — different MD5 checksum, so a different build), accepts
-`<keyword> <args...>` with no leading thread-id at all for `mem` lines, and was the binary that
-several pre-existing example result files in this project (e.g. under `verification/lastsem/`)
-were apparently written for. Neither binary errors out helpfully when given the other's format —
-the first prints the misleading message in Bug 2b above, and the second simply produces no
-`PostCondition` output at all for a mismatched line. Worth knowing which binary a given
-`run.sh`/example pairing was actually built against before debugging a "verification isn't
-working" report.
+`engine_isp/assembler/bin/mcode_run` is **the correct, authoritative binary** — it's what this
+compiler project's `run.sh` scripts have used throughout, and is the one all 5992 verification
+checks in this report and in `isa_coverage_tests/`/`matmul_tests/` were run against.
+
+A second, different binary also exists in this project tree: `verification/bin/mcode_run`
+(confirmed a different build — different MD5 checksum from the authoritative one) accepts a
+*different* `PostCondition` file format (`<keyword> <args...>` with no leading thread-id, e.g.
+`mem 0x2 0x0505...`, instead of `<thread-id> <keyword> <args...>`). It is **not** the binary to use
+— confirmed directly.
+
+```
+$ ls -lh engine_isp/assembler/bin/mcode_run
+-rwxrwxr-x 1 mohithkota mohithkota 1.8M Jun 18 13:05 mcode_run      <- authoritative
+
+$ ls -lh verification/bin/mcode_run
+-rwxrwxr-x 1 mohithkota mohithkota 1.7M Jun 20 12:22 mcode_run      <- NOT authoritative
+```
+
+Note the `verification/bin/` copy is actually *newer* by file timestamp (Jun 20 vs. Jun 18) — a
+reminder that file recency alone doesn't indicate which build is the real reference; this one is
+a separate, non-canonical build (the same directory also contains `tb` and a 243MB
+`test_setup_test_bench`, suggesting it belongs to a different, RTL/testbench-oriented verification
+setup, not this project's compiler-targeted simulator). Several pre-existing example result files
+elsewhere in this project tree (e.g. under `verification/lastsem/`) appear to have been written
+against this non-authoritative binary's format — worth keeping in mind if any of those are reused,
+since they won't verify correctly against the authoritative `engine_isp/assembler/bin/mcode_run`.
 
 ---
 
