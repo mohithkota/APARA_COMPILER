@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-06-20 — Scaling table: 38-bundle fused intrinsic + while-loop savings, at N=8/16/32/64. Final data for the report (Latest)
+
+### The table
+| N | Matmul-loop bundles | Reference | Notes |
+|---|---|---|---|
+| 8 | 36 | — | compiler output, no hand-written equivalent for comparison |
+| 16 | 37 | 19 | only size with a hand-written baseline; while-loop version, down from 38 with `for` |
+| 32 | 52 | — | compiler output, no hand-written equivalent for comparison |
+| 64 | 80 | — | compiler output, no hand-written equivalent for comparison |
+
+All four: `__dot128_direct_vu8` (the verified, fused, no-round-trip intrinsic), no unrolling, no
+batching — both confirmed worse earlier tonight. All loops converted to `while` to capture the
+1-bundle-per-nest savings found earlier. Correctness verified at every size via hand-computed
+spot-checks (same `a_val=(r*N+k+1)%256`, `b_val=(k*N+c+1)%256` formula as the original 16x16
+reference, computed independently for each N): N=8 — `C[0]`/`C[7]`/`C[63]`; N=16 — `C[0]`/`C[15]`/
+`C[255]`; N=32 — `C[0]`/`C[31]`/`C[1023]`; N=64 — `C[0]`/`C[63]`/`C[4095]`/`C[2900]`. All pass,
+zero pipeline errors at every size. No compiler source was modified for this experiment — only
+new test C files using already-existing, already-verified intrinsics.
+
+### A real bug caught before trusting N=64's result
+N=64's global data footprint (`A`+`BT`+`C` combined) needs up to address `0xa400`, which overlaps
+the *default* `--stack-top` (`0x7ff8`) — the stack and `C[2840..2943]` would have silently
+corrupted each other. Caught by checking the actual address ranges, not by symptom — none of the
+three original corner spot-checks would have touched that range, so this would have silently
+passed as "correct" otherwise. Fixed by recompiling with `--stack-top 0xfff8` (well above the
+global area), and added a fourth spot-check (`C[2900]`) specifically inside the
+previously-corrupted range to prove the fix rather than assume it. N=8/16/32 have small enough
+footprints that they never approach the default stack-top, so they were not at risk.
+
+### Log files: N=32 and N=64 omitted from their commits
+N=32's verbose run log was 143MB, N=64's was 725MB — both far over GitHub's 100MB file limit (the
+`-v` trace scales with total dynamic instruction count, which grows fast with N). The N=32 commit
+was amended before it was ever pushed (so nothing public was rewritten) to drop the log; N=64's
+log was deleted before staging. All other artifacts (`.mcode`/`.obj`/`.aligned.mcode`/
+`.disass.mcode`/`.result`) are small and committed normally at every size.
+
+### Observation, not chased further (per instruction)
+Bundle growth isn't linear in N: 36→37→52→80 for N=8→16→32→64. This tracks the number of
+`__dot128_direct_vu8` calls needed per dot product (`ceil(N/16)`: 1 for N=8/16, 2 for N=32, 4 for
+N=64) rather than N itself — N=8→16 barely moves because both still need exactly one call per dot.
+Not investigated further; this is the final data point for the report, not a new optimization
+target.
+
+### This is the closing state — no further optimization attempts after this entry.
+
+---
+
 ## 2026-06-20 — FINAL experiment of tonight's sequence: hand-written load-batching (38→83, still short of the reference's 19). Closing summary below, no further changes after this entry (Latest)
 
 ### The experiment
