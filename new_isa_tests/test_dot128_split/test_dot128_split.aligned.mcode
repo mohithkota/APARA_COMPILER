@@ -57,7 +57,7 @@ main: // pc=0x18
     ;
     || 
     +            $r26    ($i64)    $r0    $r27
-    $set     $r1    0    848
+    $set     $r1    0    840
     ;
 pad_2__10: // pc=0x22
     || 
@@ -304,7 +304,7 @@ pad_4__26: // pc=0x8c
     ;
     || 
     $dot $accumulate $r13    ($vu8)    $r8    $r12    
-    +            $r14    ($i64)    $r26        -40
+    +            $r14    ($i64)    $r28        0
     ;
 pad_2__28: // pc=0xb2
     || 
@@ -319,8 +319,8 @@ pad_4__30: // pc=0xb4
     $null
     ;
     || 
-    +            $r15    ($i64)    $r26        -40
-    $null
+    ? ($i64)  $r0 ==    $goto    main_epilogue
+    +            $r1    ($i64)    $r0        1
     $null
     $null
     $st   ($i64)   [$r14  + 0]    $r13
@@ -328,110 +328,20 @@ pad_4__30: // pc=0xb4
     $null
     $null
     ;
-    || 
-    +            $r17    ($i64)    $r0        136
-    $null
-    $null
-    $null
-    $ld    ($i64)   $r16    [$r15 + 0]
-    $null
-    $null
-    $null
-    ;
-    || 
-    -            $r18    ($i64)    $r16    $r17
-    ;
-pad_1__32: // pc=0xc9
-    || 
-    $null
-    ;
-pad_2__34: // pc=0xca
-    || 
-    $null
-    $null
-    ;
-pad_4__36: // pc=0xcc
-    || 
-    $null
-    $null
-    $null
-    $null
-    ;
-    || 
-    ? ($i64)  $r18 !=    $goto    if_t_1
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-    || 
-    ? ($i64)  $r0 ==    $goto    if_e_2
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-if_t_1: // pc=0xe0
-    || 
-    +            $r17    ($i64)    $r0        -1
-    ;
-pad_1__38: // pc=0xe1
-    || 
-    $null
-    ;
-pad_2__40: // pc=0xe2
-    || 
-    $null
-    $null
-    ;
-pad_4__42: // pc=0xe4
-    || 
-    $null
-    $null
-    $null
-    $null
-    ;
-    || 
-    ? ($i64)  $r0 ==    $goto    main_epilogue
-    +            $r1    ($i64)    $r0    $r17
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-if_e_2: // pc=0xf0
-    || 
-    ? ($i64)  $r0 ==    $goto    main_epilogue
-    +            $r1    ($i64)    $r0        1
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-main_epilogue: // pc=0xf8
+main_epilogue: // pc=0xc0
     || 
     +            $r27    ($i64)    $r0    $r26
     ;
-pad_1__44: // pc=0xf9
+pad_1__32: // pc=0xc1
     || 
     $null
     ;
-pad_2__46: // pc=0xfa
+pad_2__34: // pc=0xc2
     || 
     $null
     $null
     ;
-pad_4__48: // pc=0xfc
+pad_4__36: // pc=0xc4
     || 
     $null
     $null

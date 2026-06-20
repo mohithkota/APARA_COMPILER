@@ -60,7 +60,7 @@ l_24: // pc=0x18
 l_32: // pc=0x20
     || 
     +            $r26    ($i64)    $r0    $r27
-    $set     $r1    0    824
+    $set     $r1    0    816
     ;
 l_34: // pc=0x22
     || 
@@ -361,7 +361,7 @@ l_203: // pc=0xcb
 l_204: // pc=0xcc
     || 
     $dot $accumulate $r2    ($vu8)    $r21    $r23    
-    +            $r3    ($i64)    $r26        -16
+    +            $r3    ($i64)    $r28        32
     ;
 l_206: // pc=0xce
     || 
@@ -370,8 +370,8 @@ l_206: // pc=0xce
     ;
 l_208: // pc=0xd0
     || 
-    +            $r24    ($i64)    $r26        -16
-    $null
+    ? ($i64)  $r0 ==    $goto    l_216
+    +            $r1    ($i64)    $r0        1
     $null
     $null
     $st   ($i64)   [$r3  + 0]    $r2
@@ -381,120 +381,25 @@ l_208: // pc=0xd0
     ;
 l_216: // pc=0xd8
     || 
-    +            $r29    ($i64)    $r0        136
+    +            $r27    ($i64)    $r0    $r26
+    ;
+l_217: // pc=0xd9
+    || 
+    $null
+    ;
+l_218: // pc=0xda
+    || 
     $null
     $null
+    ;
+l_220: // pc=0xdc
+    || 
     $null
-    $ld    ($i64)   $r25    [$r24 + 0]
     $null
     $null
     $null
     ;
 l_224: // pc=0xe0
-    || 
-    -            $r30    ($i64)    $r25    $r29
-    ;
-l_225: // pc=0xe1
-    || 
-    $null
-    ;
-l_226: // pc=0xe2
-    || 
-    $null
-    $null
-    ;
-l_228: // pc=0xe4
-    || 
-    $null
-    $null
-    $null
-    $null
-    ;
-l_232: // pc=0xe8
-    || 
-    ? ($i64)  $r30 !=    $goto    l_248
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-l_240: // pc=0xf0
-    || 
-    ? ($i64)  $r0 ==    $goto    l_264
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-l_248: // pc=0xf8
-    || 
-    +            $r29    ($i64)    $r0        -1
-    ;
-l_249: // pc=0xf9
-    || 
-    $null
-    ;
-l_250: // pc=0xfa
-    || 
-    $null
-    $null
-    ;
-l_252: // pc=0xfc
-    || 
-    $null
-    $null
-    $null
-    $null
-    ;
-l_256: // pc=0x100
-    || 
-    ? ($i64)  $r0 ==    $goto    l_272
-    +            $r1    ($i64)    $r0    $r29
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-l_264: // pc=0x108
-    || 
-    ? ($i64)  $r0 ==    $goto    l_272
-    +            $r1    ($i64)    $r0        1
-    $null
-    $null
-    $null
-    $null
-    $null
-    $null
-    ;
-l_272: // pc=0x110
-    || 
-    +            $r27    ($i64)    $r0    $r26
-    ;
-l_273: // pc=0x111
-    || 
-    $null
-    ;
-l_274: // pc=0x112
-    || 
-    $null
-    $null
-    ;
-l_276: // pc=0x114
-    || 
-    $null
-    $null
-    $null
-    $null
-    ;
-l_280: // pc=0x118
     || 
     $return
     $null

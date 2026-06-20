@@ -1966,9 +1966,11 @@ main:
 ;
 ||
     + $r23 ($i64) $r14 $r1
+    + $r30 ($i64) $r28 0
 ;
 ||
-    + $r1 ($i64) $r0 $r23
+    $st ($i64) [$r30 + 0] $r23
+    + $r1 ($i64) $r0 1
     ? ($i64) $r0 == $goto main_epilogue
 ;
 main_epilogue:

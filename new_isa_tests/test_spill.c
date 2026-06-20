@@ -8,8 +8,20 @@
  * By the time f29() is called, _t1.._t28 are ALL live in registers (pool full).
  * Calling f29() triggers the pool-full spill path in _gen_IRCall.
  *
- * Expected: r1 = 1+2+...+30 = 465 = 0x1d1
+ * Expected: 1+2+...+30 = 465 = 0x1d1
+ *
+ * The check writes its computed value into results[] -- see
+ * isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why.
+ * This also sidesteps a real, separate bug found while wiring up golden
+ * verification: compiler.py's static evaluator (eval_ir) walked the full
+ * flattened instruction list (every function's body back to back) without
+ * scoping to main, so it broke on f01()'s "return 1" and silently reported
+ * r1=1 instead of the correct 465 -- a confident WRONG answer, not a
+ * placeholder. Fixed in eval_ir itself too, but results[] sidesteps the
+ * whole static-eval path regardless.
  */
+#define N_RESULTS 1
+long long results[N_RESULTS];
 
 long long f01(void) { return  1; }
 long long f02(void) { return  2; }
@@ -48,7 +60,7 @@ long long main(void) {
      * return value live until all inner calls are done.
      * At f29(): _t1.._t28 are simultaneously live (28 regs full) → SPILL.
      */
-    return
+    results[0] =
         f01() + (f02() + (f03() + (f04() + (f05() +
         (f06() + (f07() + (f08() + (f09() + (f10() +
         (f11() + (f12() + (f13() + (f14() + (f15() +
@@ -56,4 +68,5 @@ long long main(void) {
         (f21() + (f22() + (f23() + (f24() + (f25() +
         (f26() + (f27() + (f28() + (f29() + f30()
         ))))))))))))))))))))))))))));
+    return 1;
 }

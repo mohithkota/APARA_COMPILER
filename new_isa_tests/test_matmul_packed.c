@@ -6,10 +6,15 @@
 // the 16x16 reference, so each "column of B" load is contiguous.
 //
 // Data layout matches 16x16_loop/generate.py exactly: a_val=(r*16+k+1)%256,
-// b_val=(k*16+c+1)%256. Spot-checked against 16x16_loop/16x16.result.
+// b_val=(k*16+c+1)%256.
+//
+// Every cell is written into results[] (256 entries) -- see
+// isa_coverage_tests/test_alu_full.c / matmul_tests/matmul_n16.c /
+// compiler/STATUS.md 2026-06-20 for why.
 vu8_t A[256];
 vu8_t BT[256];
-long long C[256];
+#define N_RESULTS 256
+long long results[N_RESULTS];
 long long buf[2];
 
 int main() {
@@ -33,12 +38,9 @@ int main() {
         for (j = 0; j < 16; j++) {
             __ld128(buf, &BT[j*16]);
             b_lo = buf[0]; b_hi = buf[1];
-            C[i*16+j] = __dot128_vu8(a_lo, a_hi, b_lo, b_hi);
+            results[i*16+j] = __dot128_vu8(a_lo, a_hi, b_lo, b_hi);
         }
     }
 
-    if (C[0] != 0x5588)   return -1;   // row0,col0
-    if (C[15] != 0x4d80)  return -2;   // row0,col15
-    if (C[255] != 0x75580) return -3;  // row15,col15
     return 1;
 }

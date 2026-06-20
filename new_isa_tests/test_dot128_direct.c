@@ -3,14 +3,19 @@
 // hand-computed sum(1..16)=136=0x88) -- but loading straight from memory
 // into the dot, no named intermediate variables, no IRStore anywhere in the
 // lowering.
+//
+// The check writes its computed value into results[] -- see
+// isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20 for why.
 vu8_t A[16];
 vu8_t B[16];
+#define N_RESULTS 1
+long long results[N_RESULTS];
 
 int main() {
     int k;
     for (k = 0; k < 16; k++) { A[k] = k + 1; B[k] = 1; }
 
-    long long r = __dot128_direct_vu8(A, B);
-    if (r != 136) return -1;
+    results[0] = __dot128_direct_vu8(A, B);
+
     return 1;
 }

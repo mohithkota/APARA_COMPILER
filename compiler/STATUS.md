@@ -2,7 +2,45 @@
 
 ---
 
-## 2026-06-20 — Golden verification wired into compiler.py: one command now produces a real, independently-verified .result (Latest)
+## 2026-06-20 — All 25 pre-existing tests restructured to results[]: 393 independently-verified checks, 0 errors. Plus one more real compiler bug found and fixed (Latest)
+
+Per request, ran the golden-verification treatment across every remaining pre-existing test (the
+22 that had ZERO real verification before today -- confirmed by checking each one's actual output:
+branch/loop-containing programs got an empty placeholder, since the static-eval path can't handle
+control flow -- plus the 3 that already had some static-eval coverage). Final tally: **393
+individually-verified PostCondition checks across all 25 tests, 0 errors.**
+
+Restructured: `array/test_array` (6), `test_struct` (17, all 8 documented sub-tests),
+`test_2d` (15, all 6 sub-tests incl. the 2x2 matmul), `branch/test_branch` (6, all 6 conditions),
+`pointer/test_pointer` (10, all 10 sub-tests), `new_isa_tests/test_subword` (12), `test_dot` (2),
+`test_scalar_full` (11 -- for the first time ever verifies the function-call results that
+`g_func_res` computed but never checked), `test_vadd` (4, now full packed results not just the low
+element), `test_vreduce` (3), `test_cast` (4), `test_cmov` (3), `test_pack` (1 -- resolves the
+historical "0xdead" result as a bit-order documentation issue, not a bug), `test_matmul` (9),
+`test_u128_load`/`test_u256_load` (2/4), `test_dot128_split` (1), `test_matmul_packed` (256, full
+cell-by-cell via the split load+dot path), `test_dot128_direct` (1), `test_u128_store`/
+`test_u256_store` (2/4), `test_spill` (1, see below).
+
+Two real bugs found and fixed along the way:
+1. **`test_slice.c`'s `__slice` declared `(int,int,int)` while `golden_stubs.h`'s reference is
+   `(long long,int,int)`** -- gcc correctly rejected this as a conflicting declaration, caught and
+   reported by `try_golden_verify`'s fallback (not a silent failure). Fixed the test's declaration.
+2. **`eval_ir` (the static-eval fallback used for branch-free, non-`results[]` programs) doesn't
+   scope its evaluation to `main`** -- it walks the full flattened instruction list (every
+   function's body back to back, in declaration order) and breaks on the FIRST `IRReturn` it
+   finds, which can belong to any function declared before `main`. `test_spill.c` defines
+   `f01()..f30()` before `main`; the old code broke on `f01`'s `return 1` and confidently reported
+   `r1=1` instead of the correct `465` -- a **wrong answer that looked like a working result**, not
+   a placeholder. Confirmed by checking `test_spill.result`'s actual content against the simulator's
+   real output (`0x1d1`=465) before assuming anything. Fixed by tracking `IRFuncBegin`/`IRFuncEnd`
+   boundaries and only evaluating instructions while inside `main`'s scope. `test_spill.c` was also
+   restructured to `results[]` regardless, sidestepping the whole static-eval path going forward.
+
+Full regression re-run after both fixes: all 25 tests, 393 checks, 0 errors.
+
+---
+
+## 2026-06-20 — Golden verification wired into compiler.py: one command now produces a real, independently-verified .result
 
 Per explicit request: `python3 compiler.py test_X.c` is now the single command that produces both
 `data.map` (already automatic) and a REAL `.result` file, not a placeholder -- as long as the test

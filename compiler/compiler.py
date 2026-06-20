@@ -137,9 +137,19 @@ def eval_ir(instructions):
     byte_mem   = {}   # byte_addr -> value (element-sized int)
     elem_sizes = {}   # byte_addr -> elem_bytes (needed for big-endian packing)
     ret_val    = None
+    # `instructions` is a FLAT list covering every function's body back to
+    # back (main's is interspersed with everyone else's, in declaration
+    # order) -- evaluation must be scoped to ONLY main's body, or the first
+    # IRReturn from any function declared before main gets mistaken for
+    # main's own return. Confirmed real bug, not hypothetical: test_spill.c
+    # defines f01()..f30() before main, and the old unscoped version broke
+    # on f01's "return 1" immediately, reporting r1=1 instead of the
+    # correct 465 -- silently, since this only LOOKED like a working
+    # static-eval result. See STATUS.md 2026-06-20.
+    in_main = False
 
     for ir in instructions:
-        # ── initialise globals ──
+        # ── initialise globals (top-level, not inside any function) ──
         if isinstance(ir, IRGlobalDecl):
             stride = getattr(ir, 'stride', ir.elem_bytes)
             n_el = max(1, ir.total_bytes // max(stride, 1))
@@ -150,7 +160,16 @@ def eval_ir(instructions):
                 elem_sizes[addr] = ir.elem_bytes
             continue
 
-        if isinstance(ir, (IRFuncBegin, IRFuncEnd, IRLabel, IRHalt)):
+        if isinstance(ir, IRFuncBegin):
+            in_main = (ir.name == 'main')
+            continue
+        if isinstance(ir, IRFuncEnd):
+            in_main = False
+            continue
+        if not in_main:
+            continue  # some other function's body -- not ours to evaluate
+
+        if isinstance(ir, (IRLabel, IRHalt)):
             continue
 
         # ── assignments ──

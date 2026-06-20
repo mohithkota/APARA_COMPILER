@@ -213,4 +213,23 @@ long long __dot128_direct_vu8(unsigned char *a, unsigned char *b) {
     return sum;
 }
 
+/* ---- 128-bit-wide dot, pre-loaded register halves (a_lo/a_hi/b_lo/b_hi
+ * instead of pointers): a_lo/b_lo hold elements 0-7, a_hi/b_hi hold
+ * elements 8-15, confirmed register convention (the hand-verified
+ * "0x24 -> 0x88" trace referenced in compiler/STATUS.md). ---- */
+long long __dot128_vu8(long long a_lo, long long a_hi, long long b_lo, long long b_hi) {
+    long long sum = 0;
+    for (int i = 0; i < 8; i++) {
+        unsigned char ae = (unsigned char)((unsigned long long)a_lo >> (i * 8));
+        unsigned char be = (unsigned char)((unsigned long long)b_lo >> (i * 8));
+        sum += (long long)ae * (long long)be;
+    }
+    for (int i = 0; i < 8; i++) {
+        unsigned char ae = (unsigned char)((unsigned long long)a_hi >> (i * 8));
+        unsigned char be = (unsigned char)((unsigned long long)b_hi >> (i * 8));
+        sum += (long long)ae * (long long)be;
+    }
+    return sum;
+}
+
 #endif
