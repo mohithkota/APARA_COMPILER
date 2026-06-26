@@ -169,16 +169,23 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # variable name → struct type name (for '->' access via pointer-to-struct)
         self._var_struct_ptr_type = {}
         # ── Register caching (optimization) ──────────────────────────────────
-        # Maps a named variable -> the Temp/Const currently holding its value,
-        # so repeated reads within one basic block reuse the value instead of
-        # re-loading it from memory. Conservatively flushed at every basic-block
-        # boundary, function call, and aliasing memory write (see _emit).
+        # Maps a named variable -> (value, storage_kind) where value is the
+        # Temp/Const currently holding it and storage_kind is 'global' or
+        # 'local'. Lets repeated reads within one basic block reuse the value
+        # instead of re-loading from memory. Flushed at basic-block boundaries,
+        # calls, and aliasing memory writes (see _emit / _flush_cache).
         self._var_cache = {}
         # True only while _store_var is emitting a NAMED scalar store: such a
         # write cannot alias any *other* named variable, so it must not flush
-        # the rest of the cache. Every other store (array/pointer/struct/wide)
-        # is treated as a potential alias and does flush.
+        # the rest of the cache.
         self._in_named_store = False
+        # Storage class a (non-named) store can alias, consulted by _emit:
+        #   'all'    -> flush the whole cache (pointer write / unknown; SAFE DEFAULT)
+        #   'global' -> a global-memory write: cannot touch stack locals, flush globals only
+        #   'local'  -> a stack write: cannot touch globals, flush locals only
+        # A store site sets this just before emitting; _emit resets it to 'all'
+        # afterwards, so any un-annotated store conservatively flushes everything.
+        self._store_scope = 'all'
 
     # IR nodes that end a basic block or may modify globals -> flush the cache.
     _CACHE_FLUSH_NODES = frozenset({
@@ -187,14 +194,24 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     })
     _STORE_NODES = frozenset({'IRStore', 'IRGlobalStore', 'IRStoreWide'})
 
+    def _flush_cache(self, scope):
+        if scope == 'all':
+            self._var_cache.clear()
+        else:
+            self._var_cache = {n: vk for n, vk in self._var_cache.items()
+                               if vk[1] != scope}
+
     def _emit(self, i):
         self.instructions.append(i)
         t = type(i).__name__
         if t in self._CACHE_FLUSH_NODES:
             self._var_cache.clear()
         elif t in self._STORE_NODES and not self._in_named_store:
-            # Aliasing-unsafe store (no alias analysis): drop all cached values.
-            self._var_cache.clear()
+            # Aliasing store: flush only the storage class it can actually touch
+            # (globals and stack locals occupy disjoint DMEM regions). The store
+            # site sets _store_scope; default 'all' is the safe fallback.
+            self._flush_cache(self._store_scope)
+            self._store_scope = 'all'
     def _tmp(self):        return Temp()
     def _lbl(self, p='L'):
         self._lbl_n += 1; return f"{p}_{self._lbl_n}"
@@ -267,7 +284,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # register (loaded/stored earlier in this basic block, with nothing
         # since that could have changed it), reuse it instead of reloading.
         if name in self._var_cache:
-            return self._var_cache[name]
+            return self._var_cache[name][0]
         kind, loc = info
         unsigned = name in self._unsigned_vars
         if kind == 'global':
@@ -275,14 +292,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             res = self._tmp()
             self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), elem_bytes=gd.elem_bytes,
                                      unsigned=unsigned))
-            self._var_cache[name] = res
+            self._var_cache[name] = (res, 'global')
             return res
         else:
             addr = self._tmp(); val = self._tmp()
             eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
             self._emit(IRLoad(val, addr, Const(0), eb, unsigned=unsigned))
-            self._var_cache[name] = val
+            self._var_cache[name] = (val, 'local')
             return val
 
     def _store_var(self, name, val):
@@ -310,7 +327,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # read re-loads (correctly extended). Load-caching stays safe for all
         # widths because it caches the already-extended result of a real load.
         if eb == 8:
-            self._var_cache[name] = val
+            self._var_cache[name] = (val, 'global' if kind == 'global' else 'local')
         else:
             self._var_cache.pop(name, None)
 
@@ -756,11 +773,17 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 name = lval.name.name
                 info = self._lookup(name)
                 if info and info[0] == 'global' and name not in self._ptr_stride:
-                    # Global array (not pointer): use elem_bytes from global decl
+                    # Global array (not pointer): lives in the global region, so it
+                    # cannot alias any stack local -> flush only cached globals.
                     gd = info[1]
+                    self._store_scope = 'global'
                     self._emit(IRStore(base, off, val, gd.elem_bytes))
                     return
-            # Pointer variable or local array: store to computed address
+            # Pointer variable or local array: store to computed address. A real
+            # local array can't touch globals ('local'); a pointer could point
+            # anywhere, so leave the safe default ('all').
+            if isinstance(lval.name, A.ID) and lval.name.name not in self._ptr_stride:
+                self._store_scope = 'local'
             eb = self._get_esz(lval.name) if isinstance(lval.name, A.ID) else 8
             self._emit(IRStore(base, off, val, eb))
         elif isinstance(lval, A.UnaryOp) and lval.op == '*':

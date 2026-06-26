@@ -2,7 +2,45 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 1/3): register caching implemented in ir_gen.py, full suite re-validated with ZERO correctness regressions (Latest)
+## 2026-06-26 — OPTIMIZATION (step 2/3): storage-class alias analysis; test_alu_full 68->37 (-46%), matmul_n16 95->79, matmul_n32 111->91. Zero regressions (Latest)
+
+Refines step-1 register caching so an aliasing memory write only flushes the cache entries
+it can actually touch, instead of the whole cache.
+
+**Key idea:** globals live in the global DMEM region (from GBASE) and stack locals live in
+the stack region -- they are **disjoint**, so a global-memory write cannot alias a stack
+local and vice-versa.
+
+**Implementation (`ir_gen.py`):**
+- Cache entries now carry a storage class: `_var_cache[name] = (value, 'global'|'local')`.
+- New `_flush_cache(scope)`: `scope='all'` clears everything; `'global'`/`'local'` clears
+  only that class.
+- `_emit` consults `self._store_scope` on an aliasing store and flushes just that scope,
+  then resets it to the safe default `'all'`. Any un-annotated store therefore still flushes
+  everything (correctness-preserving default).
+- Annotated the high-value, provably-correct store sites in `_assign_lval`: a **global
+  array** write sets scope `'global'` (can't touch locals); a genuine **local array** write
+  (name not a pointer) sets `'local'` (can't touch globals); pointer derefs / structs / 2D /
+  wide-intrinsic stores keep the default `'all'`.
+- Basic-block boundaries and calls still flush `'all'` (a call may modify globals and may
+  reach locals via an escaped pointer).
+
+**Validation:** same harnesses as step 1. Aliasing-critical set **19/19 PASS**; broader
+sweep **37 PASS, 0 new regressions** (vreduce = known bug E4; n64 = pre-existing
+global/stack-overlap abort). Re-checked struct/pointer/2D/call tests specifically since this
+step loosens flushing.
+
+**Measured gains (cumulative, vs pre-optimization backup):**
+- test_alu_full **68 -> 37 (-46%)** -- a/b now stay cached across the `results[]` writes.
+- matmul_n16 95 -> 79 (-17%), matmul_n32 111 -> 91 (-18%), test_array 51 -> 46,
+  test_scalar_full 348 -> 344.
+
+**Next step (3/3, not yet done):** common subexpression elimination -- eliminate the
+`i*16`-computed-twice address recomputation (local value numbering layered on the cache).
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 1/3): register caching implemented in ir_gen.py, full suite re-validated with ZERO correctness regressions
 
 First optimization pass after the thesis presentation (the deferred bundle-efficiency work).
 Implements **register caching**: repeated reads of a named variable within a basic block
