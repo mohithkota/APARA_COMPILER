@@ -2,7 +2,38 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 4): instruction scheduling (list scheduling in bundler.py); big density win, bundles now reach 8-wide. Zero regressions (Latest)
+## 2026-06-26 — OPTIMIZATION (step 5 ATTEMPTED then REVERTED): loop unrolling -- correct but a net bundle-count REGRESSION without register renaming (Latest)
+
+Implemented induction-variable-substitution loop unrolling (factor 4) for counted
+`while (V < N) { body; V++ }` loops, with a guard + remainder loop so it is correct for any
+start/trip-count, and IV substitution done in `_load_var` (read of V in copy k means V+k)
+rather than by AST rewriting. Heavily guarded: only straight-line bodies with no
+break/continue/nested-loop/decl and no write to V.
+
+**Correctness: PASSED** -- 19/19 aliasing-critical, 37 broad, zero new regressions
+(matmul_n16 still 256/256 correct).
+
+**But it REGRESSED the real metric (total bundle count = cycles):**
+- matmul_n16 **68 -> 149**, matmul_n32 **74 -> 179** (roughly doubled).
+- Unrolled matmul density only **1.98** (not the 5-8 hoped for).
+
+**Root cause:** the linear-scan register allocator REUSES the same registers across the
+unrolled copies, creating false WAR/WAW dependencies that the (correct) scheduler must
+respect -- so the 4 independent iterations cannot interleave. Net effect: 4x the code at the
+same ~2 density = ~2x the bundles. Making unrolling pay off needs **register renaming**
+(distinct registers per copy) -- a much larger change, and throttled by the 28-register
+limit anyway.
+
+**Decision: reverted** (`ir_gen.py` restored to the validated 4-pass state, commit 06f936c;
+backup at `compiler_backup_4pass/`, tag `opt-4pass-validated`). The 4-pass compiler
+(caching + storage-class aliasing + CSE + scheduling) is the final optimized deliverable:
+test_valu_full -74%, test_alu_full -65%, matmul -28..33%, density 1.69->2.14, bundles reach
+8-wide -- all with zero correctness regressions. Loop unrolling is left as documented future
+work (requires register renaming first).
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 4): instruction scheduling (list scheduling in bundler.py); big density win, bundles now reach 8-wide. Zero regressions
 
 Added a within-basic-block **list scheduler** in `bundler.py`, run between `_parse_flat` and
 `_pack_bundles`. It reorders mutually-independent instructions so they end up adjacent, which
