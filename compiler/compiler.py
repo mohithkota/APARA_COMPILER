@@ -462,6 +462,15 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             print(f"  {i}")
         print()
 
+    # ── Loop-invariant code motion (DISABLED): licm.py correctly hoists the
+    #    invariant inner-loop loads, but the linear-scan register allocator is
+    #    not loop-aware -- it frees a value at its last *textual* use and reuses
+    #    the register later in the same loop body, corrupting the hoisted value
+    #    on the next iteration (back-edge). Enabling LICM requires loop-aware
+    #    live-range extension in codegen first. Left wired-off until then. ──
+    # from licm import hoist_loop_invariants
+    # codegen_instrs = hoist_loop_invariants(list(ir_gen.instructions))
+
     # ── Codegen ──
     cg   = CodeGen(global_base=global_base)
     body = cg.generate(ir_gen.instructions, global_base=global_base)

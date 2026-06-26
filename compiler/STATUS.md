@@ -2,7 +2,44 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 5 ATTEMPTED then REVERTED): loop unrolling -- correct but a net bundle-count REGRESSION without register renaming (Latest)
+## 2026-06-26 — OPTIMIZATION (LICM ATTEMPTED then DISABLED): correctly hoists invariant inner-loop loads, but MISCOMPILES because the register allocator is not loop-aware (Latest)
+
+Goal: cut *executed* loads/stores (runtime speed), specifically the matmul's redundant
+re-load of A's row on every inner `j` iteration (row `i` is invariant across the j-loop ->
+~240 redundant wide loads for 16x16, ~992 for 32x32).
+
+**Implemented `compiler/licm.py`** -- a conservative Loop-Invariant Code Motion pass on the
+flat IR: finds innermost loops, hoists pure address/load instructions whose inputs are
+loop-invariant into a preheader, with strict memory-aliasing safety (traces base addresses
+to a specific global/stack region; bails on any uncertainty, opaque store, or call). Verified
+it DOES hoist correctly: A's row load moved out of the inner j-loop into the outer body
+(once per i).
+
+**But it MISCOMPILES matmul** -> garbage addresses (`Error: Unaligned address ... addr=1,2,3`)
+-> runaway/effectively-infinite execution (256-check run produced a 97M-line log, 0 correct).
+
+**Root cause (the important finding):** the codegen register allocator's liveness is **linear
+/ textual** -- it frees a value at its last *textual* use and reuses that register later in
+the same loop body. The inner loop has a **back-edge**, so on the next iteration the hoisted
+A-row value (kept in `$r17`/`$r8`) has been overwritten -> the `$dot` reads garbage. The
+allocator does **not extend live ranges across loop back-edges**, i.e. it is **not
+loop-aware**. The memory-backed model masked this because it reloaded everything each
+iteration (no cross-iteration register residency needed); LICM (and loop unrolling) both
+*require* that residency.
+
+**This is the SAME blocker that defeated loop unrolling.** Both load-reducing optimizations
+need **loop-aware register allocation** (extend the live range of any value defined outside a
+loop and used inside it to span the whole loop, so its register isn't reused mid-loop). That
+is the real prerequisite -- a change to the validated codegen liveness -- and must come first.
+
+**Action:** LICM is **wired off** in `compiler.py` (one commented block); `licm.py` is kept
+for when loop-aware liveness lands. Compiler restored to the validated 4-pass state
+(matmul_n16 = 68 bundles, 256/256 correct). Next step (pending go-ahead): implement
+loop-aware live-range extension in codegen, then re-enable + re-validate LICM.
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 5 ATTEMPTED then REVERTED): loop unrolling -- correct but a net bundle-count REGRESSION without register renaming
 
 Implemented induction-variable-substitution loop unrolling (factor 4) for counted
 `while (V < N) { body; V++ }` loops, with a guard + remainder loop so it is correct for any
