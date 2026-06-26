@@ -474,27 +474,48 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     #    no spilling -- i.e. it can only help, never miscompile. The original IR
     #    is left pristine for verification / data-map / counts. ──
     from licm import hoist_loop_invariants
-    codegen_instrs = hoist_loop_invariants(list(ir_gen.instructions))
-    licm_ok = False
-    try:
-        cg   = CodeGen(global_base=global_base)
-        body = cg.generate(codegen_instrs, global_base=global_base)
-        # Keep LICM only if it introduced no spilling. Extra pressure from the
-        # hoisted, loop-resident values can force spills (or exhaust registers,
-        # caught below); spilling a loop-live value across the back-edge is not
-        # reliable, so in that case we drop LICM entirely.
-        licm_ok = not cg.spilled
-    except Exception:
-        licm_ok = False     # register exhaustion etc. under LICM pressure
-    if not licm_ok:
-        # Fall back to the validated baseline codegen on the original IR
-        # (loop-aware liveness is inert without LICM, so this is exactly the
-        # pre-LICM 4-pass output). The fallback runs outside the try, so any
-        # genuine compile error still surfaces normally.
+    from loop_reg import promote_loop_counters
+    # Two loop optimizations, each of which only ever removes executed memory
+    # traffic: LICM (hoist invariant loads into a preheader) and loop-carried
+    # register promotion (keep induction-variable counters in a register across
+    # the back-edge instead of reloading them every iteration). Either can raise
+    # register pressure into SPILLING, and a spill of a loop-live value across
+    # the back-edge is not reliable -- so we TIER the fallback: try the most
+    # optimized form, step down until one compiles without spilling/crashing.
+    # This way a program that can take LICM but not the extra promotion pressure
+    # still keeps LICM, rather than losing both. The original IR is left pristine
+    # for verification / data-map / counts.
+    _base = list(ir_gen.instructions)
+    _tiers = [
+        ("LICM+loop-reg", lambda: promote_loop_counters(hoist_loop_invariants(list(_base)))),
+        ("LICM only",     lambda: hoist_loop_invariants(list(_base))),
+        ("loop-reg only", lambda: promote_loop_counters(list(_base))),
+    ]
+    # Debug/measurement knob: APARA_NO_LOOPOPT=1 forces the validated baseline
+    # (no LICM, no loop-reg) so the two can be A/B compared on the simulator.
+    if os.environ.get('APARA_NO_LOOPOPT'):
+        _tiers = []
+    body = None
+    for _name, _build in _tiers:
+        try:
+            _instrs = _build()
+            cg   = CodeGen(global_base=global_base)
+            _b   = cg.generate(_instrs, global_base=global_base)
+            if not cg.spilled:
+                body = _b
+                if verbose:
+                    print(f"[loop-opt] applied: {_name}")
+                break
+        except Exception:
+            continue            # register exhaustion etc.; try a lighter tier
+    if body is None:
+        # Validated baseline on the original IR (loop-aware liveness is inert
+        # without these passes, so this is exactly the pre-optimization output).
+        # Runs outside try/except so a genuine compile error still surfaces.
         cg   = CodeGen(global_base=global_base)
         body = cg.generate(ir_gen.instructions, global_base=global_base)
         if verbose:
-            print("[LICM] disabled for this program (pressure/spill)")
+            print("[loop-opt] disabled for this program (pressure/spill)")
 
     header = ""
     if not no_startup:

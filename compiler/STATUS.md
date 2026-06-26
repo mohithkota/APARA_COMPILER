@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-06-26 — PHASE 3: loop-carried register promotion (counters/accumulators) WORKING. sumloop exec-loads -99%, test_matmul -69%, zero regressions (Latest)
+
+New pass `loop_reg.py` (`promote_loop_counters`) promotes loop-carried induction
+variables / accumulators out of the per-iteration memory round-trip: load once into a
+register in a preheader, do all in-loop reads/writes as register moves, write back once
+at each loop exit. Relies on the existing loop-aware live-range extension to keep the
+register alive across the back-edge; uses ONLY existing IR nodes (no codegen changes).
+
+NARROW + conservative (user-chosen scope: counters only). A stack slot is promoted only if:
+single-entry loop; the slot is touched everywhere in the function only via the exact
+IRLoadAddr->immediate IRLoad/IRStore(offset 0) pattern with the address never escaping;
+it is both loaded AND stored in the loop with one consistent width; and the loop body has
+no call. A slot is promoted by at most ONE loop (innermost) -- `promoted_offsets` prevents
+an enclosing loop from re-promoting a slot whose inner-loop preheader/write-back still
+maintains its memory (this was a real nested-loop miscompile caught in test_matmul and
+fixed before commit).
+
+Wiring (compiler.py): TIERED fallback -- try LICM+loop-reg, then LICM-only, then
+loop-reg-only, then baseline; keep the first that compiles with NO spilling and no crash.
+This preserves the prior LICM win on register-starved kernels (matmul_n16 still takes
+"LICM only" because LICM+promotion spills past the 28-reg wall) while letting simpler
+loops take full promotion. Same "can only help, never miscompile" guarantee as LICM.
+Added APARA_NO_LOOPOPT=1 debug knob to force the baseline for A/B measurement.
+
+Measured on the real simulator (executed = dynamic, not static):
+  sumloop (100-iter):  exec-loads 403 -> 4  (-99%);  non-null instrs 1930 -> 1343 (-30%)
+  test_matmul (3x3):   exec-loads 281 -> 86 (-69%);  non-null instrs 1481 -> 1286 (-13%)
+Both bit-exact correct (0 PostCondition errors).
+
+Full regression after the change: **PASS=40, FAIL=1 (vreduce E4 only), CRASH=0, TIMEOUT=0**
+over 63 programs. Zero correctness regressions.
+
+This completes the 3-phase post-regression plan (1: regression baseline; 2: remaining ISA
+instructions; 3: loop-carried register optimization).
+
 ## 2026-06-26 — REMAINING ISA INSTRUCTIONS: $nop parse-bug FIXED; $abs/$max/$min added as working $cmov-lowered intrinsics; native $abs/$max/$min audited as toolchain-broken (Latest)
 
 Phase 2 of the post-regression plan ("implement whatever instructions are left in the
