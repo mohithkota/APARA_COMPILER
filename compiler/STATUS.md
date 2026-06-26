@@ -2,7 +2,52 @@
 
 ---
 
-## 2026-06-20 — Clarification: engine_isp/assembler/bin/mcode_run is the authoritative simulator binary; verification/bin/mcode_run is not (Latest)
+## 2026-06-26 — OPTIMIZATION (step 1/3): register caching implemented in ir_gen.py, full suite re-validated with ZERO correctness regressions (Latest)
+
+First optimization pass after the thesis presentation (the deferred bundle-efficiency work).
+Implements **register caching**: repeated reads of a named variable within a basic block
+reuse the value already in a register instead of re-loading it from memory.
+
+**Implementation (`ir_gen.py` only; backup of all 5 .py files at `compiler_backup_preopt/`):**
+- New `self._var_cache` dict: variable name -> Temp/Const currently holding its value.
+- `_load_var`: returns the cached value if present; otherwise loads, caches, returns.
+- `_store_var`: forwards the stored value to the cache **only for 8-byte (full-width)
+  values**; for narrower types it invalidates instead, because store truncates to the type
+  width and a later load re-applies sign/zero extension (store->load is NOT identity for
+  sub-word types -- this was a real bug caught by `test_subword_full`, see below).
+- Cache flushing (conservative, correctness-first) via `_emit`: flushed at every
+  basic-block boundary (IRLabel/IRJump/IRCondJump/IRReturn/IRFuncBegin/IRFuncEnd/IRHalt),
+  every call (IRCall/IRIndirectCall -- callee may modify globals/locals via pointers), and
+  every aliasing memory write. The named-scalar store uses an `_in_named_store` flag so it
+  does NOT flush other variables (it cannot alias them); every OTHER store
+  (array/pointer/struct/wide, i.e. not from `_store_var`) flushes the whole cache.
+
+**Bug found & fixed during this step:** initial version forwarded ALL stored values to the
+cache, which broke sub-word semantics -- `test_subword_full` failed 4 checks (sign-extension
+/ truncation: e.g. Mem=0x80 vs expected 0xffffffffffffff80). Fixed by restricting
+store-forwarding to 8-byte values (load-caching remains safe for all widths since it caches
+the already-extended result of a real load).
+
+**Validation (end-to-end against the real simulator, `engine_new/.../mcode_run`):**
+- Curated aliasing-critical set (struct, pointer, 2D array, calls, control flow): **19/19 PASS**.
+- Broader sweep: **37 PASS, 0 real failures**, 20 skipped (no independent golden).
+- The 2 apparent "fails" are NOT regressions (identical with the pre-opt backup compiler):
+  `test_vreduce_full` = the known simulator bug E4 (3 errors); `test_matmul_while_n64` =
+  the pre-existing global/stack-overlap safety abort (needs a larger `--stack-top`).
+
+**Measured gains (correct, validated):** matmul_n16 95->86 (-9.5%), matmul_n32 111->98
+(-11.7%), test_scalar_full 348->344. `test_alu_full` unchanged (68->68): its `results[]`
+global-array writes conservatively flush the cached local scalars a/b -- a global and a
+stack local cannot actually alias, so this is the next refinement.
+
+**Next steps (planned, not yet done):** (2) storage-class alias analysis (a global-memory
+write should not flush cached locals, and vice-versa -- unlocks test_alu_full and compounds
+everywhere globals/locals mix); (3) common subexpression elimination (attacks the
+`i*16`-computed-twice address recomputation directly).
+
+---
+
+## 2026-06-20 — Clarification: engine_isp/assembler/bin/mcode_run is the authoritative simulator binary; verification/bin/mcode_run is not
 
 Confirmed via `ls -lh` on both directories, in response to an earlier report draft that treated the
 two binaries as just "different" without saying which one is correct:

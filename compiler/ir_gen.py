@@ -168,8 +168,33 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._var_struct_type     = {}
         # variable name → struct type name (for '->' access via pointer-to-struct)
         self._var_struct_ptr_type = {}
+        # ── Register caching (optimization) ──────────────────────────────────
+        # Maps a named variable -> the Temp/Const currently holding its value,
+        # so repeated reads within one basic block reuse the value instead of
+        # re-loading it from memory. Conservatively flushed at every basic-block
+        # boundary, function call, and aliasing memory write (see _emit).
+        self._var_cache = {}
+        # True only while _store_var is emitting a NAMED scalar store: such a
+        # write cannot alias any *other* named variable, so it must not flush
+        # the rest of the cache. Every other store (array/pointer/struct/wide)
+        # is treated as a potential alias and does flush.
+        self._in_named_store = False
 
-    def _emit(self, i):    self.instructions.append(i)
+    # IR nodes that end a basic block or may modify globals -> flush the cache.
+    _CACHE_FLUSH_NODES = frozenset({
+        'IRLabel', 'IRJump', 'IRCondJump', 'IRCall', 'IRIndirectCall',
+        'IRReturn', 'IRFuncBegin', 'IRFuncEnd', 'IRHalt',
+    })
+    _STORE_NODES = frozenset({'IRStore', 'IRGlobalStore', 'IRStoreWide'})
+
+    def _emit(self, i):
+        self.instructions.append(i)
+        t = type(i).__name__
+        if t in self._CACHE_FLUSH_NODES:
+            self._var_cache.clear()
+        elif t in self._STORE_NODES and not self._in_named_store:
+            # Aliasing-unsafe store (no alias analysis): drop all cached values.
+            self._var_cache.clear()
     def _tmp(self):        return Temp()
     def _lbl(self, p='L'):
         self._lbl_n += 1; return f"{p}_{self._lbl_n}"
@@ -238,6 +263,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRFuncAddr(res, name))
                 return res
             return Const(0)
+        # Register cache: if this variable's value is already live in a
+        # register (loaded/stored earlier in this basic block, with nothing
+        # since that could have changed it), reuse it instead of reloading.
+        if name in self._var_cache:
+            return self._var_cache[name]
         kind, loc = info
         unsigned = name in self._unsigned_vars
         if kind == 'global':
@@ -245,26 +275,44 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             res = self._tmp()
             self._emit(IRGlobalLoad(res, gd.dmem_addr, Const(0), elem_bytes=gd.elem_bytes,
                                      unsigned=unsigned))
+            self._var_cache[name] = res
             return res
         else:
             addr = self._tmp(); val = self._tmp()
             eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
             self._emit(IRLoad(val, addr, Const(0), eb, unsigned=unsigned))
+            self._var_cache[name] = val
             return val
 
     def _store_var(self, name, val):
         info = self._lookup(name)
         if info is None: return
         kind, loc = info
+        # Mark this as a NAMED scalar store so _emit doesn't flush other cached
+        # variables (a write to `name` cannot alias a different named variable).
+        self._in_named_store = True
         if kind == 'global':
             gd = loc
-            self._emit(IRGlobalStore(gd.dmem_addr, Const(0), val, gd.elem_bytes))
+            eb = gd.elem_bytes
+            self._emit(IRGlobalStore(gd.dmem_addr, Const(0), val, eb))
         else:
             addr = self._tmp()
             eb = self._local_elem_bytes.get(name, 8)
             self._emit(IRLoadAddr(addr, loc))
             self._emit(IRStore(addr, Const(0), val, eb))
+        self._in_named_store = False
+        # Store-to-load forwarding is only valid for full-width (8-byte) values.
+        # For narrower types the store truncates to the type width and a later
+        # load re-applies sign/zero extension, so the raw stored value is NOT
+        # what a subsequent load would return -- forwarding it would be wrong
+        # (confirmed via test_subword_full). In that case invalidate so the next
+        # read re-loads (correctly extended). Load-caching stays safe for all
+        # widths because it caches the already-extended result of a real load.
+        if eb == 8:
+            self._var_cache[name] = val
+        else:
+            self._var_cache.pop(name, None)
 
     def _addr_of_var(self, name):
         info = self._lookup(name)
