@@ -2,7 +2,30 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 5): LICM + loop-aware register allocation NOW WORKING. matmul executed-loads -33.5%, zero regressions (Latest)
+## 2026-06-26 — REGRESSION BASELINE: full-suite run vs simulator, 39 PASS / 0 crashes / 0 timeouts (only the known vreduce simulator bug fails) (Latest)
+
+Ran a comprehensive, SAFE regression of every test program against the real simulator
+(`/tmp/regress.sh`: timeout 90s + 20MB log cap per run, so a miscompile can never balloon a
+log like the earlier 24GB runaway). Covers isa_coverage_tests, new_isa_tests, array, branch,
+pointer, alu, ldst, matmul_tests -- 62 programs total.
+
+Result: **PASS=39, FAIL=1, CRASH=0, TIMEOUT=0, SKIP/ABORT=22.**
+- The single FAIL is `test_vreduce_full` (3 errors) = the documented simulator bug **E4**
+  ($vreduce unsigned sign-extension), NOT a compiler fault.
+- 0 crashes confirms the LICM spill/crash fallback guard holds across the whole suite.
+- 0 timeouts confirms no remaining infinite-loop miscompiles.
+- SKIP/ABORT = tests with no independent golden, plus the deliberate global/stack-overlap
+  aborts (matmul_n64, test_matmul_while_n64).
+
+This is the robustness baseline going into the next phase. Plan from here:
+(1) [done] regression baseline; (2) implement the remaining in-scope ISA instructions
+($abs, scalar $max/$min, $nop parse fix, the non-ADD $vreduce sub-ops); (3) loop-carried
+register allocation for loop counters (executed-load reduction). Float and vi4/vu4 remain
+out of scope (deprioritized / simulator-broken E5).
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 5): LICM + loop-aware register allocation NOW WORKING. matmul executed-loads -33.5%, zero regressions
 
 Loop-Invariant Code Motion is now correct and enabled, delivering the runtime goal (fewer
 executed loads/stores). Three pieces:
