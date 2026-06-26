@@ -232,4 +232,14 @@ long long __dot128_vu8(long long a_lo, long long a_hi, long long b_lo, long long
     return sum;
 }
 
+/* ---- scalar ABS / MAX / MIN single-instruction intrinsics ($abs/$max/$min).
+ * $abs (type) rd rs  -> |rs| within the type width; $max/$min are ALU-class.
+ * Type suffix selects the mcode type token (default signed i64). ---- */
+long long __abs    (long long x)               { return x < 0 ? -x : x; }
+int       __abs_i32(int x)                      { return x < 0 ? -x : x; }
+long long __max    (long long a, long long b)   { return a > b ? a : b; }
+long long __min    (long long a, long long b)   { return a < b ? a : b; }
+int       __max_i32(int a, int b)               { return a > b ? a : b; }
+int       __min_i32(int a, int b)               { return a < b ? a : b; }
+
 #endif

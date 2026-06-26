@@ -63,6 +63,12 @@ _CMOV_INTRINSICS = {
 # ── Vector op table ───────────────────────────────────────────────────────────
 _VOPS = {'add': '+', 'sub': '-', 'mul': '*'}
 
+_SCALAR_TYPES = {'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64'}
+def _scalar_tstr(suffix):
+    """Map an intrinsic type suffix (e.g. 'u32') to its mcode type token ('$u32').
+    Unknown/empty suffixes fall back to signed 64-bit, the compiler's default."""
+    return '$' + suffix if suffix in _SCALAR_TYPES else '$i64'
+
 # Populated by IRGenerator._register_struct; allows _type_size to return correct struct sizes.
 _STRUCT_TOTAL: dict = {}
 
@@ -1200,6 +1206,41 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             rb = args[2].value if isinstance(args[2], Const) else 64
             sb = args[3].value if isinstance(args[3], Const) else 64
             self._emit(IRPack(res, args[0], args[1], rb, sb)); return res
+
+        # ── Scalar ABS / MAX / MIN intrinsics ─────────────────────────────────
+        # The APARA grammar DOES define native $abs/$max/$min opcodes, but the
+        # current simulator/assembler toolchain cannot run them (audited
+        # 2026-06-26): the scalar ALU executor (__uexec_64__) has no MAX/MIN
+        # case (default: assert(0)) and the binary encoder rejects them
+        # ("Illegal instruction"); $abs's __vabs_operation__ shifts by `nbits`
+        # which is UB at nbits=64 (returns 0) and leaves a stray high bit at
+        # nbits=32. Same "grammar-legal but toolchain-broken" category as
+        # vi4/vu4 (E5). So instead of emitting a broken native instruction we
+        # lower these to the verified $cmov instruction (test_cmov passes),
+        # giving correct, runnable min/max/abs today. See compiler/STATUS.md.
+        #   __abs(x) / __abs_{type}(x)     : x >= 0 ? x : -x
+        #   __max(a,b) / __max_{type}(a,b) : (a-b) > 0 ? a : b
+        #   __min(a,b) / __min_{type}(a,b) : (a-b) < 0 ? a : b
+        # (min/max use the standard subtraction idiom; like the C idiom it
+        #  assumes a-b does not overflow the type, true for normal inputs.)
+        if fname == '__abs' or (fname and fname.startswith('__abs_')):
+            tstr = _scalar_tstr(fname[6:] if fname.startswith('__abs_') else 'i64')
+            neg = self._tmp()
+            self._emit(IRUnaryOp(neg, '-', args[0]))
+            self._emit(IRCmov(res, args[0], '>=', args[0], neg, tstr))
+            return res
+        if (fname == '__max' or (fname and fname.startswith('__max_'))) and len(args) >= 2:
+            tstr = _scalar_tstr(fname[6:] if fname.startswith('__max_') else 'i64')
+            diff = self._tmp()
+            self._emit(IRBinOp(diff, '-', args[0], args[1]))
+            self._emit(IRCmov(res, diff, '>', args[0], args[1], tstr))
+            return res
+        if (fname == '__min' or (fname and fname.startswith('__min_'))) and len(args) >= 2:
+            tstr = _scalar_tstr(fname[6:] if fname.startswith('__min_') else 'i64')
+            diff = self._tmp()
+            self._emit(IRBinOp(diff, '-', args[0], args[1]))
+            self._emit(IRCmov(res, diff, '<', args[0], args[1], tstr))
+            return res
 
         # ── Vector arithmetic:  __v{add,sub,mul}_{type}[_rep] ─────────────────
         if fname and fname.startswith('__v') and len(args) >= 2:

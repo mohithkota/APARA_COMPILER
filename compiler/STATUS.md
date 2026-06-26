@@ -2,7 +2,44 @@
 
 ---
 
-## 2026-06-26 — REGRESSION BASELINE: full-suite run vs simulator, 39 PASS / 0 crashes / 0 timeouts (only the known vreduce simulator bug fails) (Latest)
+## 2026-06-26 — REMAINING ISA INSTRUCTIONS: $nop parse-bug FIXED; $abs/$max/$min added as working $cmov-lowered intrinsics; native $abs/$max/$min audited as toolchain-broken (Latest)
+
+Phase 2 of the post-regression plan ("implement whatever instructions are left in the
+APARA ISA"). Audited every grammar mnemonic against what the compiler emits. Four were
+legal-but-unemitted: `$abs`, `$max`, `$min`, `$scale`. Findings + actions:
+
+**$nop parse bug — FIXED.** `_gen_IRNop` emitted `$nop`, but the grammar has no `$nop`
+token (only `$null`), so any `__nop()` failed to assemble. Changed to emit `$null`.
+Verified: `__nop()` now assembles and runs (0 errors). Resolves the long-standing
+project_nop_parse_bug item.
+
+**$abs / $max / $min — native opcodes are toolchain-broken; shipped as working $cmov
+lowerings instead.** Empirically probed on the real simulator (test_minmaxabs.c):
+  - `$max`/`$min` (scalar): assembler/disassembler rejects them ("Illegal instruction"),
+    AND the scalar ALU executor `__uexec_64__` (McodeOperations.cpp) has no MAX/MIN case
+    -> `default: assert(0)`. Unrunnable.
+  - `$abs`: `__vabs_operation__` does `mask << nbits`, UB at nbits=64 -> returns 0 for
+    every i64 input; at nbits=32 it leaves a stray bit-32 (got 0x10000007b vs 0x7b).
+    Unreliable.
+  Same "grammar-legal but simulator/assembler-broken" category as vi4/vu4 (E5) and the
+  vreduce unsigned bug (E4). So rather than emit a broken native instruction, the
+  `__abs/__max/__min` intrinsics now lower to the VERIFIED `$cmov` instruction:
+    __abs(x)   = (x >= 0 ? x : -x)        [IRUnaryOp + IRCmov]
+    __max(a,b) = ((a-b) > 0 ? a : b)      [IRBinOp '-' + IRCmov]
+    __min(a,b) = ((a-b) < 0 ? a : b)      [IRBinOp '-' + IRCmov]
+  Type suffixes __abs_i32/__max_u32/... select the $cmov type token (default $i64).
+  New test new_isa_tests/test_minmaxabs.c: 8/8 PostConditions pass (incl. negative
+  results -4/-8). golden_stubs.h gained the gcc reference definitions.
+  (`$scale` left unimplemented: vector-scaling helper, no scalar-C mapping / no demand.)
+
+Full regression after the change: **PASS=40 (was 39), FAIL=1 (vreduce E4 only), CRASH=0,
+TIMEOUT=0** over 63 programs. Zero regressions; the new test accounts for the +1.
+
+Next (phase 3): loop-carried register allocation for loop counters i/j/k.
+
+---
+
+## 2026-06-26 — REGRESSION BASELINE: full-suite run vs simulator, 39 PASS / 0 crashes / 0 timeouts (only the known vreduce simulator bug fails)
 
 Ran a comprehensive, SAFE regression of every test program against the real simulator
 (`/tmp/regress.sh`: timeout 90s + 20MB log cap per run, so a miscompile can never balloon a

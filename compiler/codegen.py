@@ -1154,7 +1154,9 @@ class CodeGen:
     # ── APARA-specific instructions ────────────────────────────────────────────
 
     def _gen_IRNop(self, ir):
-        self._emit("$nop")
+        # The grammar's no-op mnemonic is $null, not $nop (there is no $nop
+        # token -- emitting it made __nop() fail to assemble). See STATUS.md.
+        self._emit("$null")
 
     def _gen_IRCast(self, ir):
         sn       = [ir.src.name] if isinstance(ir.src, Temp) else []
