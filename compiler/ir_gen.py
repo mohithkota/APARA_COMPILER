@@ -186,6 +186,16 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # A store site sets this just before emitting; _emit resets it to 'all'
         # afterwards, so any un-annotated store conservatively flushes everything.
         self._store_scope = 'all'
+        # CSE (common subexpression elimination) via local value numbering:
+        # maps (op, left_operand_key, right_operand_key) -> the Temp already
+        # holding that result, so an identical arithmetic computation on the
+        # same operands is reused instead of recomputed (e.g. the i*16 that
+        # appears twice in `results[i*16+j] = dot(&A[i*16], ...)`). Reuse is only
+        # sound within a straight-line region, so the table is cleared at every
+        # basic-block boundary / call (see _emit). It piggybacks on register
+        # caching: repeated reads of a variable already return the same Temp, so
+        # the second i*16 sees identical operands.
+        self._cse_table = {}
 
     # IR nodes that end a basic block or may modify globals -> flush the cache.
     _CACHE_FLUSH_NODES = frozenset({
@@ -201,11 +211,33 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._var_cache = {n: vk for n, vk in self._var_cache.items()
                                if vk[1] != scope}
 
+    @staticmethod
+    def _operand_key(x):
+        if isinstance(x, Temp):  return ('t', x.name)
+        if isinstance(x, Const): return ('c', x.value)
+        return ('?', id(x))
+
+    def _emit_binop(self, op, left, right):
+        """Emit `res = left op right`, reusing a prior identical computation
+        (CSE) when both operands are the same values and we are still in the
+        same straight-line region. Returns the result operand."""
+        key = (op, self._operand_key(left), self._operand_key(right))
+        cached = self._cse_table.get(key)
+        if cached is not None:
+            return cached
+        res = self._tmp()
+        self._emit(IRBinOp(res, op, left, right))
+        self._cse_table[key] = res
+        return res
+
     def _emit(self, i):
         self.instructions.append(i)
         t = type(i).__name__
         if t in self._CACHE_FLUSH_NODES:
             self._var_cache.clear()
+            # CSE results may not be computed on every path across a basic-block
+            # boundary (or survive a call's clobber model), so drop them too.
+            self._cse_table.clear()
         elif t in self._STORE_NODES and not self._in_named_store:
             # Aliasing store: flush only the storage class it can actually touch
             # (globals and stack locals occupy disjoint DMEM regions). The store
@@ -364,9 +396,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return val
         if isinstance(val, Const):
             return Const(val.value * stride)
-        scaled = self._tmp()
-        self._emit(IRBinOp(scaled, '*', val, Const(stride)))
-        return scaled
+        return self._emit_binop('*', val, Const(stride))
 
     def _record_ptr(self, name, ctype_node):
         """If ctype_node is a PtrDecl, record name as a pointer in _ptr_stride."""
@@ -984,7 +1014,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             elif r_stride > 1:
                 l = self._scale_by_stride(l, r_stride)
         if op in ('+','-','*','/','%','&','|','^','<<','>>'):
-            self._emit(IRBinOp(res, op, l, r))
+            res = self._emit_binop(op, l, r)
         elif op in ('>','<','>=','<=','==','!='):
             tl = self._lbl('cT'); el = self._lbl('cE')
             self._emit(IRCondJump(l, op, r, tl))
@@ -1313,8 +1343,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if esz == 1: off = idx
         elif isinstance(idx, Const): off = Const(idx.value * esz)
         else:
-            off = self._tmp()
-            self._emit(IRBinOp(off, '*', idx, Const(esz)))
+            off = self._emit_binop('*', idx, Const(esz))
 
         if isinstance(node.name, A.ID):
             name = node.name.name

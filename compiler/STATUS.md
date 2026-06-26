@@ -2,7 +2,45 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 2/3): storage-class alias analysis; test_alu_full 68->37 (-46%), matmul_n16 95->79, matmul_n32 111->91. Zero regressions (Latest)
+## 2026-06-26 — OPTIMIZATION (step 3/3): common subexpression elimination; matmul_n16 95->76 (-20%), matmul_n32 111->86 (-22.5%). Optimization plan COMPLETE, zero regressions (Latest)
+
+Final optimization step: eliminate recomputation of identical arithmetic expressions whose
+operands are unchanged within a straight-line region -- directly fixes the documented
+root cause (the `i*16` computed twice in `results[i*16+j] = dot(&A[i*16], ...)`).
+
+**Implementation (`ir_gen.py`), local value numbering layered on register caching:**
+- New `_cse_table` keyed `(op, left_operand_key, right_operand_key)` -> result Temp.
+- New `_emit_binop(op,l,r)`: returns the existing result if the same op on the same operands
+  was already computed (and still valid), else emits a fresh IRBinOp and records it.
+- Routed the arithmetic path of `_binop`, plus the address-scaling sites
+  (`_scale_by_stride`, `_array_base_off`'s index*elem_size), through `_emit_binop`.
+- Correctness: this works *because* register caching already returns the SAME Temp for
+  repeated reads of a variable, so the second `i*16` sees identical operands. The table is
+  cleared at every basic-block boundary / call (the `_CACHE_FLUSH_NODES` path in `_emit`),
+  so a result is never reused on a control path where it might not have been computed. It is
+  NOT cleared on plain stores (pure arithmetic results don't depend on memory), which keeps
+  CSE alive across stores within a block.
+
+**Validation:** 19/19 aliasing-critical PASS; broader sweep 37 PASS, 0 new regressions
+(vreduce = known bug E4; n64 = pre-existing stack-overlap abort).
+
+**Final cumulative gains (vs pre-optimization backup `compiler_backup_preopt/`):**
+| test | before | after | reduction |
+|---|---|---|---|
+| test_alu_full | 68 | 37 | -46% |
+| matmul_n32 | 111 | 86 | -22.5% |
+| matmul_n16 | 95 | 76 | -20% |
+| test_2d | 181 | 173 | -4.4% |
+| test_array | 51 | 46 | -10% |
+| test_scalar_full | 348 | 344 | -1% |
+
+**The 3-step deferred-optimization plan (register caching -> storage-class aliasing -> CSE)
+is now COMPLETE**, every step committed separately, every step validated end-to-end against
+the real simulator with zero correctness regressions.
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 2/3): storage-class alias analysis; test_alu_full 68->37 (-46%), matmul_n16 95->79, matmul_n32 111->91. Zero regressions
 
 Refines step-1 register caching so an aliasing memory write only flushes the cache entries
 it can actually touch, instead of the whole cache.
