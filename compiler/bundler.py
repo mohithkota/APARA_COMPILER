@@ -393,9 +393,102 @@ def _emit_bundles(header, bundles):
     return '\n'.join(out) + '\n'
 
 
+# ── Instruction scheduling (list scheduling within basic blocks) ───────────────
+
+_SP_REG = '$r27'
+
+def _must_precede(a, b):
+    """True if instruction a (earlier in program order) MUST stay before b for
+    the reordering to be semantically identical. Covers all real dependencies:
+      RAW  a writes / b reads
+      WAW  a writes / b writes
+      WAR  a reads  / b writes   (anti-dependence -- needed after reg reuse)
+      memory ordering (a store cannot cross another memory op at all)
+      call / control-transfer act as full barriers.
+    Conservative by design: extra edges only cost optimization, never correctness.
+    """
+    if a['writes'] & b['reads']:   return True   # RAW
+    if a['writes'] & b['writes']:  return True   # WAW
+    if a['reads']  & b['writes']:  return True   # WAR
+    if a['mem_access'] is not None and b['mem_access'] is not None \
+       and (a['mem_write'] is not None or b['mem_write'] is not None):
+        return True                              # store ordering
+    if a['is_ctrl'] or b['is_ctrl']:             return True
+    if a['text'].startswith('$call') or b['text'].startswith('$call'):
+        return True
+    return False
+
+def _schedule_block(block):
+    """Reorder one basic block (list scheduling) so that mutually-independent
+    instructions end up adjacent, letting the greedy packer form denser bundles.
+    Only independent instructions are ever moved past one another, so the result
+    is semantically identical to the input."""
+    m = len(block)
+    if m <= 2:
+        return block
+    block_labels = [l for ins in block for l in ins['labels']]
+    items = [dict(ins, labels=[]) for ins in block]
+    preds = [set() for _ in range(m)]
+    for j in range(m):
+        for i in range(j):
+            if _must_precede(items[i], items[j]):
+                preds[j].add(i)
+    done = [False] * m
+    sched = []
+    # mirror of the open bundle, used only as a clustering heuristic (the real
+    # packing + hazard checks are redone by _pack_bundles afterwards)
+    cw, cmw, cmr = set(), set(), set()
+    cctrl = [False]; csize = [0]
+    def can_join(ins):
+        if cctrl[0] or csize[0] >= 8:                     return False
+        if ins['reads']  & cw:                            return False
+        if ins['writes'] & cw:                            return False
+        if ins['mem_access'] is not None and ins['mem_access'] in cmw: return False
+        if ins['mem_access'] is None and (ins['writes'] & cmr):        return False
+        if ins['text'].startswith('$call') and _SP_REG in cw:         return False
+        return True
+    def open_with(ins):
+        cw.update(ins['writes'])
+        if ins['mem_write'] is not None: cmw.add(ins['mem_write'])
+        if ins['mem_access'] is not None: cmr.update(ins['reads'])
+        cctrl[0] = cctrl[0] or ins['is_ctrl']; csize[0] += 1
+    def reset():
+        cw.clear(); cmw.clear(); cmr.clear(); cctrl[0] = False; csize[0] = 0
+    def is_ready(k):
+        return not done[k] and all(done[p] for p in preds[k])
+    for _ in range(m):
+        pick = next((k for k in range(m) if is_ready(k) and can_join(items[k])), -1)
+        if pick < 0:
+            reset()
+            pick = next((k for k in range(m) if is_ready(k)), -1)
+        if pick < 0:                                   # safety: never happens for a DAG
+            pick = next(k for k in range(m) if not done[k]); reset()
+        done[pick] = True; sched.append(items[pick]); open_with(items[pick])
+    if block_labels:
+        sched[0]['labels'] = block_labels
+    return sched
+
+def _schedule_within_blocks(flat):
+    """Split the flat instruction list into basic blocks (a labelled instruction
+    starts one; a control-transfer ends one) and list-schedule each block."""
+    blocks, cur = [], []
+    for ins in flat:
+        if ins['labels'] and cur:
+            blocks.append(cur); cur = []
+        cur.append(ins)
+        if ins['is_ctrl']:
+            blocks.append(cur); cur = []
+    if cur:
+        blocks.append(cur)
+    out = []
+    for b in blocks:
+        out.extend(_schedule_block(b))
+    return out
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def bundle_mcode(mcode_text):
+def bundle_mcode(mcode_text, schedule=True):
     """
     Repack mcode from 1-instruction bundles into VLIW bundles (max 8).
 
@@ -404,6 +497,8 @@ def bundle_mcode(mcode_text):
     """
     header, flat  = _parse_flat(mcode_text)
     n_before      = sum(1 for x in flat if x['text'] != '$null')
+    if schedule:
+        flat      = _schedule_within_blocks(flat)
     bundles       = _pack_bundles(flat)
     bundles       = _merge_duplicate_labels(bundles)
     n_after       = len(bundles)

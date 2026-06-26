@@ -2,7 +2,56 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (step 3/3): common subexpression elimination; matmul_n16 95->76 (-20%), matmul_n32 111->86 (-22.5%). Optimization plan COMPLETE, zero regressions (Latest)
+## 2026-06-26 — OPTIMIZATION (step 4): instruction scheduling (list scheduling in bundler.py); big density win, bundles now reach 8-wide. Zero regressions (Latest)
+
+Added a within-basic-block **list scheduler** in `bundler.py`, run between `_parse_flat` and
+`_pack_bundles`. It reorders mutually-independent instructions so they end up adjacent, which
+lets the existing greedy packer form much denser VLIW bundles.
+
+**Implementation (`bundler.py`):**
+- `_must_precede(a,b)`: the dependency oracle -- a must stay before b on any of RAW / WAW /
+  **WAR** (anti-dependence; essential now that registers are reused) / store-ordering
+  (a store cannot cross another memory op) / call / control-transfer barrier. Conservative:
+  extra edges only cost optimization, never correctness.
+- `_schedule_block`: builds the predecessor sets, then list-schedules with a bundle-aware
+  greedy priority (prefer a ready instruction that can join the currently-forming bundle;
+  else close it and take the lowest-index ready one). Block labels are reattached to the
+  first scheduled instruction; the control-transfer naturally schedules last (every other
+  instruction is its predecessor).
+- `_schedule_within_blocks`: splits the flat stream into basic blocks (a labelled instruction
+  starts one, a control-transfer ends one) and schedules each. `_pack_bundles` then re-packs
+  the reordered stream and re-applies ALL its hazard checks (so the phase hazard etc. are
+  still enforced at packing time).
+- Correctness rests entirely on `_must_precede` being complete: only independent instructions
+  are ever moved past each other, so the reordered stream is semantically identical.
+
+**Validation:** 19/19 aliasing-critical PASS; broad sweep 37 PASS, 0 new regressions
+(vreduce = known bug E4; n64 = pre-existing stack-overlap abort). This was the riskiest pass
+(it physically reorders post-register-allocation code) so it was validated the same way and
+specifically re-checked on struct/pointer/2D/call/control-flow tests.
+
+**Density:** average real-instructions-per-bundle (no nulls counted) rose **1.69 -> 2.14**,
+and bundles now reach the full **8-wide** (distribution gained 4..8-instruction bundles;
+e.g. 25 bundles at 8 across the sampled set). 5+ instruction bundles are now common in
+parallel regions (vector ALU, dot kernels).
+
+**Final cumulative bundle reduction (pre-optimization backup -> now, all 4 passes):**
+| test | pre-opt | now | reduction |
+|---|---|---|---|
+| test_valu_full | 142 | 37 | -74% |
+| test_alu_full | 68 | 24 | -65% |
+| matmul_n32 | 111 | 74 | -33% |
+| matmul_n16 | 95 | 68 | -28% |
+| test_2d | 181 | 140 | -23% |
+| test_scalar_full | 348 | 294 | -16% |
+
+Backup of the validated 3-step compiler at `compiler_backup_3steps/`; git tag
+`opt-3steps-validated`. **Next (optional): loop unrolling of the matmul kernel** to push the
+hot-loop density toward 8-wide (matching the ISA spec's unrolled-dot example).
+
+---
+
+## 2026-06-26 — OPTIMIZATION (step 3/3): common subexpression elimination; matmul_n16 95->76 (-20%), matmul_n32 111->86 (-22.5%). Optimization plan COMPLETE, zero regressions
 
 Final optimization step: eliminate recomputation of identical arithmetic expressions whose
 operands are unchanged within a straight-line region -- directly fixes the documented
