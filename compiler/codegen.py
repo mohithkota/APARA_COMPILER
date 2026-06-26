@@ -181,6 +181,7 @@ class CodeGen:
         self._current_epilogue = ''
         self._spill_map        = {}   # temp_name → FP offset of spill slot
         self._spill_counter    = 0
+        self.spilled           = False   # True if any register spill happened
 
     # ── public interface ───────────────────────────────────────────────────────
 
@@ -195,6 +196,7 @@ class CodeGen:
         self._func_ir_base   = 0
         self._spill_map      = {}
         self._spill_counter  = 0
+        self.spilled         = False
 
         for idx, ir in enumerate(ir_instructions):
             if isinstance(ir, IRFuncBegin):
@@ -248,11 +250,49 @@ class CodeGen:
         # IRFuncAddr has no source temps (it just names a label)
         return [o for o in ops if isinstance(o, Temp)]
 
+    def _get_dest_temps(self, ir):
+        if type(ir).__name__ == 'IRLoadWide':
+            return [d for d in ir.dests if isinstance(d, Temp)]
+        d = getattr(ir, 'dest', None)
+        return [d] if isinstance(d, Temp) else []
+
     def _compute_last_uses(self, ir_slice):
         last_use = {}
+        def_idx  = {}
         for i, ir in enumerate(ir_slice):
             for t in self._get_src_temps(ir):
                 last_use[t.name] = i
+            for t in self._get_dest_temps(ir):
+                def_idx.setdefault(t.name, i)
+        # ── Loop-aware live-range extension ──────────────────────────────────
+        # A value DEFINED BEFORE a loop and USED INSIDE it must stay live across
+        # the whole loop: the back-edge re-executes the body, so freeing the
+        # register at the value's last *textual* use (and reusing it later in the
+        # body) would corrupt the value on the next iteration. So for every loop
+        # (back-edge to an earlier label), extend last_use of any such loop-
+        # live-in value to the back-edge index. This is what makes hoisted
+        # (LICM) and other cross-iteration register-resident values correct.
+        # NOTE: for the current memory-backed code (no LICM) nothing is defined
+        # before a loop and used inside, so this is inert -- zero change -- until
+        # an optimization introduces loop-live-in values.
+        label_idx = {ir.name: i for i, ir in enumerate(ir_slice)
+                     if type(ir).__name__ == 'IRLabel'}
+        for k, ir in enumerate(ir_slice):
+            c = type(ir).__name__
+            targets = ([ir.label] if c == 'IRJump'
+                       else [ir.true_label, ir.false_label] if c == 'IRCondJump'
+                       else [])
+            for t in targets:
+                h = label_idx.get(t)
+                if h is None or h >= k:
+                    continue                      # not a back-edge
+                used = set()
+                for j in range(h, k + 1):
+                    for s in self._get_src_temps(ir_slice[j]):
+                        used.add(s.name)
+                for name in used:
+                    if def_idx.get(name, 1 << 30) < h and last_use.get(name, -1) < k:
+                        last_use[name] = k
         return last_use
 
     def _free_dead_at(self, local_idx):
@@ -288,6 +328,7 @@ class CodeGen:
                 slot = self._get_spill_slot(name)
                 self._emit(f"$st ($i64) [{FP} + {slot}] {reg}")
                 self._ra.free(name)
+                self.spilled = True
                 return
         raise RuntimeError(
             f"Spill failed: all {len(self._ra.items())} live temps are protected "

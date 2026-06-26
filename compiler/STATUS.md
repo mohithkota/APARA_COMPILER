@@ -2,7 +2,46 @@
 
 ---
 
-## 2026-06-26 — OPTIMIZATION (LICM ATTEMPTED then DISABLED): correctly hoists invariant inner-loop loads, but MISCOMPILES because the register allocator is not loop-aware (Latest)
+## 2026-06-26 — OPTIMIZATION (step 5): LICM + loop-aware register allocation NOW WORKING. matmul executed-loads -33.5%, zero regressions (Latest)
+
+Loop-Invariant Code Motion is now correct and enabled, delivering the runtime goal (fewer
+executed loads/stores). Three pieces:
+
+1. **`licm.py`** -- hoists loop-invariant address/load instructions out of inner loops into
+   a preheader, with conservative memory-alias safety (traces base addrs to a specific
+   global/stack region; bails on uncertainty/opaque-store/call).
+2. **Loop-aware live-range extension (`codegen.py` `_compute_last_uses`)** -- the fix for the
+   first LICM miscompile: any value DEFINED BEFORE a loop and USED INSIDE it has its live
+   range extended to the loop's back-edge, so its register isn't reused mid-loop and the
+   hoisted value survives every iteration. Verified INERT without LICM (byte-identical
+   4-pass output), so zero risk to the baseline.
+3. **Safety guard (`compiler.py`)** -- the fix for the second class of miscompile: the extra
+   pressure from hoisted, loop-resident values can force SPILLING (or exhaust registers and
+   crash codegen). Spilling a loop-live value across the back-edge is not reliable, so LICM
+   is kept ONLY when its codegen neither spills nor raises; otherwise we fall back to the
+   validated non-LICM codegen for that program (LICM can only help, never miscompile).
+
+**Two real bugs found & fixed during this step** (both were infinite-loop miscompiles --
+one produced a 24GB runaway simulator log): (a) textual-last-use register reuse across the
+back-edge -> fixed by loop-aware liveness; (b) over-pressure spilling/crash on
+test_matmul / test_matmul_packed / test_matmul_u128 -> fixed by the spill/crash fallback
+guard (those programs now fall back to the identical validated 4-pass codegen).
+
+**Validation (logs capped + timeouts this time to prevent runaway):** critical 19/19 PASS;
+broad sweep **37 PASS / 0 new regressions** (vreduce = known bug E4; n64 = pre-existing
+stack-overlap abort). matmul_n16 stays correct: 256/256.
+
+**Runtime win (matmul_n16, executed at runtime -- the compute-speed metric):**
+- loads executed **6441 -> 4281 (-33.5%)**
+- total instructions **55201 -> 42665 (-22.7%)**
+(static bundle count 68 -> 64; LICM relocates the invariant load to the preheader so it runs
+16x per matrix instead of 256x -- the win is dynamic, not static.)
+
+Backups: `compiler_backup_4pass/`, tags `opt-4pass-validated`, `opt-3steps-validated`.
+
+---
+
+## 2026-06-26 — OPTIMIZATION (LICM ATTEMPTED then DISABLED): correctly hoists invariant inner-loop loads, but MISCOMPILES because the register allocator is not loop-aware
 
 Goal: cut *executed* loads/stores (runtime speed), specifically the matmul's redundant
 re-load of A's row on every inner `j` iteration (row `i` is invariant across the j-loop ->

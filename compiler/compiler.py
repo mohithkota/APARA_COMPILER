@@ -462,18 +462,39 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             print(f"  {i}")
         print()
 
-    # ── Loop-invariant code motion (DISABLED): licm.py correctly hoists the
-    #    invariant inner-loop loads, but the linear-scan register allocator is
-    #    not loop-aware -- it frees a value at its last *textual* use and reuses
-    #    the register later in the same loop body, corrupting the hoisted value
-    #    on the next iteration (back-edge). Enabling LICM requires loop-aware
-    #    live-range extension in codegen first. Left wired-off until then. ──
-    # from licm import hoist_loop_invariants
-    # codegen_instrs = hoist_loop_invariants(list(ir_gen.instructions))
-
-    # ── Codegen ──
-    cg   = CodeGen(global_base=global_base)
-    body = cg.generate(ir_gen.instructions, global_base=global_base)
+    # ── Loop-invariant code motion: hoist invariant inner-loop loads/addresses
+    #    into a preheader (executed once per loop entry, not once per iteration).
+    #    Correct because codegen has loop-aware live-range extension that keeps the
+    #    hoisted (loop-live-in) values resident across the loop.
+    #
+    #    SAFETY GUARD: hoisting + extended live ranges raise register pressure; if
+    #    that pushes a loop into SPILLING, the spill-of-a-loop-live-value across
+    #    the back-edge is not reliable, so we fall back to the (validated)
+    #    non-LICM codegen for that program. LICM is kept only when it introduces
+    #    no spilling -- i.e. it can only help, never miscompile. The original IR
+    #    is left pristine for verification / data-map / counts. ──
+    from licm import hoist_loop_invariants
+    codegen_instrs = hoist_loop_invariants(list(ir_gen.instructions))
+    licm_ok = False
+    try:
+        cg   = CodeGen(global_base=global_base)
+        body = cg.generate(codegen_instrs, global_base=global_base)
+        # Keep LICM only if it introduced no spilling. Extra pressure from the
+        # hoisted, loop-resident values can force spills (or exhaust registers,
+        # caught below); spilling a loop-live value across the back-edge is not
+        # reliable, so in that case we drop LICM entirely.
+        licm_ok = not cg.spilled
+    except Exception:
+        licm_ok = False     # register exhaustion etc. under LICM pressure
+    if not licm_ok:
+        # Fall back to the validated baseline codegen on the original IR
+        # (loop-aware liveness is inert without LICM, so this is exactly the
+        # pre-LICM 4-pass output). The fallback runs outside the try, so any
+        # genuine compile error still surfaces normally.
+        cg   = CodeGen(global_base=global_base)
+        body = cg.generate(ir_gen.instructions, global_base=global_base)
+        if verbose:
+            print("[LICM] disabled for this program (pressure/spill)")
 
     header = ""
     if not no_startup:
