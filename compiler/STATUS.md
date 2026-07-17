@@ -2,6 +2,44 @@
 
 ---
 
+## C FEATURE COVERAGE (reference table — updated 2026-07-17)
+
+Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/universal/`).
+✅ supported · ⚠️ partial · ❌ not supported.
+
+| Feature | Status | Notes |
+|---|:---:|---|
+| Integer types (char/short/int/long long, unsigned) | ✅ | sign/zero-extend per type |
+| Arithmetic/logic/shift/comparison ops (all 12 ALU) | ✅ | incl. nand/nor/xnor |
+| Compound assignment (+=,-=,*=,/=,<<=,|=,…) | ✅ | |
+| Ternary ?:, comma operator, chained a=b=c | ✅ | |
+| if/else, while, for, do-while | ✅ | |
+| switch/case incl. fall-through, break/continue | ✅ | |
+| Short-circuit && / \|\| (incl. loop conditions) | ✅ | u5 LICM fix |
+| Functions, recursion, mutual recursion | ✅ | ≤4 args |
+| 1D/2D/3D arrays (local+global, initialized) | ✅ | |
+| struct (incl. nested), arrays of structs | ✅ | pts[i].field, p->field, (p+1)->field |
+| union | ✅ | |
+| bit-fields | ✅ | |
+| Pointers (deref/arith/&x/p[i]/*p/cmp/q-p/stores/p++) | ✅ | uniform local & global |
+| const | ✅ | |
+| typedef of a basic type | ✅ | |
+| Vector intrinsics (__vadd/__dot/__vreduce_max, vu8_t) | ✅ | |
+| enum | ⚠️ | explicit values (=5) not honored |
+| typedef of an anonymous struct | ⚠️ | named ok; anon field access wrong |
+| Floating point (+ - * /) | ❌ | only $fsqrt — next phase |
+| Function pointers | ❌ | blocked at assembler |
+| goto / labels | ❌ | |
+| static local variables | ❌ | don't persist |
+| sizeof | ❌ | returns 0 |
+| designated initializers ({[2]=30}) | ❌ | |
+| variadic funcs; real strings; >4 args | ❌ | strings are address-of only |
+
+Integer subset is functionally complete + verified universal (13/13 novel-algorithm
+battery). FP and the ❌ items are the remaining work.
+
+---
+
 ## 2026-07-17 — LICM correctness fix: `&&`/`||` loop conditions now work (u5 fixed). Universal battery 13/13 (Latest)
 
 Last universality gap (u5 sieve) root-caused to a LICM bug, NOT a control-flow

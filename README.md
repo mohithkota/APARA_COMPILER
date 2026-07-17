@@ -60,28 +60,47 @@ program using the `results[]` convention, `compiler.py` compiles the same source
 every slot. The simulator then verifies each slot — so a passing run means "produced the
 correct value," not merely "did not crash."
 
-## What's working (verified against gcc + on the simulator)
+## C feature coverage
 
-- **Scalar ALU** — all 12 integer ops incl. NOR/NAND/XNOR; `$cmov`, `$slice`, `$pack`, `$cast`
-- **Vector** — `$v` add/sub/mul (+replicate), `$dot`, `$vreduce` add **and max**
-- **Control flow** — if/else + all 6 comparisons, while/for/do-while, switch/case, `&&`/`||`
-- **Functions** — calls, **recursion**, mutual recursion (4-arg ABI; RAS depth 64)
-- **Memory** — load/store all widths, 1D/2D arrays, structs (incl. nested), wide 128/256-bit
-- **Pointers** — refactored around one central address evaluator (`_eval_addr`); a 15-case
-  variation battery passes (deref, arithmetic, `&x`, comparison, difference, stores, `p++`, …)
-- **Register allocation** — 28-register pool + 64-slot spill area
-- **Optimizer** — register caching, CSE, storage-class alias analysis, list scheduling, LICM,
-  loop-carried register promotion (up to −74% static bundles, −99% executed loads on kernels)
+Every entry is backed by a test verified against gcc (see `testing/feature_sweep/`,
+`testing/universal/`, and the per-feature test directories). Legend: ✅ supported ·
+⚠️ partial · ❌ not supported.
 
-## What's not done yet
+| Feature | Status | Notes |
+|---|:---:|---|
+| Integer types (`char`/`short`/`int`/`long long`, `unsigned`) | ✅ | sign/zero-extended per type |
+| Arithmetic / logic / shift / comparison operators | ✅ | all 12 ALU ops incl. `~&`/`~\|`/`~^` |
+| Compound assignment (`+=`,`-=`,`*=`,`/=`,`<<=`,`\|=`,…) | ✅ | |
+| Ternary `?:`, comma operator, chained `a=b=c` | ✅ | |
+| `if`/`else`, `while`, `for`, `do-while` | ✅ | |
+| `switch`/`case` incl. fall-through, `break`/`continue` | ✅ | |
+| Short-circuit `&&` / `\|\|` (incl. in loop conditions) | ✅ | |
+| Functions, **recursion**, mutual recursion | ✅ | ≤ 4 arguments (ABI limit) |
+| 1D / 2D / 3D arrays (local + global, initialized) | ✅ | |
+| `struct` (incl. nested), **arrays of structs** | ✅ | `pts[i].field`, `p->field`, `(p+1)->field` |
+| `union` | ✅ | |
+| **Bit-fields** | ✅ | |
+| **Pointers** — deref, arithmetic, `&x`, `p[i]`, `*p`, comparison, `q-p`, stores, `p++` | ✅ | uniform for local & global targets |
+| `const` | ✅ | |
+| `typedef` of a basic type | ✅ | |
+| Vector intrinsics (`__vadd/__dot/__vreduce_max`, packed `vu8_t`, …) | ✅ | see APARA ISA |
+| `enum` | ⚠️ | plain `enum{A,B}` ok; **explicit values** (`=5`) not honored yet |
+| `typedef` of an **anonymous** struct | ⚠️ | named structs fine; anon-struct typedef field access wrong |
+| **Floating point** (`+ - * /`) | ❌ | only `$fsqrt` wired — next phase |
+| **Function pointers** | ❌ | blocked at the assembler (can't load a label address) |
+| **`goto`** / labels | ❌ | |
+| **`static`** local variables | ❌ | don't persist across calls |
+| **`sizeof`** | ❌ | returns 0 |
+| **Designated initializers** (`{[2]=30}`) | ❌ | |
+| Variadic functions; real string handling; > 4 args | ❌ | string literals are address-of only |
 
-- **Floating-point arithmetic** (`+,-,*,/`) — only `$fsqrt` is wired; this is the next phase
-- **Function pointers** — IR/codegen scaffolding exists but blocked at the assembler level (no
-  way to load a function's absolute address into a register)
-- **Three integer universality gaps** (mapped with reproducers in `testing/universal/`):
-  array-of-structs element access, pointer-store into a *local* array, and a sieve-style
-  pattern (global array + variable-index result store)
-- Variadic functions; string literals are address-of only; functions limited to 4 arguments
+**Also:** register allocation (28-reg pool + 64-slot spill area) and a full optimizer
+(register caching, CSE, alias analysis, list scheduling, LICM, loop-carried promotion —
+up to −74% static bundles / −99% executed loads on kernels).
+
+**Bottom line:** the **integer** subset of C — the features you use for real algorithms —
+is functionally complete and verified universal (a 13-program novel-algorithm battery passes
+against gcc). Floating point and the ❌ items above are the remaining work.
 
 ## Testing
 
