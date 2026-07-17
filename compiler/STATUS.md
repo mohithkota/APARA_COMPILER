@@ -2,7 +2,144 @@
 
 ---
 
-## 2026-06-26 — PHASE 3: loop-carried register promotion (counters/accumulators) WORKING. sumloop exec-loads -99%, test_matmul -69%, zero regressions (Latest)
+## 2026-07-17 — UNIVERSALITY AUDIT: no codegen bias; local-array-initializer bug FIXED; 3 gaps mapped (Latest)
+
+Audited for test-specific bias (request: "make it universal"). NO codegen bias:
+the `results` name is used ONLY by the golden-verify harness in compiler.py
+(gcc as an independent oracle), never by ir_gen/codegen; `0x400` GBASE is a
+configurable default. Codegen treats all names/programs uniformly.
+
+Tested with NOVEL algorithms (not feature unit-tests), `testing/universal/`
+u1-u8 (bubblesort, binsearch, gcd, popcount, sieve, matrix transpose, struct-ptr,
+in-place reverse). Found real gaps: 4/8 -> **6/9 after fixing local-array
+initializers**.
+
+**FIXED: local array with initializer** (`int a[3]={11,22,33}`). visit_Decl's
+InitList store used `i*esz` offset AND `esz` width, but local-array elements sit
+one per DMEM word (stride 8), accessed full-word ($i64) -- so a[1] landed in
+a[0]'s low half (0xb00000016) and $ld($i64) read the wrong half. Fix: use the
+array's DMEM stride (`_array_elem[name]`) for BOTH offset and width. m1/u1 pass,
+real suite 0 err, pointer battery still 15/15.
+
+STILL OPEN (universality campaign, reproducers in testing/universal/): u8
+(pointer store `*lo=*hi` into a LOCAL array -- swap doesn't take), u7 (array-of-
+structs `&pts[i]`/`p->x` reads wrong fields), u5 (sieve: global array +
+`results[n++]` var-index + compound `i<30 && n<5` loop cond -> all 0).
+
+## 2026-07-17 — POINTER REFACTOR COMPLETE: central `_eval_addr`; battery 15/15, zero regressions
+
+Executed `testing/pointer_bugs/REFACTOR_PLAN.md` end to end (9 steps, each
+gated on battery + real suite). The ad-hoc address/decay/stride code paths in
+`ir_gen.py` are replaced by ONE central evaluator:
+`_eval_addr(node) -> _Addr(gaddr, base, off, stride, eb, unsigned, scope)`,
+with thin wrappers `_addr_load` / `_addr_store` / `_addr_value` and the
+decaying value-site visitor `_visit_operand` (used at init/assign RHS,
+comparison operands, call args, return). Covered in one place: array→pointer
+decay (global + local), pointer-variable value loads, `p[i]`/`arr[i]`,
+`*p`/`*(p±n)`, `&x`/`&arr[i]`/`&p`, ptr±int with stride scaling, pointer
+difference `q-p` (byte diff / DMEM stride — divisor is the 8-byte stride, not
+the C width), pointer comparisons (`p == arr` compares addresses), `p++`/`--`,
+call args, return values. Pointer element STORE width (RC2) fixed en route:
+stores through `*p`/`p[i]` now use the pointee width, mirroring the earlier
+load-width fix. Global locations keep the efficient GBASE-relative
+IRGlobalLoad/IRGlobalStore path via `_Addr.gaddr`, so no code-size growth on
+the array-heavy tests. Deleted as now-dead: `_visit_rvalue`,
+`_ptr_stride_of_node`, the `_binop` +/- scaling block, the call-arg `is_arr`
+hack. `_array_base_off`/`_get_esz` remain only as the legacy fallback for
+shapes `_eval_addr` doesn't claim (e.g. struct-field bases).
+
+Results: battery t01–t15 **15/15** (was 4/15). Real-suite gate
+(pointer/array/2d/struct/matmul) 0 err after EVERY step. Final full-suite A/B
+(78 discovered run.sh tests, baseline vs refactored compiler): only
+improvements — `t15_ptr_param_store` and `testing/ptr_isolate/L` went to
+0 err; nothing else changed.
+
+`test_scalar_full` (3 err) root-caused: NOT a compiler bug. The assembled
+program (577 bundles) exceeds the simulator's half-sized IMEM — loading stops
+at word 0x800 and PC runs into empty IMEM before sections 8–10 (switch,
+calls, aggregate) execute; results[8..10] stay 0. Identical before/after the
+refactor; unfixable from the compiler side (needs the IMEM fix or a split
+test). `stress/shift_bug` (2 err) is the known `$u64 >>` simulator limit.
+
+## 2026-07-17 — POINTER CAMPAIGN (session 2): array-to-pointer decay at rvalue sites; local pointer init now works
+
+Started the systematic pointer bug campaign (`testing/pointer_bugs/`, 15-test
+battery t01-t15 + POINTER_BUGS_CAMPAIGN.md). Landed the first fix: C
+array-to-pointer decay at rvalue SITES. New `_visit_rvalue` helper +
+`_is_array_name` (array-but-not-struct predicate, since structs also land in
+_array_elem via n_elems>1), applied at initializer-RHS and assignment-RHS. Fixes
+`int *p = arr` / `p = arr` (previously loaded arr[0]'s VALUE instead of &arr[0]).
+Battery 2/15 -> 4/15 (t09 char*, t10 long long*, t12 ptr-struct, t13 loop via
+*(p+i)); real suite clean (pointer/array/2d/struct 0 err, matmul 256/256).
+
+Two decay approaches tried and REVERTED (regressions): blanket decay in
+_load_var (breaks struct/2D t12/t13) and in binop operands (breaks
+pointer/test_pointer + array indexing) -- decay must stay site-specific with
+element-stride awareness. Remaining pointer work (open, see campaign doc): `arr+n`
+decay+scale, comparison-operand decay (t11), pointer STORE width (t07/t15),
+`&x`/`&arr[i]` (t03/t04), `p++` (t08), `q-p` (t06), return `a+i` (t14).
+
+## 2026-07-17 — BUG FIX: pointer-element load used $i64 (full word) instead of pointee width; found by stress testing
+
+Differential stress testing (compiler vs gcc golden) found a real correctness
+bug: `p[i]` / `*p` on a pointer loaded via `$ld ($i64)` (full 64-bit word)
+instead of the pointee's type (`$ld ($i32)` for `int*`). Because sub-word ints
+live in bits[63:32] of the 8-byte DMEM word, the full-word load returned a
+duplicated/garbage value (e.g. `int f(int *p){return p[0];}` on {10,...} gave
+`0xa0000000a` instead of `0xa`). Root cause: `_arrayref` used `_get_esz`, which
+returns `_ptr_stride` (=8, the DMEM slot stride) for pointers, as BOTH the
+address stride AND the load width. Fix: new `_ptr_elem_bytes` map (pointee width,
+set in `_record_ptr`); `_arrayref` now uses it for the IRLoad width while keeping
+stride=8 for address arithmetic. Verified: pointer-param deref now correct;
+regression clean (pointer 10/10, array/2d/struct, matmul_n16 256/256).
+
+KNOWN STILL-OPEN (separate, pre-existing): a LOCAL pointer initialized from an
+array (`int *p = arr; p[0]`) computes the wrong address (array->pointer decay in
+a local initializer); `p-arr` gives -70 not 0. Also the pointer STORE path width
+not yet audited. See `cmp_wd/testing/STRESS_FINDINGS.md`. Other stress findings:
+unsigned-64 `>>` is a simulator limit ($u64 ALU zeroes via __mmask__(64) UB);
+signed-overflow (INT_MIN-1 etc.) diverges from gcc (UB).
+
+## 2026-07-17 — TOOLCHAIN MIGRATION + $vreduce MAX sub-op implemented. Integer ISA coverage now complete
+
+Migrated to the prof's updated engine/assembler (Jul-5 build, scp'd to
+`prof_git_folder/`). Two toolchain findings, both handled:
+
+**(a) Prof's Jul-5 build FIXES the `$vreduce` unsigned bug (E4)** — `McodeOperations.cpp`
+unsigned reduce now zero-extends. So unsigned `$vreduce` is reliable on the new
+toolchain (old "prefer signed" caution obsolete).
+
+**(b) Found + fixed a 1-line regression in the prof's decode that broke BACKWARD
+`$call`.** `McodeDisassemble.cpp:266` had `Sign_Extend(25,...)` for the 25-bit
+[24:0] call offset (sign bit = bit 24) -> negative offsets never sign-extended ->
+backward calls (function defined before its call site) resolved to garbage
+(0x2000018). Proven by encode/decode round-trip + byte-identical objects. Fixed
+to `Sign_Extend(24,...)`, rebuilt via scons, deployed to `engine_new/.../bin`
+(backups: bin_backup_jun18, bin_backup_jul5_unfixed). Reported to prof. Full
+writeup: `prof_git_folder/BUG_REPORT_backward_call/`. Regression 36->39 PASS.
+The new toolchain also requires `$call` in an 8-aligned bundle (return =
+call_addr+8); the compiler already pads calls to 8-wide, so no codegen change.
+
+**$vreduce MAX sub-op implemented** — closes the last integer-ISA gap. Audited
+coverage: scalar ALU (all 12 ops + nand/nor/xnor), $cmov, $slice, $pack, $cast,
+vector $v add/sub/mul (+replicate), $dot, and $ld/$st (all widths) were already
+complete; only `$vreduce` was ADD-only. Empirically verified on the fixed
+toolchain which reduce sub-ops actually work: **ADD and MAX work (all types);
+MIN/MUL/OR/XOR/AND/XNOR return 0 (simulator-unimplemented)** -- so only MAX was
+added (same "don't emit broken opcodes" policy as native abs/max/min).
+Changes: `IRVecReduce` gained an `op` field (default '+'); `codegen` emits
+`$vreduce <op>`; `ir_gen` maps `__vreduce_max_{type}` -> op '$max' (and keeps
+`__vreduce_{type}` -> '+'); golden_stubs.h gained `__vreduce_max_*` references.
+New test `new_isa_tests/test_vreduce_max` (3/3: sum 36, max-vi8 8, max-vi32 5,
+gcc-verified). matmul_n16 recompiled 256/256, zero regressions.
+
+Integer (scalar + vector) ISA is now functionally complete. Remaining ISA items
+are all out of scope: FP arithmetic + $fsqrt (next phase), $scale (no C mapping),
+vi4/vu4 (assembler/sim-broken E5), native abs/max/min (broken, covered via $cmov).
+
+---
+
+## 2026-06-26 — PHASE 3: loop-carried register promotion (counters/accumulators) WORKING. sumloop exec-loads -99%, test_matmul -69%, zero regressions
 
 New pass `loop_reg.py` (`promote_loop_counters`) promotes loop-carried induction
 variables / accumulators out of the per-iteration memory round-trip: load once into a

@@ -4,6 +4,7 @@ APARA Compiler — pycparser AST → Three-Address IR
 
 import pycparser
 import pycparser.c_ast as A
+from collections import namedtuple
 from ir import *
 
 # ── C type → APARA type string ────────────────────────────────────────────────
@@ -51,6 +52,20 @@ def _c_decl_to_apara_type(node):
     if isinstance(node, A.PtrDecl):
         return '$u64'
     return '$i64'
+
+# ── Central address representation (REFACTOR_PLAN.md) ────────────────────────
+# Uniform result of evaluating an expression AS an address:
+#   gaddr   : int DMEM address when the location is GBASE-relative (global
+#             array/element) -- lets the load/store wrappers keep the efficient
+#             IRGlobalLoad/IRGlobalStore path; None when base holds the address.
+#   base    : Temp/Const holding the byte address (None when gaddr is set)
+#   off     : Const/Temp byte offset still to be added at the access
+#   stride  : DMEM stride to advance one element (pointer/array arithmetic)
+#   eb      : element width in bytes for the $ld/$st type tag
+#   unsigned: element loads zero-extend ($u tag) instead of sign-extend
+#   scope   : cache class a store through this address can alias
+#             ('global' / 'local' / 'all'), consumed via _store_scope
+_Addr = namedtuple('_Addr', 'gaddr base off stride eb unsigned scope')
 
 # ── CMOV condition table ──────────────────────────────────────────────────────
 
@@ -161,6 +176,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # Maps variable name → DMEM stride per element for pointer arithmetic.
         # All pointer types currently use stride=8 (one 8-byte DMEM slot per element).
         self._ptr_stride      = {}
+        # Maps pointer name → pointee element WIDTH in bytes (int* -> 4, char* ->
+        # 1, ...). Distinct from _ptr_stride (the DMEM slot stride, always 8):
+        # the stride drives address arithmetic, this drives the $ld/$st type tag
+        # ($i32 vs $i64). Conflating the two made p[i] load as $i64 (full word)
+        # instead of $i32, reading a garbage/duplicated value.
+        self._ptr_elem_bytes  = {}
         # 2D array info: name → (outer_dim, inner_dim)
         self._array_dims      = {}
         # 2D array info: name → row stride in bytes (inner_dim * col_stride)
@@ -310,6 +331,15 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._define(name, 'local', fp_off)
         return fp_off
 
+    def _is_array_name(self, name):
+        """True if `name` is a genuine ARRAY (not a struct, not a scalar). Struct
+        globals/locals also land in _array_elem/_global_array_elem (n_elems>1),
+        so exclude anything tracked as a struct variable."""
+        if name in self._var_struct_type:
+            return False
+        return (name in self._array_elem or name in self._array_row_stride
+                or name in self._global_array_elem)
+
     def _load_var(self, name):
         info = self._lookup(name)
         if info is None:
@@ -325,6 +355,10 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return self._var_cache[name][0]
         kind, loc = info
         unsigned = name in self._unsigned_vars
+        # NOTE: array-to-pointer decay is applied at value SITES via
+        # _visit_operand (init/assign RHS, comparisons, call args, return),
+        # NOT here -- decaying blanket in _load_var regressed struct/2D
+        # paths (t12/t13). See _eval_addr / REFACTOR_PLAN.md.
         if kind == 'global':
             gd = loc
             res = self._tmp()
@@ -385,17 +419,6 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
     # ── pointer helpers ───────────────────────────────────────────────────────
 
-    def _ptr_stride_of_node(self, ast_node):
-        """
-        Return DMEM element stride if ast_node is a pointer-typed expression, else 0.
-        Currently all pointer types share stride=8 (APARA alignment constraint).
-        """
-        if isinstance(ast_node, A.ID) and ast_node.name in self._ptr_stride:
-            return self._ptr_stride[ast_node.name]
-        if isinstance(ast_node, A.UnaryOp) and ast_node.op == '&':
-            return 8  # address-of always produces a pointer
-        return 0
-
     def _scale_by_stride(self, val, stride):
         """Multiply val (Const or Temp) by stride for pointer arithmetic."""
         if stride <= 1:
@@ -405,10 +428,178 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         return self._emit_binop('*', val, Const(stride))
 
     def _record_ptr(self, name, ctype_node):
-        """If ctype_node is a PtrDecl, record name as a pointer in _ptr_stride."""
+        """If ctype_node is a PtrDecl, record name as a pointer in _ptr_stride
+        (DMEM slot stride) and _ptr_elem_bytes (pointee width for the load/store
+        type tag)."""
         if isinstance(ctype_node, A.PtrDecl):
             pointed = ctype_node.type  # the pointed-to type node
             self._ptr_stride[name] = 8  # DMEM stride is always 8 for now
+            # pointee element width drives $i32 vs $i64 on p[i]/*p (clamp to a
+            # real scalar width; pointer-to-pointer / opaque stays 8).
+            try:
+                self._ptr_elem_bytes[name] = _elem_size(pointed)
+            except Exception:
+                self._ptr_elem_bytes[name] = 8
+
+    # ── central address evaluator (REFACTOR_PLAN.md) ─────────────────────────
+
+    def _off_add(self, off1, off2, sub=False):
+        """Combine two byte offsets (off1 ± off2), folding constants."""
+        if isinstance(off2, Const):
+            if off2.value == 0:
+                return off1
+            if isinstance(off1, Const):
+                return Const(off1.value + (-off2.value if sub else off2.value))
+        if isinstance(off1, Const) and off1.value == 0 and not sub:
+            return off2
+        return self._emit_binop('-' if sub else '+', off1, off2)
+
+    def _is_addr_expr(self, node):
+        """Cheap, emission-free predicate: would _eval_addr claim this node?
+        Used to detect pointer-vs-pointer forms (q-p, p==q) before evaluating."""
+        if isinstance(node, A.ID):
+            return (self._lookup(node.name) is not None
+                    and (node.name in self._ptr_stride
+                         or self._is_array_name(node.name)))
+        if isinstance(node, A.UnaryOp) and node.op == '&':
+            return not (isinstance(node.expr, A.ID)
+                        and node.expr.name in self._func_names)
+        if isinstance(node, A.BinaryOp) and node.op in ('+', '-'):
+            return (self._is_addr_expr(node.left)
+                    or (node.op == '+' and self._is_addr_expr(node.right)))
+        return False
+
+    def _eval_addr(self, node):
+        """Evaluate `node` AS an address. The ONE place that knows array→pointer
+        decay, pointer-value loading and element-stride scaling. Returns an
+        _Addr, or None -- with NOTHING emitted -- when node does not denote a
+        pointer/array location, so callers can fall back to the legacy path."""
+        if isinstance(node, A.ID):
+            name = node.name
+            info = self._lookup(name)
+            if info is None:
+                return None
+            kind, loc = info
+            if name in self._ptr_stride:
+                # Pointer VARIABLE: its value is the address (checked before
+                # the array test -- 2D params sit in both tables and must load
+                # the pointer value, same priority as _array_base_off had).
+                base = self._load_var(name)
+                return _Addr(None, base, Const(0), self._ptr_stride[name],
+                             self._ptr_elem_bytes.get(name, 8),
+                             name in self._unsigned_vars, 'all')
+            if self._is_array_name(name):
+                unsigned = name in self._unsigned_vars
+                if kind == 'global':
+                    stride = self._global_array_elem.get(name, loc.stride)
+                    return _Addr(loc.dmem_addr, None, Const(0), stride,
+                                 loc.elem_bytes, unsigned, 'global')
+                stride = self._array_elem.get(name, 8)
+                base = self._tmp()
+                self._emit(IRLoadAddr(base, loc))
+                # eb == stride replicates _get_esz for local arrays
+                return _Addr(None, base, Const(0), stride, stride,
+                             unsigned, 'local')
+            return None
+        if isinstance(node, A.ArrayRef):
+            if isinstance(node.name, A.ArrayRef):
+                return None      # 2D refs stay on the dedicated _2d_* path
+            a = self._eval_addr(node.name)
+            if a is None:
+                return None
+            idx = self._visit_expr(node.subscript)
+            elem_off = self._scale_by_stride(idx, a.stride)
+            return a._replace(off=self._off_add(a.off, elem_off))
+        if isinstance(node, A.UnaryOp) and node.op == '&':
+            e = node.expr
+            if isinstance(e, A.ID):
+                if e.name in self._func_names:
+                    return None          # &func stays on the IRFuncAddr path
+                # &arr of a genuine array == the decayed array address
+                if self._is_array_name(e.name) and e.name not in self._ptr_stride:
+                    return self._eval_addr(e)
+                # &scalar / &ptr: the variable's own slot address (NOT its
+                # value, so this must not recurse into the ID-pointer case)
+                info = self._lookup(e.name)
+                if info is None:
+                    return None
+                kind, loc = info
+                unsigned = e.name in self._unsigned_vars
+                if kind == 'global':
+                    return _Addr(loc.dmem_addr, None, Const(0), loc.stride,
+                                 loc.elem_bytes, unsigned, 'global')
+                base = self._tmp()
+                self._emit(IRLoadAddr(base, loc))
+                return _Addr(None, base, Const(0), 8,
+                             self._local_elem_bytes.get(e.name, 8),
+                             unsigned, 'local')
+            if isinstance(e, A.ArrayRef):
+                return self._eval_addr(e)
+            return None
+        if isinstance(node, A.BinaryOp) and node.op in ('+', '-'):
+            # ptr/array ± integer: recurse on the pointer side, scale the int
+            # side by the element stride. Pointer - pointer (q-p) is a
+            # DIFFERENCE, not an address -- leave it to the caller.
+            if self._is_addr_expr(node.left):
+                if node.op == '-' and self._is_addr_expr(node.right):
+                    return None
+                a = self._eval_addr(node.left)
+                if a is None:
+                    return None
+                n = self._visit_expr(node.right)
+                elem_off = self._scale_by_stride(n, a.stride)
+                return a._replace(off=self._off_add(a.off, elem_off,
+                                                    sub=(node.op == '-')))
+            if node.op == '+' and self._is_addr_expr(node.right):
+                a = self._eval_addr(node.right)
+                if a is None:
+                    return None
+                n = self._visit_expr(node.left)
+                elem_off = self._scale_by_stride(n, a.stride)
+                return a._replace(off=self._off_add(a.off, elem_off))
+            return None
+        return None
+
+    def _addr_load(self, a):
+        """Read the element at address `a` with its own width/signedness."""
+        res = self._tmp()
+        if a.gaddr is not None:
+            self._emit(IRGlobalLoad(res, a.gaddr, a.off, elem_bytes=a.eb,
+                                    unsigned=a.unsigned))
+        else:
+            self._emit(IRLoad(res, a.base, a.off, a.eb, unsigned=a.unsigned))
+        return res
+
+    def _addr_store(self, a, val):
+        """Write `val` to the element at address `a` with its own width (RC2:
+        the store must use the pointee/element width, mirroring _addr_load)."""
+        if a.gaddr is not None:
+            self._store_scope = 'global'
+            self._emit(IRGlobalStore(a.gaddr, a.off, val, a.eb))
+        else:
+            self._store_scope = a.scope
+            self._emit(IRStore(a.base, a.off, val, a.eb))
+
+    def _addr_value(self, a):
+        """Materialize address `a` as a plain value (for rvalue/arg use)."""
+        if a.gaddr is not None:
+            res = self._tmp()
+            self._emit(IRGlobalAddrOf(res, a.gaddr, a.off))
+            return res
+        if isinstance(a.off, Const) and a.off.value == 0:
+            return a.base
+        return self._emit_binop('+', a.base, a.off)
+
+    def _visit_operand(self, node):
+        """Value of `node` with C array→pointer decay: expressions that denote
+        an address (array names, pointers, &x, ptr±n) yield the ADDRESS value;
+        everything else is a plain _visit_expr. Use at value sites where decay
+        applies: assignment/init RHS, comparison operands, call args, return."""
+        if self._is_addr_expr(node):
+            a = self._eval_addr(node)
+            if a is not None:
+                return self._addr_value(a)
+        return self._visit_expr(node)
 
     # ── struct helpers ────────────────────────────────────────────────────────
 
@@ -679,10 +870,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 elif is_arr and isinstance(node.init, A.InitList):
                     base = self._tmp()
                     self._emit(IRLoadAddr(base, fp_off))
+                    # Elements sit at the DMEM stride (8 per word for non-packed
+                    # arrays), and a local array element is accessed as a full
+                    # stride-wide word (the reads use $ld of that width), so the
+                    # init store must use `stride` for BOTH the offset AND the
+                    # width -- using esz mis-placed and mis-sized the values.
+                    stride = self._array_elem.get(node.name, max(esz, 8))
                     for i, v in enumerate(init_vals):
-                        self._emit(IRStore(base, Const(i * esz), Const(v), esz))
+                        self._emit(IRStore(base, Const(i * stride), Const(v), stride))
                 elif not is_arr and not is_struct_var:
-                    val = self._visit_expr(node.init)
+                    # RHS may be an array name / pointer expression that decays
+                    # to an address (e.g. `int *p = arr`), so use _visit_operand.
+                    val = self._visit_operand(node.init)
                     addr = self._tmp()
                     self._emit(IRLoadAddr(addr, fp_off))
                     self._emit(IRStore(addr, Const(0), val, esz))
@@ -778,7 +977,10 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
     def visit_Assignment(self, node):
         op = node.op
-        rval = self._visit_expr(node.rvalue)
+        # Plain '=' RHS may be an array name / pointer expression that decays
+        # to an address (`p = arr`); compound ops (+=,-=) operate on the
+        # scalar value.
+        rval = self._visit_operand(node.rvalue) if op == '=' else self._visit_expr(node.rvalue)
         if op == '=':
             self._assign_lval(node.lvalue, rval)
             return rval
@@ -804,6 +1006,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if isinstance(lval.name, A.ArrayRef) and isinstance(lval.name.name, A.ID):
                 self._2d_arrayref_write(lval, val)
                 return
+            a = self._eval_addr(lval)
+            if a is not None:
+                self._addr_store(a, val)
+                return
+            # Legacy fallback: bases _eval_addr doesn't claim
             base, off = self._array_base_off(lval)
             if isinstance(lval.name, A.ID):
                 name = lval.name.name
@@ -823,8 +1030,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             eb = self._get_esz(lval.name) if isinstance(lval.name, A.ID) else 8
             self._emit(IRStore(base, off, val, eb))
         elif isinstance(lval, A.UnaryOp) and lval.op == '*':
-            # All pointer types currently use stride=8 (see _record_ptr) — *p is
-            # always an 8-byte dereference until pointer-to-narrow-type is tracked.
+            a = self._eval_addr(lval.expr)
+            if a is not None:
+                self._addr_store(a, val)
+                return
+            # Legacy fallback: pointer expressions _eval_addr doesn't claim
+            # (8-byte store, the old blanket behavior).
             ptr = self._visit_expr(lval.expr)
             self._emit(IRStore(ptr, Const(0), val, 8))
 
@@ -931,7 +1142,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if self._cont_to: self._emit(IRJump(self._cont_to))
 
     def visit_Return(self, node):
-        val = self._visit_expr(node.expr) if node.expr else None
+        # Return value decays too (`return arr;` yields the array's address)
+        val = self._visit_operand(node.expr) if node.expr else None
         self._emit(IRReturn(val))
 
     def generic_visit(self, node):
@@ -989,6 +1201,25 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return self._string_literal(node.value)
         return Const(0)
 
+    def _expr_is_unsigned(self, node):
+        """Best-effort: is this expression of unsigned integer type? Drives
+        logical vs arithmetic '>>'. Follows C's rule that E1>>E2 uses E1's type,
+        with a conservative version of the usual arithmetic conversions."""
+        if isinstance(node, A.ID):
+            return node.name in self._unsigned_vars
+        if isinstance(node, A.Cast):
+            return _is_unsigned_decl(node.to_type)
+        if isinstance(node, A.Constant):
+            return node.value.lower().rstrip('l').endswith('u')
+        if isinstance(node, A.UnaryOp):
+            return self._expr_is_unsigned(node.expr)
+        if isinstance(node, A.BinaryOp):
+            # unsigned if either operand is unsigned (approximation of the
+            # usual arithmetic conversions -- correct for the common cases)
+            return (self._expr_is_unsigned(node.left)
+                    or self._expr_is_unsigned(node.right))
+        return False
+
     def _binop(self, node):
         op = node.op
         if op == '&&':
@@ -1010,15 +1241,42 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRLabel(tl)); self._emit(IRAssign(res, Const(1)))
             self._emit(IRLabel(el)); return res
 
-        l = self._visit_expr(node.left); r = self._visit_expr(node.right); res = self._tmp()
+        # Pointer difference q-p (RC4): byte difference divided by the DMEM
+        # element stride (elements sit one per stride bytes, so the divisor is
+        # the stride, not the C element width).
+        if op == '-' and self._is_addr_expr(node.left) and self._is_addr_expr(node.right):
+            la = self._eval_addr(node.left)
+            ra = self._eval_addr(node.right) if la is not None else None
+            if la is not None and ra is not None:
+                lv = self._addr_value(la)
+                rv = self._addr_value(ra)
+                diff = self._emit_binop('-', lv, rv)
+                stride = max(la.stride, 1)
+                if stride > 1:
+                    diff = self._emit_binop('/', diff, Const(stride))
+                return diff
+
+        # Pointer/array ± integer goes through the central evaluator (decay +
+        # stride scaling in ONE place); everything else (incl. pure-integer
+        # arithmetic) keeps the plain value path below.
         if op in ('+', '-'):
-            # Pointer arithmetic: scale the integer side by the element stride
-            l_stride = self._ptr_stride_of_node(node.left)
-            r_stride = self._ptr_stride_of_node(node.right) if op == '+' else 0
-            if l_stride > 1:
-                r = self._scale_by_stride(r, l_stride)
-            elif r_stride > 1:
-                l = self._scale_by_stride(l, r_stride)
+            a = self._eval_addr(node)
+            if a is not None:
+                return self._addr_value(a)
+
+        if op in ('>','<','>=','<=','==','!='):
+            # Comparison operands decay: p == arr compares ADDRESSES (t11)
+            l = self._visit_operand(node.left); r = self._visit_operand(node.right)
+        else:
+            l = self._visit_expr(node.left); r = self._visit_expr(node.right)
+        res = self._tmp()
+        # NOTE: unsigned '>>' should be a LOGICAL shift ($u64), but the
+        # simulator's $u64 ALU path zeroes the operand (Cast_Up_To_u64 ->
+        # __mmask__(64) UB, same class as the __vabs nbits=64 bug). Emitting
+        # $u64 returns 0, so we keep $i64 (arithmetic) -- correct for every
+        # unsigned value whose bit 63 is clear (i.e. all sub-64-bit unsigned
+        # and any u64 < 2^63). Only `unsigned long long >>` with the high bit
+        # set is wrong; unfixable until the simulator's $u64 shift is fixed.
         if op in ('+','-','*','/','%','&','|','^','<<','>>'):
             res = self._emit_binop(op, l, r)
         elif op in ('>','<','>=','<=','==','!='):
@@ -1031,18 +1289,27 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
     def _unary(self, node):
         op = node.op
-        if op in ('p++','p--'):
-            old = self._visit_expr(node.expr); res = self._tmp(); new = self._tmp()
-            self._emit(IRAssign(res, old))
-            stride = self._ptr_stride_of_node(node.expr)
-            delta  = Const(stride if stride > 1 else 1)
-            self._emit(IRBinOp(new, '+' if op=='p++' else '-', old, delta))
-            self._assign_lval(node.expr, new)
-            return res
-        if op in ('++','--'):
-            old = self._visit_expr(node.expr); res = self._tmp()
-            stride = self._ptr_stride_of_node(node.expr)
-            delta  = Const(stride if stride > 1 else 1)
+        if op in ('p++','p--','++','--'):
+            # Pointer ++/-- advance by the element stride, known centrally by
+            # _eval_addr (a pointer's _Addr base IS its current value).
+            stride = 1
+            if self._is_addr_expr(node.expr):
+                a = self._eval_addr(node.expr)
+                if a is not None:
+                    stride = max(a.stride, 1)
+                    old = self._addr_value(a)
+                else:
+                    old = self._visit_expr(node.expr)
+            else:
+                old = self._visit_expr(node.expr)
+            delta = Const(stride)
+            if op in ('p++','p--'):
+                res = self._tmp(); new = self._tmp()
+                self._emit(IRAssign(res, old))
+                self._emit(IRBinOp(new, '+' if op=='p++' else '-', old, delta))
+                self._assign_lval(node.expr, new)
+                return res
+            res = self._tmp()
             self._emit(IRBinOp(res, '+' if op=='++' else '-', old, delta))
             self._assign_lval(node.expr, res)
             return res
@@ -1064,6 +1331,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 res = self._tmp()
                 self._emit(IRFuncAddr(res, node.expr.name))
                 return res
+            a = self._eval_addr(node)
+            if a is not None:
+                return self._addr_value(a)
             if isinstance(node.expr, A.ID):
                 return self._addr_of_var(node.expr.name)
             if isinstance(node.expr, A.StructRef):
@@ -1085,8 +1355,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 return res
             return Const(0)
         if op == '*':
-            # All pointer types currently use stride=8 (see _record_ptr) — *p is
-            # always an 8-byte dereference until pointer-to-narrow-type is tracked.
+            a = self._eval_addr(node.expr)
+            if a is not None:
+                return self._addr_load(a)
+            # Legacy fallback: pointer expressions _eval_addr doesn't claim yet
+            # (8-byte deref, the old blanket behavior).
             ptr = self._visit_expr(node.expr); res = self._tmp()
             self._emit(IRLoad(res, ptr, Const(0), 8)); return res
         return self._visit_expr(node.expr)
@@ -1109,26 +1382,19 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             fname = None
             func_ptr_expr = node.name
 
-        # Build arg list; array names decay to their base address (C semantics)
+        # Build arg list through the central evaluator: array names decay to
+        # their base address, pointer expressions (p, arr+n, &x) materialize
+        # as address values (C semantics). A bare STRUCT variable passes its
+        # address (structs are excluded from _is_array_name, so _visit_operand
+        # alone would load the first word instead).
         args = []
         for a in (node.args.exprs if node.args else []):
-            if isinstance(a, A.ID):
-                name = a.name
-                info = self._lookup(name)
-                if info:
-                    kind, loc = info
-                    is_arr = (name in self._array_elem or name in self._array_row_stride
-                              or name in self._global_array_elem)
-                    is_ptr = name in self._ptr_stride
-                    if is_arr and not is_ptr:  # raw array: pass address of first element
-                        tmp = self._tmp()
-                        if kind == 'global':
-                            self._emit(IRGlobalAddrOf(tmp, loc.dmem_addr))
-                        else:
-                            self._emit(IRLoadAddr(tmp, loc))
-                        args.append(tmp)
-                        continue
-            args.append(self._visit_expr(a))
+            if (isinstance(a, A.ID) and a.name in self._var_struct_type
+                    and a.name not in self._ptr_stride
+                    and self._lookup(a.name) is not None):
+                args.append(self._addr_of_var(a.name))
+                continue
+            args.append(self._visit_operand(a))
 
         res   = self._tmp()
 
@@ -1321,16 +1587,27 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRVecDot(res, args[0], args[1], tstr))
             return res
 
-        # ── Vector REDUCE:  __vreduce_{type} ──────────────────────────────────
+        # ── Vector REDUCE:  __vreduce_{type} (sum) / __vreduce_max_{type} (max) ─
+        # Only ADD and MAX are wired: verified working on the fixed toolchain.
+        # MIN/MUL/OR/XOR/AND/XNOR reduce return 0 in the simulator, so they are
+        # deliberately NOT exposed (same policy as the native abs/max/min opcodes).
         if fname and fname.startswith('__vreduce_') and len(args) >= 1:
-            tstr = '$' + fname[10:]
-            self._emit(IRVecReduce(res, args[0], tstr)); return res
+            rest = fname[10:]                          # "vi8" or "max_vi8"
+            if rest.startswith('max_'):
+                op, tstr = '$max', '$' + rest[4:]
+            else:
+                op, tstr = '+', '$' + rest
+            self._emit(IRVecReduce(res, args[0], tstr, op)); return res
 
         # ── Default: regular function call ────────────────────────────────────
         self._emit(IRCall(res, fname, args))
         return res
 
     def _arrayref(self, node):
+        a = self._eval_addr(node)
+        if a is not None:
+            return self._addr_load(a)
+        # Legacy fallback: bases _eval_addr doesn't claim (struct fields, etc.)
         base, off = self._array_base_off(node)
         res = self._tmp()
         is_id = isinstance(node.name, A.ID)
@@ -1344,8 +1621,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._emit(IRGlobalLoad(res, gd.dmem_addr, off, elem_bytes=gd.elem_bytes,
                                          unsigned=unsigned))
                 return res
-        # Pointer variable or local array: load from computed address
-        eb = self._get_esz(node.name) if is_id else 8
+        # Pointer variable or local array: load from computed address.
+        # For a pointer use the POINTEE width (int* -> 4), NOT _get_esz which
+        # returns the 8-byte DMEM stride for pointers; the address offset was
+        # already computed with that stride in _array_base_off.
+        if is_id and name in self._ptr_elem_bytes:
+            eb = self._ptr_elem_bytes[name]
+        else:
+            eb = self._get_esz(node.name) if is_id else 8
         self._emit(IRLoad(res, base, off, eb, unsigned=unsigned))
         return res
 
@@ -1417,8 +1700,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
     def _emit_cond(self, cond, true_lbl, false_lbl):
         if isinstance(cond, A.BinaryOp) and cond.op in ('>','<','>=','<=','==','!='):
-            l = self._visit_expr(cond.left)
-            r = self._visit_expr(cond.right)
+            l = self._visit_operand(cond.left)
+            r = self._visit_operand(cond.right)
             self._emit(IRCondJump(l, cond.op, r, true_lbl, false_lbl))
             return
         val = self._visit_expr(cond)

@@ -54,9 +54,11 @@ class IRAssign:
     def __repr__(self): return f"{self.dest} = {self.src}"
 
 class IRBinOp:
-    """dest = left op right"""
-    def __init__(self, dest, op, left, right):
+    """dest = left op right.  `unsigned` selects the $u type tag where signedness
+    changes the operation (e.g. '>>' logical vs arithmetic)."""
+    def __init__(self, dest, op, left, right, unsigned=False):
         self.dest = dest; self.op = op; self.left = left; self.right = right
+        self.unsigned = unsigned
     def __repr__(self): return f"{self.dest} = {self.left} {self.op} {self.right}"
 
 class IRUnaryOp:
@@ -233,10 +235,13 @@ class IRVecDot128:
         return f"{self.dest} = dot128({self.type_str}) ({self.a_lo}:{self.a_hi}) . ({self.b_lo}:{self.b_hi})"
 
 class IRVecReduce:
-    """dest = $vreduce (type_str) src  — sum all vector elements"""
-    def __init__(self, dest, src, type_str):
-        self.dest = dest; self.src = src; self.type_str = type_str
-    def __repr__(self): return f"{self.dest} = vreduce({self.type_str}) {self.src}"
+    """dest = $vreduce <op> (type_str) src  — reduce all vector elements.
+    op is the sub-opcode token: '+' (sum) or '$max' (horizontal max).
+    Only '+' and '$max' are emitted -- MIN/MUL/AND/OR/XOR/XNOR are
+    simulator-broken (return 0), verified on the fixed toolchain."""
+    def __init__(self, dest, src, type_str, op='+'):
+        self.dest = dest; self.src = src; self.type_str = type_str; self.op = op
+    def __repr__(self): return f"{self.dest} = vreduce({self.op},{self.type_str}) {self.src}"
 
 class IRNop:
     """$nop  — no operation"""

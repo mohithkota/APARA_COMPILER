@@ -949,6 +949,10 @@ class CodeGen:
             return
 
         apara = self._APARA_OP.get(op, op)
+        # All integer ALU ops use $i64 (64-bit two's-complement). Signedness
+        # would only matter for '>>' (logical vs arithmetic), but the sim's
+        # $u64 shift path is broken (returns 0), so $i64 is kept -- see the
+        # note in ir_gen._binop.
         l_reg, l_bor = self._operand_reg(ir.left, protect=[d] + sn)
 
         if isinstance(ir.right, Const):
@@ -1288,7 +1292,7 @@ class CodeGen:
         sn       = [ir.src.name] if isinstance(ir.src, Temp) else []
         dest     = self._alloc_reg(ir.dest, protect=sn)
         src, bor = self._operand_reg(ir.src, protect=[ir.dest.name])
-        self._emit(f"$vreduce + {dest} ({ir.type_str}) {src}")
+        self._emit(f"$vreduce {getattr(ir, 'op', '+')} {dest} ({ir.type_str}) {src}")
         if bor: self._ra.unborrow(src)
 
     def _gen_IRHalt(self, ir):

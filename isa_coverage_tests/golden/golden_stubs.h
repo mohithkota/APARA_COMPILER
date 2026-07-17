@@ -174,6 +174,29 @@ long long __vreduce_vu16(long long a) { return __vreduce_generic(a, 16, 1); }
 long long __vreduce_vi32(long long a) { return __vreduce_generic(a, 32, 0); }
 long long __vreduce_vu32(long long a) { return __vreduce_generic(a, 32, 1); }
 
+/* ---- VREDUCE MAX: horizontal maximum of all elements (isa.txt: "MAX is
+ * supported for all types"). Verified working on the fixed toolchain, unlike
+ * MIN/MUL/OR/XOR/AND/XNOR which return 0. ---- */
+static long long __vreduce_max_generic(long long a, int nbits, int is_unsigned) {
+    int n = 64 / nbits;
+    unsigned long long mask = (nbits >= 64) ? ~0ULL : (((unsigned long long)1 << nbits) - 1);
+    long long best = 0; int first = 1;
+    for (int i = 0; i < n; i++) {
+        unsigned long long e = ((unsigned long long)a >> (i * nbits)) & mask;
+        long long ev;
+        if (is_unsigned) { ev = (long long) e; }
+        else { int shift = 64 - nbits; ev = ((long long)(e << shift)) >> shift; }
+        if (first || ev > best) { best = ev; first = 0; }
+    }
+    return best;
+}
+long long __vreduce_max_vi8 (long long a) { return __vreduce_max_generic(a, 8,  0); }
+long long __vreduce_max_vu8 (long long a) { return __vreduce_max_generic(a, 8,  1); }
+long long __vreduce_max_vi16(long long a) { return __vreduce_max_generic(a, 16, 0); }
+long long __vreduce_max_vu16(long long a) { return __vreduce_max_generic(a, 16, 1); }
+long long __vreduce_max_vi32(long long a) { return __vreduce_max_generic(a, 32, 0); }
+long long __vreduce_max_vu32(long long a) { return __vreduce_max_generic(a, 32, 1); }
+
 /* ---- DOT: sum of element-wise products, sign/zero-extended per element
  * type before multiply, optionally accumulating into a prior result. ---- */
 static long long __dot_generic(long long a, long long b, int nbits, int is_unsigned,
