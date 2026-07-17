@@ -82,16 +82,15 @@ Every entry is backed by a test verified against gcc (see `testing/feature_sweep
 | **Bit-fields** | ✅ | |
 | **Pointers** — deref, arithmetic, `&x`, `p[i]`, `*p`, comparison, `q-p`, stores, `p++` | ✅ | uniform for local & global targets |
 | `const` | ✅ | |
-| `typedef` of a basic type | ✅ | |
+| `enum` (incl. explicit values `=5`) | ✅ | |
+| `typedef` (basic types **and** anonymous-struct typedefs) | ✅ | |
+| `sizeof` | ✅ | compile-time constant |
+| `static` local variables | ✅ | persist across calls |
+| `goto` / labels | ✅ | |
+| Designated initializers (`{[2]=30}`) | ✅ | |
 | Vector intrinsics (`__vadd/__dot/__vreduce_max`, packed `vu8_t`, …) | ✅ | see APARA ISA |
-| `enum` | ⚠️ | plain `enum{A,B}` ok; **explicit values** (`=5`) not honored yet |
-| `typedef` of an **anonymous** struct | ⚠️ | named structs fine; anon-struct typedef field access wrong |
 | **Floating point** (`+ - * /`) | ❌ | only `$fsqrt` wired — next phase |
 | **Function pointers** | ❌ | blocked at the assembler (can't load a label address) |
-| **`goto`** / labels | ❌ | |
-| **`static`** local variables | ❌ | don't persist across calls |
-| **`sizeof`** | ❌ | returns 0 |
-| **Designated initializers** (`{[2]=30}`) | ❌ | |
 | Variadic functions; real string handling; > 4 args | ❌ | string literals are address-of only |
 
 **Also:** register allocation (28-reg pool + 64-slot spill area) and a full optimizer
@@ -99,8 +98,9 @@ Every entry is backed by a test verified against gcc (see `testing/feature_sweep
 up to −74% static bundles / −99% executed loads on kernels).
 
 **Bottom line:** the **integer** subset of C — the features you use for real algorithms —
-is functionally complete and verified universal (a 13-program novel-algorithm battery passes
-against gcc). Floating point and the ❌ items above are the remaining work.
+is functionally complete and verified universal (a novel-algorithm battery + a 16-feature
+sweep all pass against gcc). The only remaining work is **floating point**, **function
+pointers** (assembler-blocked), and a few niche items (variadics, real strings, > 4 args).
 
 ## Testing
 

@@ -197,6 +197,10 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._var_struct_ptr_type = {}
         # array name → element struct type name (for pts[i].field on struct arrays)
         self._array_struct_elem   = {}
+        # variable name → its C type AST node (for sizeof)
+        self._var_ctype           = {}
+        # enum constant name → integer value
+        self._enum_consts         = {}
         # ── Register caching (optimization) ──────────────────────────────────
         # Maps a named variable -> (value, storage_kind) where value is the
         # Temp/Const currently holding it and storage_kind is 'global' or
@@ -343,6 +347,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 or name in self._global_array_elem)
 
     def _load_var(self, name):
+        if name in self._enum_consts:
+            return Const(self._enum_consts[name])
         info = self._lookup(name)
         if info is None:
             if name in self._func_names:
@@ -656,33 +662,41 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._struct_total_dmem[name] = offset if offset > 0 else 8
         _STRUCT_TOTAL[name]           = self._struct_total_dmem[name]
 
+    def _struct_name_of(self, td):
+        """If TypeDecl `td` denotes a struct -- directly (`struct Pt`) OR via a
+        struct typedef (`Pair`, incl. anonymous-struct typedefs) -- return the
+        registered struct name, else None."""
+        if not isinstance(td, A.TypeDecl):
+            return None
+        inner = td.type
+        if isinstance(inner, A.Struct):
+            if inner.decls:
+                self._register_struct(inner)
+            return inner.name
+        if isinstance(inner, A.IdentifierType):
+            tname = ' '.join(inner.names)
+            if tname in self._struct_layouts:
+                return tname
+        return None
+
     def _record_struct_var(self, var_name, type_node):
-        """Record struct-type and ptr-to-struct-type info for a variable."""
-        if isinstance(type_node, A.TypeDecl) and isinstance(type_node.type, A.Struct):
-            sn = type_node.type
-            if sn.decls:
-                self._register_struct(sn)
-            if sn.name:
-                self._var_struct_type[var_name] = sn.name
+        """Record struct-type and ptr-to-struct-type info for a variable. Works
+        for `struct T v` and for struct-typedef names (`Pair v`)."""
+        if isinstance(type_node, A.TypeDecl):
+            sn = self._struct_name_of(type_node)
+            if sn:
+                self._var_struct_type[var_name] = sn
         elif isinstance(type_node, A.PtrDecl):
-            inner = type_node.type
-            if isinstance(inner, A.TypeDecl) and isinstance(inner.type, A.Struct):
-                sn = inner.type
-                if sn.decls:
-                    self._register_struct(sn)
-                if sn.name:
-                    self._var_struct_ptr_type[var_name] = sn.name
+            sn = self._struct_name_of(type_node.type)
+            if sn:
+                self._var_struct_ptr_type[var_name] = sn
         elif isinstance(type_node, A.ArrayDecl):
             # array of structs: track the element struct type so pts[i].field
-            # can resolve the layout (the array stride is set to the struct size
-            # in visit_Decl after allocation)
-            inner = type_node.type
-            if isinstance(inner, A.TypeDecl) and isinstance(inner.type, A.Struct):
-                sn = inner.type
-                if sn.decls:
-                    self._register_struct(sn)
-                if sn.name:
-                    self._array_struct_elem[var_name] = sn.name
+            # can resolve the layout (the stride is set to the struct size in
+            # visit_Decl after allocation)
+            sn = self._struct_name_of(type_node.type)
+            if sn:
+                self._array_struct_elem[var_name] = sn
 
     def _ptr_struct_type_of(self, expr_node):
         """Return the struct name that expr_node points to, or ''."""
@@ -832,7 +846,37 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         for ext in node.ext:
             if isinstance(ext, A.FuncDef):
                 self._func_names.add(ext.decl.name)
+        self._collect_enums(node)   # register enum constants everywhere
         for ext in node.ext: self.visit(ext)
+
+    def _collect_enums(self, node):
+        """Walk the AST and register every enum's constant values (auto-increment
+        from 0, or an explicit `= expr`)."""
+        if isinstance(node, A.Enum) and node.values is not None:
+            val = 0
+            for e in node.values.enumerators:
+                if e.value is not None:
+                    cv = self._const_int(e.value)
+                    if cv is not None:
+                        val = cv
+                self._enum_consts[e.name] = val
+                val += 1
+        for _, c in node.children():
+            self._collect_enums(c)
+
+    def _const_int(self, node):
+        """Best-effort compile-time integer value of a constant expression."""
+        if isinstance(node, A.Constant):
+            try: return int(node.value, 0)
+            except Exception:
+                try: return ord(node.value.strip("'"))
+                except Exception: return None
+        if isinstance(node, A.UnaryOp) and node.op == '-':
+            v = self._const_int(node.expr)
+            return -v if v is not None else None
+        if isinstance(node, A.ID) and node.name in self._enum_consts:
+            return self._enum_consts[node.name]
+        return None
 
     def visit_Typedef(self, node):
         """Register typedef'd struct types so _STRUCT_TOTAL is populated, and
@@ -864,6 +908,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
         # Detect struct variable BEFORE computing total/esz so _STRUCT_TOTAL is populated.
         self._record_struct_var(node.name, node.type)
+        if node.name:
+            self._var_ctype[node.name] = node.type   # for sizeof
         is_struct_var = node.name in self._var_struct_type
 
         if _is_unsigned_decl(node.type):
@@ -889,6 +935,19 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
         self._record_ptr(node.name, node.type)   # track pointer variables
         is_packed = _is_packed_array_decl(node.type)  # opt-in only; False for 2D/struct/ptr
+        # A `static` local persists across calls -> allocate it as a hidden
+        # GLOBAL (initialized once in data.map), but bind the LOCAL name to that
+        # global so references inside the function resolve to it.
+        if self._func_name is not None and 'static' in (node.storage or []):
+            gname = f"__static_{self._func_name}_{node.name}"
+            gd = self._alloc_global(gname, total, esz, init_vals, packed=is_packed)
+            self._define(node.name, 'global', gd)      # local name -> the global cell
+            if gname in self._global_array_elem:        # carry array metadata over
+                self._global_array_elem[node.name] = self._global_array_elem[gname]
+                self._array_elem[node.name] = self._global_array_elem[gname]
+            if node.name in self._array_struct_elem:
+                pass  # (struct arrays already keyed by node.name)
+            return
         if self._func_name is None:
             self._alloc_global(node.name, total, esz, init_vals, packed=is_packed)
         else:
@@ -934,6 +993,22 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             try: return [int(init_node.value, 0)]
             except: return [0]
         if isinstance(init_node, A.InitList):
+            # designated array initializers: {[2]=30, [4]=50} -> place each value
+            # at its index, zero-fill the gaps (built up to the highest index).
+            if any(isinstance(e, A.NamedInitializer) for e in init_node.exprs):
+                d = {}; idx = 0
+                for e in init_node.exprs:
+                    if isinstance(e, A.NamedInitializer):
+                        ci = self._const_int(e.name[0]) if e.name else None
+                        if ci is not None: idx = ci
+                        vals_e = self._flatten_init(e.expr)
+                    else:
+                        vals_e = self._flatten_init(e)
+                    for k, v in enumerate(vals_e):
+                        d[idx + k] = v
+                    idx += len(vals_e)
+                n = max(d) + 1 if d else 0
+                return [d.get(i, 0) for i in range(n)]
             vals = []
             for expr in init_node.exprs: vals.extend(self._flatten_init(expr))
             return vals
@@ -1184,6 +1259,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def visit_Continue(self, node):
         if self._cont_to: self._emit(IRJump(self._cont_to))
 
+    def _goto_label(self, name):
+        # labels are function-scoped in C; mangle with the function name so two
+        # functions can reuse the same label without colliding in the flat IR.
+        return f"Lg_{self._func_name}_{name}"
+
+    def visit_Goto(self, node):
+        self._emit(IRJump(self._goto_label(node.name)))
+
+    def visit_Label(self, node):
+        self._emit(IRLabel(self._goto_label(node.name)))
+        self.visit(node.stmt)
+
     def visit_Return(self, node):
         # Return value decays too (`return arr;` yields the array's address)
         val = self._visit_operand(node.expr) if node.expr else None
@@ -1330,6 +1417,22 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRLabel(el))
         return res
 
+    def _ctype_bytes(self, t):
+        """C-level byte size of a type node (pointers are 8 bytes; other types
+        via _type_size)."""
+        if isinstance(t, A.PtrDecl):
+            return 8
+        return _type_size(t)
+
+    def _sizeof_bytes(self, node):
+        """Compile-time sizeof: a Typename (sizeof(int)), or a variable
+        (sizeof(x) / sizeof(arr)) via its recorded C type. Returns C bytes."""
+        if isinstance(node, A.Typename):
+            return self._ctype_bytes(node.type)
+        if isinstance(node, A.ID) and node.name in self._var_ctype:
+            return self._ctype_bytes(self._var_ctype[node.name])
+        return 4   # fallback: an unknown scalar expression
+
     def _unary(self, node):
         op = node.op
         if op in ('p++','p--','++','--'):
@@ -1356,6 +1459,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRBinOp(res, '+' if op=='++' else '-', old, delta))
             self._assign_lval(node.expr, res)
             return res
+        if op == 'sizeof':
+            return Const(self._sizeof_bytes(node.expr))
         if op == '-':
             v = self._visit_expr(node.expr); res = self._tmp()
             self._emit(IRBinOp(res, '-', Const(0), v)); return res

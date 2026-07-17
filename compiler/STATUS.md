@@ -23,16 +23,15 @@ Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/univers
 | bit-fields | ✅ | |
 | Pointers (deref/arith/&x/p[i]/*p/cmp/q-p/stores/p++) | ✅ | uniform local & global |
 | const | ✅ | |
-| typedef of a basic type | ✅ | |
+| enum (incl. explicit values =5) | ✅ | |
+| typedef (basic + anonymous-struct typedefs) | ✅ | |
+| sizeof | ✅ | compile-time constant |
+| static local variables | ✅ | persist across calls |
+| goto / labels | ✅ | |
+| designated initializers ({[2]=30}) | ✅ | |
 | Vector intrinsics (__vadd/__dot/__vreduce_max, vu8_t) | ✅ | |
-| enum | ⚠️ | explicit values (=5) not honored |
-| typedef of an anonymous struct | ⚠️ | named ok; anon field access wrong |
 | Floating point (+ - * /) | ❌ | only $fsqrt — next phase |
 | Function pointers | ❌ | blocked at assembler |
-| goto / labels | ❌ | |
-| static local variables | ❌ | don't persist |
-| sizeof | ❌ | returns 0 |
-| designated initializers ({[2]=30}) | ❌ | |
 | variadic funcs; real strings; >4 args | ❌ | strings are address-of only |
 
 Integer subset is functionally complete + verified universal (13/13 novel-algorithm
@@ -40,7 +39,29 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-17 — LICM correctness fix: `&&`/`||` loop conditions now work (u5 fixed). Universal battery 13/13 (Latest)
+## 2026-07-17 — FEATURE SWEEP GREEN: sizeof, enum, static locals, goto, designated inits, anon-struct typedef all implemented (16/16) (Latest)
+
+Divide-and-conquer of the coverage table's ⚠️/❌ integer items. Six fixes, each
+gated (feature sweep + real suite + pointer battery), zero regressions:
+- **sizeof** — compile-time constant via `_type_size`; tracks each var's C type
+  (`_var_ctype`); pointers = 8B. (was: returned 0)
+- **enum** — pre-pass `_collect_enums` registers every enum constant (auto-inc or
+  explicit `=expr`); `_load_var` resolves them. (was: explicit values ignored)
+- **static locals** — allocated as a hidden global (`__static_<fn>_<name>`,
+  persists in data.map), local name bound to it. (was: reset each call)
+- **goto/labels** — `visit_Goto`/`visit_Label` (function-mangled label names).
+- **designated array initializers** `{[2]=30}` — `_flatten_init` handles
+  `NamedInitializer`, sparse-fills with zeros.
+- **anonymous-struct typedef** (`typedef struct{..} Pair; Pair p;`) — new
+  `_struct_name_of` resolves a struct-typedef IdentifierType to its struct, so
+  `_record_struct_var` recognizes `Pair p` as a struct.
+
+Verified: feature sweep 16/16 (testing/feature_sweep/), universal 14/14, pointer
+battery 15/15, real suite 0 err. The C-feature coverage table above is now all-✅
+for the integer subset; only floating point, function pointers (assembler-
+blocked), variadics, real strings, and >4 args remain.
+
+## 2026-07-17 — LICM correctness fix: `&&`/`||` loop conditions now work (u5 fixed). Universal battery 13/13
 
 Last universality gap (u5 sieve) root-caused to a LICM bug, NOT a control-flow
 codegen bug. A short-circuit `&&`/`||` (or a comparison) in a loop condition
