@@ -19,7 +19,7 @@ configurable default. All programs compiled uniformly.
 | u1_bubblesort | LOCAL array init + in-place swaps | **PASS (fixed)** |
 | u5_sieve | global array + `results[n++]` + `i<30 && n<5` | FAIL |
 | u7_struct_ptr_algo | array of structs, `&pts[i]`, `p->x` | FAIL |
-| u8_reverse_accumulate | pointer swap `*lo=*hi` into a LOCAL array | FAIL |
+| u8_reverse_accumulate | pointer swap `*lo=*hi` into a LOCAL array | **PASS (fixed)** |
 
 ## FIXED this session
 **Local array initializer** (`int a[3]={11,22,33}`): visit_Decl InitList store
@@ -42,3 +42,33 @@ ir_gen.py: use `_array_elem[name]` (DMEM stride) for BOTH offset and width.
 ## Gate (run after every fix; same discipline as the pointer campaign)
 Battery u1-u8 must only go UP; real suite (pointer/test_pointer, array/*,
 matmul_n16) + pointer battery t01-t15 must stay 0 err / 15/15.
+
+## Update 2026-07-17 (session cont.): u8 FIXED
+Pointer-store-into-local-array (u8) fixed by unifying the local array element
+convention with globals: local `int` arrays now use element width ($i32,
+bits[63:32]) instead of the 8-byte stride ($i64), so pointers into local and
+global arrays behave identically. Universal 6/9 -> 8/10 core (u8 pass); pointer
+battery 15/15; real suite + wider regression 0 err. OPEN: u5 (sieve all-0),
+u7 (array-of-structs `&pts[i]`/`p->x` wrong fields).
+
+## u7 (array-of-structs) — ROOT-CAUSED as a FEATURE GAP (not a quick bug)
+Reproducer: `u7_isolate_struct_array.c` (also testing/ptr_isolate/sa.c).
+Struct arrays are NOT modeled as arrays-of-structs — they are FLATTENED:
+`struct Pt pts[3]={{1,2},...}` init flattens to 6 scalars, so `_alloc_global`
+records pts as a 6-element stride-8 array (`_global_array_elem['pts']=8`), NOT a
+3-element stride-16 (`_struct_total_dmem['Pt']=16`) struct array. Consequences:
+- `pts[i].x` -> `_structref_base_and_total_off` has no ArrayRef case -> returns
+  Const(0) -> reads address 0 -> all 0.
+- `struct Pt *p=&pts[1]; p->x` -> off by a field, because pts stride is 8 not 16.
+- `_record_struct_var` doesn't handle ArrayDecl-of-struct -> no element struct
+  type tracked for the array.
+FIX (coordinated, gated campaign — do fresh):
+1. Model struct arrays: stride = _struct_total_dmem[elem_struct]; track element
+   struct type (e.g. `_array_struct_elem[name]='Pt'`) in _record_struct_var for
+   ArrayDecl-of-struct; don't flatten the alloc to per-scalar.
+2. Add an ArrayRef case to `_structref_base_and_total_off`: base=&arr[i] (via
+   _eval_addr with the struct stride), struct_name from the element type, then
+   add the field offset.
+3. `&pts[i]` / pointer-to-struct-element: pointee stride = struct size, set
+   _var_struct_ptr_type so `p->field` resolves.
+Gate on struct/2D tests (array/test_struct, test_2d) which must stay green.

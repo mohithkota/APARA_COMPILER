@@ -495,10 +495,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     return _Addr(loc.dmem_addr, None, Const(0), stride,
                                  loc.elem_bytes, unsigned, 'global')
                 stride = self._array_elem.get(name, 8)
+                # element WIDTH (int->4/$i32), NOT the 8-byte stride. Using the
+                # stride made local int arrays access as $i64 (value in low
+                # bits) while global arrays and pointers use $i32 (bits[63:32]),
+                # so a pointer store into a local array wrote the wrong half.
+                eb = self._local_elem_bytes.get(name, stride)
                 base = self._tmp()
                 self._emit(IRLoadAddr(base, loc))
-                # eb == stride replicates _get_esz for local arrays
-                return _Addr(None, base, Const(0), stride, stride,
+                return _Addr(None, base, Const(0), stride, eb,
                              unsigned, 'local')
             return None
         if isinstance(node, A.ArrayRef):
@@ -871,13 +875,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     base = self._tmp()
                     self._emit(IRLoadAddr(base, fp_off))
                     # Elements sit at the DMEM stride (8 per word for non-packed
-                    # arrays), and a local array element is accessed as a full
-                    # stride-wide word (the reads use $ld of that width), so the
-                    # init store must use `stride` for BOTH the offset AND the
-                    # width -- using esz mis-placed and mis-sized the values.
+                    # arrays) but are accessed at the element WIDTH (esz -> $i32
+                    # for int, value in bits[63:32]), consistent with global
+                    # arrays and pointers. Offset uses stride; width uses esz.
                     stride = self._array_elem.get(node.name, max(esz, 8))
                     for i, v in enumerate(init_vals):
-                        self._emit(IRStore(base, Const(i * stride), Const(v), stride))
+                        self._emit(IRStore(base, Const(i * stride), Const(v), esz))
                 elif not is_arr and not is_struct_var:
                     # RHS may be an array name / pointer expression that decays
                     # to an address (e.g. `int *p = arr`), so use _visit_operand.

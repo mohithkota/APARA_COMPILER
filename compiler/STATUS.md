@@ -2,7 +2,25 @@
 
 ---
 
-## 2026-07-17 — UNIVERSALITY AUDIT: no codegen bias; local-array-initializer bug FIXED; 3 gaps mapped (Latest)
+## 2026-07-17 — BUG FIX: unified local/global array convention -> pointer store into a LOCAL array now works (u8) (Latest)
+
+Found via the universality test u8 (in-place reverse via pointers into a local
+array). Root cause: local `int` arrays were accessed as $i64 (value in low bits,
+elem_bytes==stride==8) while GLOBAL arrays and POINTERS use $i32 (value in
+bits[63:32], elem_bytes==4). So a pointer store `*pl=88` into a local array wrote
+bits[63:32] but the $i64 read got the low half (0x5800000001). Isolated in
+testing/ptr_isolate/pls.c (global ptr store OK, local ptr store wrong).
+
+Fix (ir_gen.py): unify -- local arrays now use the element WIDTH (via
+`_local_elem_bytes`) as elem_bytes in `_eval_addr`, matching globals+pointers;
+the local-array initializer stores at `esz` width (bits[63:32]) with a stride-8
+offset. Now local and global int arrays, and pointers into either, all use the
+same $i32/bits[63:32] convention.
+
+Verified: pls + u8 pass; universal 9/11 (only u5 sieve, u7 struct-array left);
+pointer battery 15/15; wider regression 10/10 clean; real suite 0 err.
+
+## 2026-07-17 — UNIVERSALITY AUDIT: no codegen bias; local-array-initializer bug FIXED; 3 gaps mapped
 
 Audited for test-specific bias (request: "make it universal"). NO codegen bias:
 the `results` name is used ONLY by the golden-verify harness in compiler.py
