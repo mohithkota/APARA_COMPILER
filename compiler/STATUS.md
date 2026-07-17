@@ -2,7 +2,25 @@
 
 ---
 
-## 2026-07-17 — STRUCT ARRAYS implemented: pts[i].field, &pts[i], p->field, (p+1)->field (u7 fixed) (Latest)
+## 2026-07-17 — LICM correctness fix: `&&`/`||` loop conditions now work (u5 fixed). Universal battery 13/13 (Latest)
+
+Last universality gap (u5 sieve) root-caused to a LICM bug, NOT a control-flow
+codegen bug. A short-circuit `&&`/`||` (or a comparison) in a loop condition
+produces a result temp assigned TWICE (res=0 / res=1 on the two arms). LICM
+treated the `res=Const(0)` arm as loop-invariant (constant source) and hoisted it
+out of the loop, so `while(a && b)` evaluated the condition once with stale values
+and the body never ran (u5 all zeros). Confirmed via APARA_NO_LOOPOPT=1 (passed).
+Fix (licm.py): never hoist an instruction whose destination is assigned more than
+once in the loop (control-dependent). Legit invariants (addresses/loads, defined
+once) are unaffected -- LICM wins preserved (matmul_n16 124->72, etc.).
+
+Verified: c1/c4/b2 (`&&` loops) + u5 pass; **universal battery 13/13** (all novel
+algorithms: bubblesort, binsearch, gcd, popcount, sieve, matrix transpose,
+struct-ptr, in-place reverse); pointer battery 15/15; real suite 0 err; LICM
+bundle reductions intact. Integer C (scalar + vector + pointers + structs +
+struct-arrays + control flow) is now functionally universal.
+
+## 2026-07-17 — STRUCT ARRAYS implemented: pts[i].field, &pts[i], p->field, (p+1)->field (u7 fixed)
 
 Executed testing/universal/STRUCT_ARRAY_PLAN.md (3 gated steps). Arrays of
 structs now work; they were previously flattened at allocation and had no

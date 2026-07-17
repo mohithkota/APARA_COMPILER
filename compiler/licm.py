@@ -111,8 +111,17 @@ def _hoist_one(instrs, s, e, def_map):
             return instrs
 
     loop_defs = set()
+    multi_def = set()          # names assigned more than once in the loop
     for k in region:
-        loop_defs.update(_dest_names(instrs[k]))
+        for d in _dest_names(instrs[k]):
+            if d in loop_defs:
+                multi_def.add(d)
+            loop_defs.add(d)
+    # A temp assigned more than once in the loop is control-dependent (e.g. the
+    # res=0 / res=1 arms of a short-circuit `&&`/`||` or a comparison result).
+    # Hoisting one such assignment out evaluates the condition once with stale
+    # values -> the loop mis-behaves (e.g. `while(a && b)` never runs). Never
+    # hoist a multiply-defined destination.
 
     # summary of memory written inside the loop
     clobber_all = False
@@ -148,6 +157,8 @@ def _hoist_one(instrs, s, e, def_map):
             if k in inv: continue
             ins = instrs[k]
             if type(ins).__name__ not in _HOISTABLE: continue
+            if any(d in multi_def for d in _dest_names(ins)):
+                continue   # control-dependent (multiply-assigned) -> not invariant
             if not all((sn not in loop_defs) or (sn in inv_dests) for sn in _src_names(ins)):
                 continue
             if type(ins).__name__ in _LOAD_KINDS and not load_safe(ins):

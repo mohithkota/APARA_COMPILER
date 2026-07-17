@@ -76,3 +76,11 @@ Gate on struct/2D tests (array/test_struct, test_2d) which must stay green.
 ## Update 2026-07-17: u7 (struct arrays) FIXED
 Executed STRUCT_ARRAY_PLAN.md — arrays of structs now work (pts[i].field,
 &pts[i], p->field, (p+1)->field). Universal 11/12; only u5 (sieve) remains.
+
+## Update 2026-07-17: u5 (sieve) FIXED — UNIVERSAL BATTERY 13/13
+Root cause was a LICM bug, not control flow: a short-circuit `&&`/`||` in a loop
+condition makes a result temp assigned twice (res=0/res=1); LICM hoisted the
+constant arm out of the loop so `while(a && b)` ran the body zero times. Fix
+(licm.py): never hoist a destination assigned >1 time in the loop. All novel
+algorithms now pass; LICM optimization wins preserved (matmul_n16 124->72).
+INTEGER C IS NOW FUNCTIONALLY UNIVERSAL (13/13 novel-algorithm battery).
