@@ -72,3 +72,7 @@ FIX (coordinated, gated campaign — do fresh):
 3. `&pts[i]` / pointer-to-struct-element: pointee stride = struct size, set
    _var_struct_ptr_type so `p->field` resolves.
 Gate on struct/2D tests (array/test_struct, test_2d) which must stay green.
+
+## Update 2026-07-17: u7 (struct arrays) FIXED
+Executed STRUCT_ARRAY_PLAN.md — arrays of structs now work (pts[i].field,
+&pts[i], p->field, (p+1)->field). Universal 11/12; only u5 (sieve) remains.

@@ -195,6 +195,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._var_struct_type     = {}
         # variable name → struct type name (for '->' access via pointer-to-struct)
         self._var_struct_ptr_type = {}
+        # array name → element struct type name (for pts[i].field on struct arrays)
+        self._array_struct_elem   = {}
         # ── Register caching (optimization) ──────────────────────────────────
         # Maps a named variable -> (value, storage_kind) where value is the
         # Temp/Const currently holding it and storage_kind is 'global' or
@@ -440,6 +442,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._ptr_elem_bytes[name] = _elem_size(pointed)
             except Exception:
                 self._ptr_elem_bytes[name] = 8
+            # pointer-to-struct: p+1 advances by a whole struct (its DMEM size),
+            # not 8, so (p+1)->field lands on the next struct element.
+            if isinstance(pointed, A.TypeDecl) and isinstance(pointed.type, A.Struct) \
+                    and pointed.type.name:
+                sz = self._struct_total_dmem.get(pointed.type.name)
+                if sz:
+                    self._ptr_stride[name] = sz
 
     # ── central address evaluator (REFACTOR_PLAN.md) ─────────────────────────
 
@@ -663,6 +672,17 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     self._register_struct(sn)
                 if sn.name:
                     self._var_struct_ptr_type[var_name] = sn.name
+        elif isinstance(type_node, A.ArrayDecl):
+            # array of structs: track the element struct type so pts[i].field
+            # can resolve the layout (the array stride is set to the struct size
+            # in visit_Decl after allocation)
+            inner = type_node.type
+            if isinstance(inner, A.TypeDecl) and isinstance(inner.type, A.Struct):
+                sn = inner.type
+                if sn.decls:
+                    self._register_struct(sn)
+                if sn.name:
+                    self._array_struct_elem[var_name] = sn.name
 
     def _ptr_struct_type_of(self, expr_node):
         """Return the struct name that expr_node points to, or ''."""
@@ -693,6 +713,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 # Chained: accumulate offset from parent
                 base, parent_off, _, sub = self._structref_base_and_total_off(node.name)
                 struct_name = sub or ''
+            elif isinstance(node.name, A.ArrayRef):
+                # pts[i].field on a struct array: address of pts[i] (via the
+                # central _eval_addr, which now advances by the struct stride),
+                # then add the field offset from the element struct's layout.
+                a = self._eval_addr(node.name)
+                arr = node.name.name
+                arr_name = arr.name if isinstance(arr, A.ID) else None
+                if a is None or arr_name not in self._array_struct_elem:
+                    return Const(0), 0, 8, None
+                base = self._addr_value(a)
+                struct_name = self._array_struct_elem[arr_name]
+                parent_off = 0
             else:
                 return Const(0), 0, 8, None
 
@@ -888,6 +920,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     addr = self._tmp()
                     self._emit(IRLoadAddr(addr, fp_off))
                     self._emit(IRStore(addr, Const(0), val, esz))
+        # A struct array's per-element INDEXING stride is the struct's DMEM size
+        # (fields are 8-byte-strided; the flat data written above is already
+        # correct). Set it AFTER init so pts[i] advances by a whole struct.
+        if node.name in self._array_struct_elem:
+            ssize = self._struct_total_dmem.get(self._array_struct_elem[node.name], 8)
+            if node.name in self._global_array_elem:
+                self._global_array_elem[node.name] = ssize
+            self._array_elem[node.name] = ssize
 
     def _flatten_init(self, init_node):
         if isinstance(init_node, A.Constant):

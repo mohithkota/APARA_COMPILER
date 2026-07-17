@@ -1,5 +1,7 @@
 # Struct-array support — campaign plan (start here)
 
+> **STATUS: EXECUTED 2026-07-17 — DONE.** u7 fixed (sa.c 8/8, u7 pass); universal 11/12; pointer battery 15/15; real suite 0 err.
+
 Goal: make arrays of structs work — `pts[i].field`, `&pts[i]`, and
 `struct T *p = &pts[i]; p->field`, `(p+1)->field` — with ZERO regressions on the
 struct/2D tests. Follows the gated-campaign method that made the pointer refactor

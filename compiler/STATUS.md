@@ -2,7 +2,25 @@
 
 ---
 
-## 2026-07-17 — BUG FIX: unified local/global array convention -> pointer store into a LOCAL array now works (u8) (Latest)
+## 2026-07-17 — STRUCT ARRAYS implemented: pts[i].field, &pts[i], p->field, (p+1)->field (u7 fixed) (Latest)
+
+Executed testing/universal/STRUCT_ARRAY_PLAN.md (3 gated steps). Arrays of
+structs now work; they were previously flattened at allocation and had no
+`pts[i].field` access path.
+1. `_record_struct_var` now handles ArrayDecl-of-struct -> tracks element struct
+   type in new `_array_struct_elem`; visit_Decl overrides the array's indexing
+   stride to the struct DMEM size (`_struct_total_dmem`, e.g. 16) AFTER the flat
+   init (the flat 8-byte-word data layout was already correct).
+2. `_structref_base_and_total_off` gained an ArrayRef case: `pts[i].field` ->
+   address of pts[i] via `_eval_addr` (now struct-strided) + field offset from
+   `_struct_layouts`.
+3. `_record_ptr` sets a pointer-to-struct's stride to the struct size so
+   `(p+1)->field` advances by a whole struct.
+Verified: sa.c 8/8 and u7_struct_ptr_algo pass; universal 11/12 (only u5 sieve
+left); pointer battery 15/15; real suite (struct/2D/array/pointer/matmul/spill/
+ldst/subword/call-return) 0 err.
+
+## 2026-07-17 — BUG FIX: unified local/global array convention -> pointer store into a LOCAL array now works (u8)
 
 Found via the universality test u8 (in-place reverse via pointers into a local
 array). Root cause: local `int` arrays were accessed as $i64 (value in low bits,
