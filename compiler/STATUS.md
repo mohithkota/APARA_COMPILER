@@ -31,7 +31,7 @@ Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/univers
 | designated initializers ({[2]=30}) | ✅ | |
 | Vector intrinsics (__vadd/__dot/__vreduce_max, vu8_t) | ✅ | |
 | Floating point (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–07 vs gcc; gaps: struct float fields, float truthiness |
-| Function pointers | ❌ | blocked at assembler |
+| Function pointers (assign, call, callbacks, tables, &f, ==, returns) | ✅ | compile-time linker pass; fn01–04 vs gcc |
 | variadic funcs; real strings; >4 args | ❌ | strings are address-of only |
 
 Integer subset is functionally complete + verified universal (13/13 novel-algorithm
@@ -39,7 +39,62 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-18 — FP STEP 7 DONE: bit-exact float result verification (fp09 6/6) — FP CAMPAIGN FULLY COMPLETE (Latest)
+## 2026-07-18 — FUNCTION POINTERS DONE: compiler-side linker pass unblocks them without any toolchain change (fn01–04 16/16) (Latest)
+
+Function pointers were "blocked at the assembler" (2026-06-17: $set's grammar
+only takes numeric immediates, so no way to materialize a label's address).
+Re-examined today: the block dissolves because the **compiler can act as the
+linker** — after bundling, every label's final instruction address is fully
+determined by mcode_align's layout rule, so the compiler patches numeric
+addresses into $set placeholders itself. The .py pipeline still only emits
+text; no assembler invocation, no toolchain change.
+
+**Layout rule replicated** (McodeProgram::Align_Bundles +
+McodeInstructionBundle::Calculate_Capacity): a bundle holding any CTI
+(?-branch/$call/$return), load/store, divide, or $fsqrt gets capacity 8;
+otherwise instruction count rounds up to 1/2/4/8. Bundles are null-padded to
+capacity and placed at the next capacity-aligned address. For full bundles the
+aligner moves the CTI to lane 0, so a $call's own address = its bundle's base
+address. Verified: computed addresses match mcode_align's `// pc=0x..`
+annotations exactly.
+
+**Second discovery — indirect $call is PC-RELATIVE**: the old assumption
+(ISA §6.2, "target read from bottom 32 bits") is wrong at the implementation:
+`___execute_call_operation___` computes `npc = call_instr_addr +
+(int32_t)reg` for the register form too (McodeExecute.cpp:408-416).
+Convention chosen: function-pointer VALUES stay absolute (so fp==func
+comparisons and storage work); each indirect call site converts just before
+the call:
+
+    $set $r25 0 __icall_K     ← patched to THIS call's bundle address
+    -    $r1 ($i64) $r1 $r25  ← absolute target − call site
+    $call $r1
+
+**Implementation** (the IR/codegen scaffolding from June already existed):
+- `bundler.resolve_code_labels(text)` — post-bundling linker pass: replicates
+  the aligner layout, patches `$set rN 0 <func_label>` → absolute address and
+  `$set rN 0 __icall_K` → bundle address of the next register-indirect $call
+  (safe pairing: scheduling never crosses a CTI, and each placeholder's call
+  terminates its own basic block). Fails loudly on unresolved labels.
+- `bundler._parse_deps`: `$call $rN` now READS rN (real hazard gap — the
+  bundler could previously have packed the target computation into the call's
+  own bundle).
+- `codegen._gen_IRIndirectCall`: emits the 3-instruction conversion above;
+  $r25 is safe scratch there (all live temps already caller-saved).
+- `compiler.py`: runs resolve_code_labels right after bundle_mcode.
+
+**New suite `testing/fnptr/` fn01–fn04 = 16/16 golden checks vs gcc**:
+fn01 assign/call/reassign/(*fp)/nested fp(fp(..)); fn02 callbacks (fp param,
+fold over array); fn03 dispatch table (local array of fps, ops[i](..));
+fn04 &func form, fp returned from function, fp == func-name comparison,
+global fp. Full gate green after: feature_sweep 16/16, universal 21/21,
+pointer_bugs 15/15, fp01–09 50/50 — zero regressions.
+
+Remaining ❌: variadic functions, real string support, >4 args.
+
+---
+
+## 2026-07-18 — FP STEP 7 DONE: bit-exact float result verification (fp09 6/6) — FP CAMPAIGN FULLY COMPLETE
 
 The last (optional) FP item. `try_golden_verify` (compiler.py) now supports two
 new golden-convention arrays alongside `results`: **`fresults[]`** (float) and
@@ -3324,7 +3379,7 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | Sub-word LD/ST ($i32,$i16,$i8) | Blocked | Engine hardware bug |
 | Register spilling (>28 live vars) | **Done** | 64-slot spill area; hardware-pending |
 | Struct member access (`s.x`, `p->x`, nested) | **Done** | 8B/field, recursive chain |
-| Function pointers | Not started | |
+| Function pointers | **Done** | compile-time linker pass (2026-07-18); fn01–04 vs gcc |
 | Pointer arithmetic (all ops) | **Done** | stride=8 APARA alignment |
 | 2D arrays (global + local + params) | **Done** | row-major, array decay |
 | Float arithmetic (+,-,*,/) | **Done** | f32+f64 arith/cmp/casts/vars/arrays/params, fp01–07 vs gcc |
@@ -3336,11 +3391,11 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | # | Feature | Effort | Blocker |
 |---|---------|--------|---------|
 | 1 | **Register spilling** (>28 live vars) | Done ✓ | — |
-| 2 | **Function pointers** | Medium | None — next |
+| 2 | **Function pointers** | Done ✓ | compile-time linker pass, 2026-07-18 |
 | 3 | **Float arithmetic** (+,-,*,/) | Done ✓ | full scalar f32/f64 subset, 2026-07-18 |
 | 4 | **Sub-word LD/ST** ($i32/$i16/$i8) | Low | **Hardware engine bug** |
 
-**Overall compiler completeness: ~88% of a basic C compiler**
+**Overall compiler completeness: ~92% of a basic C compiler**
 
 ---
 

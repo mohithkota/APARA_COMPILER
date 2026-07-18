@@ -556,8 +556,11 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     mcode = header + body
 
     # ── VLIW bundle optimisation ──
-    from bundler import bundle_mcode
+    from bundler import bundle_mcode, resolve_code_labels
     mcode, n_before, n_after = bundle_mcode(mcode)
+    # Linker pass: patch function-address / indirect-call-site $set placeholders
+    # with the numeric bundle addresses mcode_align will assign (see bundler.py).
+    mcode = resolve_code_labels(mcode)
 
     # ── Output paths — all files go into a named subfolder ──
     c_base = os.path.splitext(os.path.basename(c_file))[0]

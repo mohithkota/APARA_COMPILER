@@ -86,8 +86,13 @@ def _parse_deps(text):
         return frozenset(), frozenset(), True, None, None
 
     if t.startswith('$call'):
-        # $call clobbers r1 (return value written on return)
-        return frozenset({'$r1'}), frozenset(), True, None, None
+        # $call clobbers r1 (return value written on return).
+        # Register-indirect form ($call $rN) also READS the target register --
+        # without this the bundler could pack the instruction that computes the
+        # target into the same bundle as the call itself (stale read).
+        m = re.match(r'\$call\s+(\$r\d+)', t)
+        reads = frozenset({m.group(1)}) if m else frozenset()
+        return frozenset({'$r1'}), reads, True, None, None
 
     if t.startswith('$set'):
         # $set $rd N val  →  writes rd
@@ -532,3 +537,120 @@ def bundle_mcode(mcode_text, schedule=True):
     n_after       = len(bundles)
     new_mcode     = _emit_bundles(header, bundles)
     return new_mcode, n_before, n_after
+
+
+# ── Code-label address resolution (post-bundling linker pass) ─────────────────
+#
+# The assembler's $set grammar only accepts numeric immediates, so a function's
+# code address can never be materialized via "$set rd 0 <label>" at the
+# assembler level. But the final instruction address of every label IS fully
+# determined by bundle layout, which mcode_align computes with a simple rule
+# (McodeProgram::Align_Bundles + McodeInstructionBundle::Calculate_Capacity):
+#
+#   capacity = 8 if the bundle holds any CTI (?-branch / $call / $return),
+#              load/store, divide, or $fsqrt (it must be a "full bundle");
+#              otherwise the instruction count rounded up to 1 / 2 / 4 / 8.
+#   Each bundle is null-padded to its capacity and placed at the next address
+#   aligned to that capacity (pad bundles fill the gap). For full bundles the
+#   aligner then moves the CTI to lane 0, so a $call's own instruction address
+#   equals its bundle's base address.
+#
+# Replicating that here lets the COMPILER act as the linker: it patches two
+# kinds of $set placeholders after bundling (layout never changes afterwards --
+# the substitution is text-only and 1:1):
+#
+#   $set $rN 0 <function_label>  ->  the label's absolute word address
+#                                    (function-pointer VALUES are absolute)
+#   $set $rN 0 __icall_<K>       ->  the bundle address of the NEXT
+#                                    register-indirect "$call $rM" in program
+#                                    order. The hardware's indirect call is
+#                                    PC-RELATIVE (npc = call_addr + reg), so
+#                                    codegen subtracts this from the absolute
+#                                    target right before the call.
+
+def _forces_full_bundle(t):
+    """Mirror of the assembler's Has_Cti/Has_Load_Store/Has_Div_Sqrt check."""
+    if t.startswith(('$ld', '$st', '$call', '$return', '$goto', '?', '$fsqrt')):
+        return True
+    if t.startswith('/'):                 # scalar divide (int or float)
+        return True
+    if re.match(r'\$v\s*/', t):           # vector divide
+        return True
+    return False
+
+
+def _bundle_capacity(instrs):
+    if any(_forces_full_bundle(t) for t in instrs):
+        return 8
+    n = len(instrs)
+    for c in (1, 2, 4, 8):
+        if n <= c:
+            return c
+    raise ValueError(f"bundle with {n} instructions exceeds the 8-slot limit")
+
+
+def resolve_code_labels(mcode_text):
+    """Patch $set code-label placeholders (see block comment above) using the
+    exact bundle addresses mcode_align will assign. No-op for programs without
+    placeholders. Raises RuntimeError on an unresolvable placeholder."""
+    lines = mcode_text.split('\n')
+
+    # Pass 1: group lines into bundles, keeping line indices of instructions.
+    bundles, cur, pending = [], None, []
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s or s.startswith('//'):
+            continue
+        if s == '||':
+            cur = {'labels': pending, 'instr_idx': []}
+            pending = []
+        elif s == ';':
+            if cur is not None:
+                bundles.append(cur)
+            cur = None
+        elif s.endswith(':') and cur is None:
+            pending.append(s[:-1])
+        elif cur is not None:
+            cur['instr_idx'].append(i)
+
+    # Pass 2: assign aligned addresses, exactly as mcode_align will.
+    label_addr, addr = {}, 0
+    for b in bundles:
+        cap = _bundle_capacity([lines[i].strip() for i in b['instr_idx']])
+        if addr % cap:
+            addr += cap - (addr % cap)
+        for lbl in b['labels']:
+            label_addr[lbl] = addr
+        b['addr'] = addr
+        addr += cap
+
+    # Pass 3: patch placeholders in place (text-only, layout unchanged).
+    set_re = re.compile(r'^(\s*\$set\s+\$r\d+\s+0\s+)([A-Za-z_]\w*)\s*$')
+    flat = [(b, li) for b in bundles for li in b['instr_idx']]
+    for pos, (b, li) in enumerate(flat):
+        m = set_re.match(lines[li])
+        if not m:
+            continue
+        name = m.group(2)
+        if name.startswith('__icall_'):
+            target = None
+            for b2, l2 in flat[pos + 1:]:
+                if re.match(r'\$call\s+\$r\d+', lines[l2].strip()):
+                    target = b2['addr']
+                    break
+            if target is None:
+                raise RuntimeError(
+                    f"indirect-call placeholder '{name}' has no following "
+                    f"register-indirect $call")
+            lines[li] = m.group(1) + str(target)
+        elif name in label_addr:
+            a = label_addr[name]
+            if a > 0xFFFF:
+                raise RuntimeError(
+                    f"code label '{name}' address 0x{a:x} exceeds $set's "
+                    f"16-bit immediate field")
+            lines[li] = m.group(1) + str(a)
+        else:
+            raise RuntimeError(f"$set references unknown code label '{name}'")
+
+    return '\n'.join(lines)

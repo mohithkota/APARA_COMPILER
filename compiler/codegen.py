@@ -182,6 +182,7 @@ class CodeGen:
         self._spill_map        = {}   # temp_name → FP offset of spill slot
         self._spill_counter    = 0
         self.spilled           = False   # True if any register spill happened
+        self._icall_counter    = 0    # unique id per indirect-call site
 
     # ── public interface ───────────────────────────────────────────────────────
 
@@ -1100,9 +1101,11 @@ class CodeGen:
             self._emit(f"$ld ($i64) {reg} [{FP} + {slot}]")
 
     def _gen_IRFuncAddr(self, ir):
-        """Load the code address of a named function into a register."""
+        """Load the code address of a named function into a register.
+        The assembler's $set grammar cannot resolve a label, so this emits a
+        placeholder that bundler.resolve_code_labels patches to the function's
+        absolute word address once the final bundle layout is known."""
         dest = self._alloc_reg(ir.dest)
-        # $set reg 0 label — assembler resolves the label to its instruction address.
         self._emit(f"$set {dest} 0 {ir.func_name}")
 
     def _gen_IRIndirectCall(self, ir):
@@ -1150,10 +1153,22 @@ class CodeGen:
 
         # 3. Load function pointer into $r1 (RET) and call.
         #    $r1 is free here (not an arg reg, and return value is written after the call).
+        #    Function-pointer VALUES are absolute word addresses, but the
+        #    hardware's register-indirect $call is PC-RELATIVE
+        #    (npc = call_instr_addr + reg, McodeExecute.cpp), so subtract this
+        #    call site's own bundle address first. The __icall_N placeholder is
+        #    patched by bundler.resolve_code_labels, which matches it to the
+        #    next register-indirect $call in program order. $r25 is safe as
+        #    scratch: every live temp was saved in step 1 and is restored in
+        #    step 5, and args/RET/fixed regs are elsewhere.
         if fp_slot is not None:
             self._emit(f"$ld ($i64) {RET} [{FP} + {fp_slot}]")
         elif isinstance(ir.func_ptr, Const):
             self._load_const(RET, ir.func_ptr.value)
+        scr = '$r25'
+        self._emit(f"$set {scr} 0 __icall_{self._icall_counter}")
+        self._icall_counter += 1
+        self._emit(f"- {RET} ($i64) {RET} {scr}")
         self._emit(f"$call {RET}")
 
         # 4. Capture return value (identical pool-full logic to direct call).
