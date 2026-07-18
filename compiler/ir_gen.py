@@ -2,6 +2,7 @@
 APARA Compiler — pycparser AST → Three-Address IR
 """
 
+import sys
 import pycparser
 import pycparser.c_ast as A
 from collections import namedtuple
@@ -747,16 +748,29 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 base, parent_off, _, sub = self._structref_base_and_total_off(node.name)
                 struct_name = sub or ''
             elif isinstance(node.name, A.ArrayRef):
-                # pts[i].field on a struct array: address of pts[i] (via the
-                # central _eval_addr, which now advances by the struct stride),
-                # then add the field offset from the element struct's layout.
+                # pts[i].field on a struct array OR p[i].field on a
+                # ptr-to-struct: address of element i via the central
+                # _eval_addr (which advances by the struct stride — for a
+                # pointer, _ptr_stride holds the struct's dmem size, the same
+                # machinery that makes (p+i)->field work), then add the field
+                # offset from the element struct's layout.
                 a = self._eval_addr(node.name)
                 arr = node.name.name
                 arr_name = arr.name if isinstance(arr, A.ID) else None
-                if a is None or arr_name not in self._array_struct_elem:
-                    return Const(0), 0, 8, None
+                if a is not None and arr_name in self._array_struct_elem:
+                    struct_name = self._array_struct_elem[arr_name]
+                elif (a is not None and arr_name is not None
+                      and self._var_struct_ptr_type.get(arr_name)):
+                    struct_name = self._var_struct_ptr_type[arr_name]
+                else:
+                    # Unknown base shape: fail LOUDLY. The old Const(0)
+                    # fallback silently loaded from DMEM address 0 (fuzz
+                    # seed 4, 2026-07-18).
+                    print(f"\n[COMPILE ERROR] Unsupported struct access "
+                          f"'{arr_name}[...].{field_name}' — base is neither "
+                          f"a struct array nor a pointer-to-struct.")
+                    sys.exit(1)
                 base = self._addr_value(a)
-                struct_name = self._array_struct_elem[arr_name]
                 parent_off = 0
             else:
                 return Const(0), 0, 8, None

@@ -41,7 +41,55 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-18 — >4 NAMED ARGS DONE (ma01–03 12/12) + LATENT LICM/loop_reg CROSS-FUNCTION ALIAS BUG FOUND & FIXED (Latest)
+## 2026-07-18 — FUZZ CAMPAIGN (testing/fuzz/): randomized differential testing; TWO more latent bugs found & fixed (Latest)
+
+New `testing/fuzz/` — `gen_fuzz.py` (seeded random whole-program generator
+mixing every supported feature; UB-free by construction: bounded loops &
+recursion, masked shifts, guarded divisors, 64-bit-forced shift/multiply
+width, no NaN, no u64>>) + `run_campaign.sh` (generate → compile with
+automatic gcc-golden → align/assemble — with toolchain stderr CHECKED, see
+bug 2 — → simulate → classify PASS/FAIL/HANG/TOOLING/COMPILE per seed;
+failing seeds keep their whole directory for triage). Rationale: the LICM
+bug proved gate suites miss whole-program-shape bugs.
+
+**Bug 1 — struct-pointer subscript read garbage (silent wrong values).**
+`p[i].field` where `p` is a POINTER-to-struct (param or var) hit
+`_structref_base_and_total_off`'s ArrayRef branch, which only knew struct
+ARRAYS (`_array_struct_elem`) and silently returned base `Const(0)` — the
+load read DMEM address 0 and produced 0. `(p+i)->field` (semantically
+identical) was always correct, so the stride machinery existed; the fix
+routes the pointer case through `_var_struct_ptr_type` + `_eval_addr`, and
+the residual unknown-shape fallback now FAILS LOUDLY instead of emitting an
+address-0 access. Found by fuzz seeds 4/15 (`pdot(struct P *p, int n)`
+looping `p[i].x * p[i].w - p[i].y`).
+
+**Bug 2 — bundler ignored the hardware's per-bundle LANE LIMITS
+(sim crash / undefined control flow).** A full bundle physically has 4
+load/store lanes and 1 divide/sqrt lane (McodeProgram::
+alignFullBundleToLanes). The bundler packed FIVE independent caller-save
+stores plus a $call into one bundle; mcode_align's lane placement then
+FAILED — it prints an Error (which run scripts discarded via 2>/dev/null)
+but still emits the bundle WITHOUT the CTI moved to lane 0, and the sim's
+return-address arithmetic sent a $return into the MIDDLE of a bundle
+(assertion crash; on hardware, undefined behavior). Trigger: ≥5 temps live
+across a call — increasingly common now that >4-arg/variadic calls save
+more temps. Fixed in both the packer (`_pack_bundles`) and the scheduler
+heuristic (`can_join`): ≤4 ld/st and ≤1 div/sqrt per bundle. Found by fuzz
+seed 68 (plain calls + recursion — no new features involved).
+
+Both fixes verified: repro seeds pass, full gate + fnptr/vararg/many_args
+green.
+
+**Final campaign result (after fixes): seeds 1–400 = 275 PASS, 0 FAIL,
+0 HANG, 0 COMPILE-FAIL** (125 SKIP = generated program exceeded the 0x800-
+word IMEM — size guard, not a failure). Every executed program's every
+results[] slot matched native gcc bit-for-bit. Campaign scoreboard for the
+day: 3 real compiler bugs found (LICM cross-function aliasing, struct-ptr
+subscript, bundler lane limits), all fixed and covered.
+
+---
+
+## 2026-07-18 — >4 NAMED ARGS DONE (ma01–03 12/12) + LATENT LICM/loop_reg CROSS-FUNCTION ALIAS BUG FOUND & FIXED
 
 **>4 named args** — unified with the variadic convention: ALL args beyond the
 first 4 are stack-passed at [FP + 8 + 8*i] in the callee (caller reserves

@@ -56,6 +56,11 @@ def _mem_may_alias(acc, writes):
     return False
 
 
+def _is_div_sqrt(t):
+    """Occupies the single divide/sqrt lane: scalar '/', $fsqrt, vector '/'."""
+    return t.startswith(('/', '$fsqrt')) or bool(re.match(r'\$v\s*/', t))
+
+
 def _parse_deps(text):
     """
     Parse one APARA instruction text.
@@ -319,6 +324,8 @@ def _pack_bundles(flat):
     c_mem_writes = set()   # (base, offset) addresses stored-to in this bundle
     c_mem_reads  = set()   # registers read by $ld/$st instructions in this bundle
     c_ctrl     = False
+    c_ls       = 0         # load/store count (hardware lane limit: 4 per bundle)
+    c_divsqrt  = 0         # divide/sqrt count (hardware lane limit: 1 per bundle)
 
     def flush():
         if c_instrs or c_labels:
@@ -327,7 +334,8 @@ def _pack_bundles(flat):
     def reset():
         c_labels.clear(); c_instrs.clear(); c_writes.clear(); c_mem_writes.clear()
         c_mem_reads.clear()
-        nonlocal c_ctrl; c_ctrl = False
+        nonlocal c_ctrl, c_ls, c_divsqrt
+        c_ctrl = False; c_ls = 0; c_divsqrt = 0
 
     # ABI-fixed stack-pointer register (matches codegen.py's SP = '$r27'). bundler.py
     # works purely on parsed text and doesn't otherwise know ABI register roles, so
@@ -337,6 +345,8 @@ def _pack_bundles(flat):
     for instr in flat:
         is_mem  = instr['mem_access'] is not None
         is_call = instr['text'].startswith('$call')
+        is_ls   = instr['text'].startswith(('$ld', '$st'))
+        is_ds   = _is_div_sqrt(instr['text'])
         split = False
         if c_instrs:
             if instr['labels']:                         split = True  # label → new bundle
@@ -364,6 +374,15 @@ def _pack_bundles(flat):
             # bundles. This pattern only occurs near call sites, so the cost is a few
             # extra instruction slots, not a systemic bundling regression.
             elif is_call and SP_REG in c_writes:        split = True
+            # Hardware lane limits (McodeProgram::alignFullBundleToLanes):
+            # a full bundle has 4 load/store lanes and 1 divide/sqrt lane.
+            # Exceeding them makes mcode_align FAIL its lane placement — it
+            # prints an Error but still emits the bundle with the CTI not in
+            # lane 0, and the sim's return-address math then jumps into the
+            # middle of a bundle (fuzz seed 68, 2026-07-18: five independent
+            # caller-save stores packed with a $call).
+            elif is_ls and c_ls >= 4:                  split = True  # ld/st lanes full
+            elif is_ds and c_divsqrt >= 1:             split = True  # div/sqrt lane full
             elif len(c_instrs) >= 8:                   split = True  # bundle full
 
         if split:
@@ -377,6 +396,10 @@ def _pack_bundles(flat):
         if is_mem:
             c_mem_reads |= instr['reads']
         c_ctrl    = c_ctrl or instr['is_ctrl']
+        if is_ls:
+            c_ls += 1
+        if is_ds:
+            c_divsqrt += 1
 
     flush()
     return bundles
@@ -471,7 +494,7 @@ def _schedule_block(block):
     # mirror of the open bundle, used only as a clustering heuristic (the real
     # packing + hazard checks are redone by _pack_bundles afterwards)
     cw, cmw, cmr = set(), set(), set()
-    cctrl = [False]; csize = [0]
+    cctrl = [False]; csize = [0]; cls = [0]; cds = [0]
     def can_join(ins):
         if cctrl[0] or csize[0] >= 8:                     return False
         if ins['reads']  & cw:                            return False
@@ -479,14 +502,20 @@ def _schedule_block(block):
         if ins['mem_access'] is not None and _mem_may_alias(ins['mem_access'], cmw): return False
         if ins['mem_access'] is None and (ins['writes'] & cmr):        return False
         if ins['text'].startswith('$call') and _SP_REG in cw:         return False
+        # hardware lane limits (mirrors _pack_bundles): 4 ld/st, 1 div/sqrt
+        if ins['text'].startswith(('$ld', '$st')) and cls[0] >= 4:    return False
+        if _is_div_sqrt(ins['text']) and cds[0] >= 1:                 return False
         return True
     def open_with(ins):
         cw.update(ins['writes'])
         if ins['mem_write'] is not None: cmw.add(ins['mem_write'])
         if ins['mem_access'] is not None: cmr.update(ins['reads'])
         cctrl[0] = cctrl[0] or ins['is_ctrl']; csize[0] += 1
+        if ins['text'].startswith(('$ld', '$st')): cls[0] += 1
+        if _is_div_sqrt(ins['text']): cds[0] += 1
     def reset():
         cw.clear(); cmw.clear(); cmr.clear(); cctrl[0] = False; csize[0] = 0
+        cls[0] = 0; cds[0] = 0
     def is_ready(k):
         return not done[k] and all(done[p] for p in preds[k])
     for _ in range(m):

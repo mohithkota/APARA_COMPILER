@@ -123,6 +123,9 @@ against gcc):
   nested variadic calls)
 - `testing/many_args/` — >4 named args ma01–ma03 (5/6/8-param functions, recursion,
   variadic-with-5-named combo)
+- `testing/fuzz/` — randomized differential fuzz campaign: seeded whole-program generator
+  (`gen_fuzz.py`, UB-free by construction) + driver (`run_campaign.sh`); 400 seeds, every
+  executed program verified slot-for-slot against gcc — found 3 latent bugs on day one
 
 ## History recovery
 
