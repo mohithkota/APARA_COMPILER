@@ -89,18 +89,21 @@ Every entry is backed by a test verified against gcc (see `testing/feature_sweep
 | `goto` / labels | ✅ | |
 | Designated initializers (`{[2]=30}`) | ✅ | |
 | Vector intrinsics (`__vadd/__dot/__vreduce_max`, packed `vu8_t`, …) | ✅ | see APARA ISA |
-| **Floating point** (`+ - * /`) | ❌ | only `$fsqrt` wired — next phase |
-| **Function pointers** | ❌ | blocked at the assembler (can't load a label address) |
-| Variadic functions; real string handling; > 4 args | ❌ | string literals are address-of only |
+| **Floating point** (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–09 = 50/50, bit-exact vs gcc |
+| **Function pointers** (assign, call, callbacks, tables, `&f`, `==`, returns) | ✅ | compile-time linker pass; fn01–04 vs gcc |
+| **Variadic functions** (`va_start/va_arg/va_end`) | ✅ | stack-passed extras; va01–03 vs gcc |
+| > 4 named args | ❌ | next up — will reuse the variadic stack-passing area |
+| Real string handling | — | dropped by design: not needed for the APARA accelerator (literals are address-of only) |
 
 **Also:** register allocation (28-reg pool + 64-slot spill area) and a full optimizer
 (register caching, CSE, alias analysis, list scheduling, LICM, loop-carried promotion —
 up to −74% static bundles / −99% executed loads on kernels).
 
-**Bottom line:** the **integer** subset of C — the features you use for real algorithms —
-is functionally complete and verified universal (a novel-algorithm battery + a 16-feature
-sweep all pass against gcc). The only remaining work is **floating point**, **function
-pointers** (assembler-blocked), and a few niche items (variadics, real strings, > 4 args).
+**Bottom line:** the **integer** subset of C is functionally complete and verified
+universal (a novel-algorithm battery + a 16-feature sweep all pass against gcc), and as
+of 2026-07-18 **floating point** (bit-exact vs gcc), **function pointers**, and
+**variadic functions** are done too. The only remaining item is **> 4 named args**
+(real strings are intentionally out of scope for the APARA accelerator).
 
 ## Testing
 
@@ -113,6 +116,12 @@ against gcc):
   probe for bias / general-purpose correctness, plus the campaign map
 - `testing/stress/` — differential stress tests (signed/unsigned edges, shifts, div/mod, …) and
   `STRESS_FINDINGS.md`
+- `testing/fp_check/` — floating-point campaign fp01–fp09 (arith, cmp, casts, params, arrays,
+  bit-exact result verification) + `FP_PLAN.md`
+- `testing/fnptr/` — function pointers fn01–fn04 (assign/call, callbacks, dispatch tables,
+  `&f`, fp returns/comparison)
+- `testing/vararg/` — variadic functions va01–va03 (va_start/va_arg, mixed named+variadic,
+  nested variadic calls)
 
 ## History recovery
 
