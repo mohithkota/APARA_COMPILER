@@ -172,15 +172,45 @@ def _hoist_one(instrs, s, e, def_map):
     return instrs[:s] + hoisted + rest + instrs[e + 1:]
 
 
+def _func_bounds(instrs):
+    """Inclusive (start, end) index pairs of each IRFuncBegin..IRFuncEnd slice.
+    Temp names RESTART in every function (Temp.reset() per function), so any
+    name-keyed analysis map must be built over one function slice only. A
+    whole-program map lets a later function's definition of the same temp name
+    override this function's: _root_target then resolves a loop's store base
+    to the WRONG slot, the store never lands in wr_stack, and a load that IS
+    clobbered in the loop looks hoistable — hoisting the loop counter's reload
+    produced a stale-counter infinite loop (found 2026-07-18; same collision
+    class as loop_reg's Temp() bug)."""
+    out, start = [], None
+    for k, ins in enumerate(instrs):
+        c = type(ins).__name__
+        if c == 'IRFuncBegin':
+            start = k
+        elif c == 'IRFuncEnd' and start is not None:
+            out.append((start, k))
+            start = None
+    return out
+
+
+def _enclosing_func(bounds, s, e, n):
+    for a, b in bounds:
+        if a <= s and e <= b:
+            return a, b
+    return 0, n - 1
+
+
 def hoist_loop_invariants(instrs):
     """Repeatedly hoist invariants out of innermost loops until stable."""
     for _ in range(100):
-        def_map = {}
-        for ins in instrs:
-            for dn in _dest_names(ins):
-                def_map[dn] = ins
+        bounds = _func_bounds(instrs)
         progressed = False
         for (s, e) in _find_loops(instrs):
+            a, b = _enclosing_func(bounds, s, e, len(instrs))
+            def_map = {}
+            for ins in instrs[a:b + 1]:
+                for dn in _dest_names(ins):
+                    def_map[dn] = ins
             new = _hoist_one(instrs, s, e, def_map)
             if new is not instrs:
                 instrs = new

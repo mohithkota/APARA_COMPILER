@@ -639,21 +639,6 @@ class CodeGen:
     # ── function prologue / epilogue ───────────────────────────────────────────
 
     def _gen_IRFuncBegin(self, ir):
-        # Calling convention is hardcoded to exactly 4 argument registers
-        # (ARG = r2..r5, see both here and _gen_IRCall). Before this check,
-        # a 5th+ parameter was SILENTLY dropped (the old code just did
-        # "if i >= len(ARG): break") -- the parameter's stack slot was never
-        # written, so it held garbage with no error at all. Found via
-        # isa_coverage_tests/test_call_return_full.c's add5(): it silently
-        # computed the wrong sum instead of failing to compile. Fail loudly
-        # instead, matching the global/stack-overlap check in compiler.py.
-        if len(ir.params) > len(ARG):
-            print(f"\n[COMPILE ERROR] Function '{ir.name}' has {len(ir.params)} parameters; "
-                  f"this calling convention only supports up to {len(ARG)} (passed in "
-                  f"{', '.join(ARG)}). 5th+ parameters are silently dropped, not spilled to "
-                  f"the stack -- not implemented.")
-            sys.exit(1)
-
         self._ra            = RegAlloc()   # fresh 28-reg pool for this function
         self._decl_frame    = ir.frame_size
         self._current_epilogue = f"{ir.name}_epilogue"
@@ -677,9 +662,19 @@ class CodeGen:
 
         # No ONE register — unconditional branch uses $r0 == $r0
 
-        # len(ir.params) <= len(ARG) is guaranteed by the check above.
+        # Params 1-4 arrive in r2-r5; params 5+ were stack-passed by the
+        # caller at [entry_SP + 8 + 8*(i-4)] (same area as variadic extras,
+        # see _gen_IRCall) and FP == entry SP, so copy them into their normal
+        # local slots here. Before 2026-07-18 a 5th+ parameter was a hard
+        # compile error (and before that, silently dropped garbage).
         for i, (pname, fp_off, width) in enumerate(ir.params):
-            self._emit(f"$st {self._atype(width)} [{FP} + {fp_off}] {ARG[i]}")
+            if i < len(ARG):
+                self._emit(f"$st {self._atype(width)} [{FP} + {fp_off}] {ARG[i]}")
+            else:
+                scr = self._ra.borrow()
+                self._emit(f"$ld ($i64) {scr} [{FP} + {8 + 8 * (i - len(ARG))}]")
+                self._emit(f"$st {self._atype(width)} [{FP} + {fp_off}] {scr}")
+                self._ra.unborrow(scr)
 
     def _gen_IRFuncEnd(self, ir):
         self._pending_labels.append(self._current_epilogue)
@@ -1139,10 +1134,11 @@ class CodeGen:
             self._emit(f"$ld ($i64) {reg} [{FP} + {slot}]")
 
     def _gen_IRVaStart(self, ir):
-        """dest = FP + 8: address of the first stack-passed variadic argument
-        (the caller stored them at [entry_SP + 8 + 8*i], and FP == entry SP)."""
+        """dest = FP + offset: address of the first stack-passed variadic
+        argument (the caller stored stack args at [entry_SP + 8 + 8*i] with
+        named-5+ params first, FP == entry SP)."""
         dest = self._alloc_reg(ir.dest)
-        self._emit(f"+ {dest} ($i64) {FP} 8")
+        self._emit(f"+ {dest} ($i64) {FP} {getattr(ir, 'offset', 8)}")
 
     def _gen_IRFuncAddr(self, ir):
         """Load the code address of a named function into a register.

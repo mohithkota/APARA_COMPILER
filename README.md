@@ -2,9 +2,9 @@
 
 A C compiler targeting the APARA accelerator's custom VLIW ISA — takes a (preprocessed) C
 source file and emits APARA mcode text, ready to be aligned/assembled/run by the accelerator's
-own toolchain. **Integer C (scalar + vector) is functionally complete** apart from a few known
-gaps; floating point is the next phase. See [`compiler/STATUS.md`](compiler/STATUS.md) for the
-full, dated change history and current known limitations.
+own toolchain. **The C feature set for the APARA accelerator is complete** — integer (scalar +
+vector), floating point (bit-exact vs gcc), function pointers, variadics, and >4 args. See
+[`compiler/STATUS.md`](compiler/STATUS.md) for the full, dated change history.
 
 ## Pipeline
 
@@ -75,7 +75,7 @@ Every entry is backed by a test verified against gcc (see `testing/feature_sweep
 | `if`/`else`, `while`, `for`, `do-while` | ✅ | |
 | `switch`/`case` incl. fall-through, `break`/`continue` | ✅ | |
 | Short-circuit `&&` / `\|\|` (incl. in loop conditions) | ✅ | |
-| Functions, **recursion**, mutual recursion | ✅ | ≤ 4 arguments (ABI limit) |
+| Functions, **recursion**, mutual recursion | ✅ | any arg count (first 4 in regs, rest stack-passed) |
 | 1D / 2D / 3D arrays (local + global, initialized) | ✅ | |
 | `struct` (incl. nested), **arrays of structs** | ✅ | `pts[i].field`, `p->field`, `(p+1)->field` |
 | `union` | ✅ | |
@@ -92,18 +92,17 @@ Every entry is backed by a test verified against gcc (see `testing/feature_sweep
 | **Floating point** (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–09 = 50/50, bit-exact vs gcc |
 | **Function pointers** (assign, call, callbacks, tables, `&f`, `==`, returns) | ✅ | compile-time linker pass; fn01–04 vs gcc |
 | **Variadic functions** (`va_start/va_arg/va_end`) | ✅ | stack-passed extras; va01–03 vs gcc |
-| > 4 named args | ❌ | next up — will reuse the variadic stack-passing area |
+| **> 4 named args** (5/6/8-param fns, recursion, variadic combo) | ✅ | stack-passed args 5+; ma01–03 vs gcc |
 | Real string handling | — | dropped by design: not needed for the APARA accelerator (literals are address-of only) |
 
 **Also:** register allocation (28-reg pool + 64-slot spill area) and a full optimizer
 (register caching, CSE, alias analysis, list scheduling, LICM, loop-carried promotion —
 up to −74% static bundles / −99% executed loads on kernels).
 
-**Bottom line:** the **integer** subset of C is functionally complete and verified
-universal (a novel-algorithm battery + a 16-feature sweep all pass against gcc), and as
-of 2026-07-18 **floating point** (bit-exact vs gcc), **function pointers**, and
-**variadic functions** are done too. The only remaining item is **> 4 named args**
-(real strings are intentionally out of scope for the APARA accelerator).
+**Bottom line:** the C feature set for the APARA accelerator is complete: the integer
+subset is verified universal, and as of 2026-07-18 **floating point** (bit-exact vs gcc),
+**function pointers**, **variadic functions**, and **> 4 named args** are all done.
+Real strings are intentionally out of scope for the APARA accelerator.
 
 ## Testing
 
@@ -122,6 +121,8 @@ against gcc):
   `&f`, fp returns/comparison)
 - `testing/vararg/` — variadic functions va01–va03 (va_start/va_arg, mixed named+variadic,
   nested variadic calls)
+- `testing/many_args/` — >4 named args ma01–ma03 (5/6/8-param functions, recursion,
+  variadic-with-5-named combo)
 
 ## History recovery
 

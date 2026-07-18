@@ -168,9 +168,11 @@ class IRCall:
         return f"{self.dest} = {self.func_name}({', '.join(str(a) for a in self.args)})"
 
 class IRVaStart:
-    """dest = address of the first stack-passed variadic argument (FP + 8)."""
-    def __init__(self, dest): self.dest = dest
-    def __repr__(self): return f"{self.dest} = va_start()"
+    """dest = address of the first stack-passed variadic argument (FP + offset;
+    offset is 8 plus 8 per stack-passed NAMED param when the variadic function
+    itself has more than 4 named params)."""
+    def __init__(self, dest, offset=8): self.dest = dest; self.offset = offset
+    def __repr__(self): return f"{self.dest} = va_start()  /* FP+{self.offset} */"
 
 class IRReturn:
     """return [value]"""

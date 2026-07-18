@@ -33,7 +33,7 @@ Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/univers
 | Floating point (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–07 vs gcc; gaps: struct float fields, float truthiness |
 | Function pointers (assign, call, callbacks, tables, &f, ==, returns) | ✅ | compile-time linker pass; fn01–04 vs gcc |
 | Variadic functions (va_start/va_arg/va_end, int/i64 args) | ✅ | stack-passed extras; va01–03 vs gcc; float va_args untested |
-| >4 named args | ❌ | **next up** (variadic stack-passing mechanism is the natural vehicle) |
+| >4 named args (5+/6/8-param fns, recursion, variadic combo) | ✅ | stack-passed args 5+; ma01–03 vs gcc |
 | real strings | — | not needed for the APARA accelerator (address-of only, by design) |
 
 Integer subset is functionally complete + verified universal (13/13 novel-algorithm
@@ -41,7 +41,51 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-18 — VARIADIC FUNCTIONS DONE: stack-passed extras + near-pure-C va_list macros (va01–03 12/12) (Latest)
+## 2026-07-18 — >4 NAMED ARGS DONE (ma01–03 12/12) + LATENT LICM/loop_reg CROSS-FUNCTION ALIAS BUG FOUND & FIXED (Latest)
+
+**>4 named args** — unified with the variadic convention: ALL args beyond the
+first 4 are stack-passed at [FP + 8 + 8*i] in the callee (caller reserves
+below SP exactly like variadic extras — the same _gen_IRCall n_reg path,
+now set to 4 for any known >4-param function). Callee prologue copies params
+5+ from [FP + 8 + 8*(i-4)] into their normal local slots (borrowed scratch).
+For a VARIADIC function with >4 named params, the stack area holds named-5+
+first, then the extras — IRVaStart gained an `offset` field
+(8 + 8*max(0, named-4)) so va_start skips past them. The old hard 4-param
+compile error in _gen_IRFuncBegin is gone. Indirect calls keep the ≤4 limit
+(callee signature unknown). Suite `testing/many_args/` ma01–03 = 12/12 vs
+gcc: 5/6/8-param fns, recursion, loops, nested >4-arg calls, and the
+variadic+5-named combo.
+
+**Latent bug (pre-existing, NOT from this feature)**: ma02's loop case
+exposed a **stale-loop-counter miscompile in LICM** — an infinite loop on
+hardware. Root cause: `hoist_loop_invariants` built its `def_map` over the
+WHOLE program, but temp names RESTART in every function (Temp.reset()), so a
+later function's definition of the same temp name overrode the current one.
+`_root_target` then resolved a loop's store base to the wrong slot, the store
+to the counter never landed in `wr_stack`, and the counter's reload passed
+`load_safe` and was hoisted → the loop compared a stale register forever.
+Confirmed pre-existing (reproduces on HEAD~ with the feature stashed;
+minimal repro: initialized global array + a callee whose inner loop uses
+separate address temps for the counter slot — whether it fired depended on
+which loop-opt TIER the whole program landed on, which is why the 61-test
+gate never caught it). Same collision class as the 2026-07-18 loop_reg
+Temp() bug.
+
+**Fix**: `licm._func_bounds` — every name-keyed analysis map is now built
+over the enclosing FUNCTION slice only: licm's def_map per loop, loop_reg's
+`addr_off` + `addr_uses` (they scanned the whole program too — same latent
+exposure, docstring said "function-wide" but code wasn't), and
+`promoted_offsets` now keyed (func, off) since raw FP offsets also collide
+across functions. Rule reaffirmed: **no IR pass may key any map by bare temp
+name or FP offset across function boundaries.**
+
+Full gate green after both changes: feature_sweep 16/16, universal 21/21,
+pointer_bugs 15/15, fp 50/50, fnptr 16/16, vararg 12/12, many_args 12/12 —
+zero regressions.
+
+---
+
+## 2026-07-18 — VARIADIC FUNCTIONS DONE: stack-passed extras + near-pure-C va_list macros (va01–03 12/12)
 
 **Calling convention extension** (ours to define, no toolchain change):
 - Named (fixed) params of a variadic function pass in r2–r5 as always.
@@ -3449,10 +3493,10 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | 3 | **Float arithmetic** (+,-,*,/) | Done ✓ | full scalar f32/f64 subset, 2026-07-18 |
 | 4 | **Sub-word LD/ST** ($i32/$i16/$i8) | Low | **Hardware engine bug** |
 | 5 | **Variadic functions** | Done ✓ | stack-passed extras, 2026-07-18 |
-| 6 | **>4 named args** | Low | None — **next session**; reuse the variadic stack-passing area |
+| 6 | **>4 named args** | Done ✓ | unified with variadic stack-passing, 2026-07-18 |
 | — | Real strings | Dropped | not needed for the APARA accelerator (2026-07-18) |
 
-**Overall compiler completeness: ~94% of a basic C compiler**
+**Overall compiler completeness: ~96% of a basic C compiler** (remaining: only deliberately-dropped items)
 
 ---
 

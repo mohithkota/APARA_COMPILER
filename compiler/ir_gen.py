@@ -176,6 +176,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._func_ret_ftag = {}     # func name -> '$f32'/'$f64' for float-returning fns
         self._func_param_ftags = {}  # func name -> [param float tag or None, ...]
         self._variadic_fns = {}      # func name -> number of NAMED (fixed) params
+        self._func_nparams = {}      # func name -> total named param count
+        self._cur_va_offset = 8      # FP offset of current fn's variadic area
         self._struct_field_ftag = {} # (struct name, field name) -> '$f32'/'$f64'
         # Maps variable name → DMEM stride per element for pointer arithmetic.
         # All pointer types currently use stride=8 (one 8-byte DMEM slot per element).
@@ -863,13 +865,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         for ext in node.ext:
             if isinstance(ext, A.FuncDef):
                 self._func_names.add(ext.decl.name)
-                # variadic? record how many params are NAMED — call sites pass
-                # those in registers and everything after on the stack
+                # record named-param count (>4 means args 5+ go on the stack)
+                # and, for variadics, how many params are NAMED — call sites
+                # pass min(4, named) in registers and everything after on the
+                # stack ([FP + 8 + 8*i] in the callee, named-5+ first, then
+                # the variadic extras)
                 if ext.decl.type.args:
                     ps = ext.decl.type.args.params
+                    n_named = sum(1 for p in ps
+                                  if isinstance(p, A.Decl) and p.name)
+                    self._func_nparams[ext.decl.name] = n_named
                     if any(isinstance(p, A.EllipsisParam) for p in ps):
-                        self._variadic_fns[ext.decl.name] = sum(
-                            1 for p in ps if isinstance(p, A.Decl) and p.name)
+                        self._variadic_fns[ext.decl.name] = n_named
                 # record float RETURN types up front so a call site compiled
                 # before the callee's definition still knows the result is float
                 rt = self._float_tag_of_type(ext.decl.type.type)
@@ -1086,6 +1093,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def visit_FuncDef(self, node):
         name = node.decl.name
         self._func_name = name
+        # Variadic area starts after any stack-passed NAMED params (5th+),
+        # which occupy [FP+8 .. FP+8*(named-4)] — see _gen_IRFuncBegin.
+        self._cur_va_offset = 8 + 8 * max(0, self._variadic_fns.get(name, 0) - 4)
         self._frame_off = 0
         self._var_offsets = {}
         self._array_elem  = {}
@@ -1790,7 +1800,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
         # ── va_start: address of the first stack-passed variadic argument ────
         if fname == '__va_start':
-            self._emit(IRVaStart(res))
+            self._emit(IRVaStart(res, self._cur_va_offset))
             return res
 
         # ── NOR / NAND / XNOR ────────────────────────────────────────────────
@@ -1989,10 +1999,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRVecReduce(res, args[0], tstr, op)); return res
 
         # ── Default: regular function call ────────────────────────────────────
-        # Calls to a variadic function split at n_reg: named params in
-        # registers, the rest stack-passed (see IRCall docstring).
-        self._emit(IRCall(res, fname, args,
-                          n_reg=self._variadic_fns.get(fname)))
+        # n_reg splits register args from stack-passed ones (IRCall docstring):
+        # variadic → min(4, named params); non-variadic with >4 params → 4.
+        n_reg = None
+        if fname in self._variadic_fns:
+            n_reg = min(4, self._variadic_fns[fname])
+        elif self._func_nparams.get(fname, 0) > 4:
+            n_reg = 4
+        self._emit(IRCall(res, fname, args, n_reg=n_reg))
         return res
 
     def _arrayref(self, node):

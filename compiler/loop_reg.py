@@ -73,7 +73,12 @@ def _build_addr_temp_uses(instrs):
     return uses
 
 
-def _promote_one(instrs, s, e, promoted_offsets):
+def _promote_one(instrs, s, e, promoted_offsets, fa, fb):
+    """fa..fb (inclusive) is the enclosing FUNCTION slice: temp names restart
+    per function, so the addr_off / escape analyses below must never scan
+    outside it (a later function's IRLoadAddr with the same temp name would
+    override this one's and resolve a load/store to the wrong slot — same
+    cross-function name-collision class as licm's def_map bug, 2026-07-18)."""
     header = instrs[s]
     if type(header).__name__ != 'IRLabel':
         return instrs
@@ -91,16 +96,18 @@ def _promote_one(instrs, s, e, promoted_offsets):
         if type(instrs[k]).__name__ in ('IRCall', 'IRIndirectCall'):
             return instrs
 
-    addr_uses = _build_addr_temp_uses(instrs)
+    addr_uses = _build_addr_temp_uses(instrs[fa:fb + 1])
 
     # Discover, per stack offset, the load/store pairs inside the loop and
     # whether the slot is clean (address never escapes) function-wide.
     # off -> dict(loads=[(la_idx, ld_idx, v, eb, uns)], stores=[(la_idx, st_idx, sval, eb)],
     #             ebs=set(), clean=bool)
     info = {}
-    # Map: address-temp name -> the IRLoadAddr offset that produced it (whole fn).
+    # Map: address-temp name -> the IRLoadAddr offset that produced it
+    # (built over THIS function slice only, see docstring).
     addr_off = {}
-    for k, ins in enumerate(instrs):
+    for k in range(fa, fb + 1):
+        ins = instrs[k]
         if type(ins).__name__ == 'IRLoadAddr':
             addr_off[ins.dest.name] = ins.fp_offset
 
@@ -141,7 +148,9 @@ def _promote_one(instrs, s, e, promoted_offsets):
     # re-promoting in the enclosing loop would stop maintaining that memory.
     promote = {}
     for off, d in info.items():
-        if off in escaped_offsets or off in promoted_offsets:
+        # promoted_offsets is keyed (func_start, off): raw offsets collide
+        # across functions (every function has its own -16 slot).
+        if off in escaped_offsets or (fa, off) in promoted_offsets:
             continue
         if not d['loads'] or not d['stores']:
             continue
@@ -150,7 +159,7 @@ def _promote_one(instrs, s, e, promoted_offsets):
         promote[off] = d
     if not promote:
         return instrs
-    promoted_offsets.update(promote.keys())
+    promoted_offsets.update((fa, o) for o in promote.keys())
 
     # Indices of the IRLoadAddr instructions that feed a promoted load/store and
     # so become dead, plus the load/store indices to rewrite into moves.
@@ -242,11 +251,14 @@ def promote_loop_counters(instrs):
     """Promote loop-carried induction variables to registers, innermost first.
     A given stack slot is promoted by at most one loop (its innermost qualifying
     one); promoted_offsets enforces that across the whole fixpoint."""
+    from licm import _func_bounds, _enclosing_func
     promoted_offsets = set()
     for _ in range(100):
+        bounds = _func_bounds(instrs)
         progressed = False
         for (s, e) in _find_loops(instrs):
-            res = _promote_one(instrs, s, e, promoted_offsets)
+            fa, fb = _enclosing_func(bounds, s, e, len(instrs))
+            res = _promote_one(instrs, s, e, promoted_offsets, fa, fb)
             if res is not instrs:
                 instrs = res
                 progressed = True
