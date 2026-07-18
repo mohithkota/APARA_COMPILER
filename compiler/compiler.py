@@ -29,9 +29,13 @@ typedef unsigned int vu32_t;   typedef int          vi32_t;
 
 
 def preprocess(src_file):
+    # __APARA__ lets a source select APARA-specific definitions (e.g. the
+    # stdarg macros mapping to __va_start) while the SAME file compiles with
+    # real <stdarg.h> in the native gcc golden run, which never sees this
+    # define (try_golden_verify embeds the RAW file text).
     for cpp in ('gcc -E -P', 'cc -E -P', 'cpp -P'):
         try:
-            cmd = cpp.split() + [src_file, '-o', '-']
+            cmd = cpp.split() + ['-D__APARA__', src_file, '-o', '-']
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
                 return result.stdout, True
@@ -597,7 +601,12 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     # follows the results[] convention; only fall back to static-eval /
     # an empty placeholder when it doesn't (or golden verification can't
     # run -- see try_golden_verify's own docstring for exactly when).
-    golden_done = try_golden_verify(source, ir_globals, out_dir, base_name)
+    # Pass the RAW file text (not the preprocessed source): gcc preprocesses
+    # it itself WITHOUT -D__APARA__, so #ifdef __APARA__ blocks resolve to the
+    # native branch (e.g. real <stdarg.h> instead of the __va_start macros).
+    with open(c_file) as _f:
+        raw_source = _f.read()
+    golden_done = try_golden_verify(raw_source, ir_globals, out_dir, base_name)
     if not golden_done:
         if ret_val is not None or final_dmem:
             write_result_file(result_path, ret_val, final_dmem, init_dmem)

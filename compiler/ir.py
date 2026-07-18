@@ -153,11 +153,24 @@ class IRJump:
     def __repr__(self): return f"goto {self.label}"
 
 class IRCall:
-    """dest = func(args)"""
-    def __init__(self, dest, func_name, args):
+    """dest = func(args)
+
+    n_reg: for a call to a VARIADIC function, how many leading args go in
+    registers (the named parameters); the rest are stored to the stack just
+    below the caller's SP so the callee finds them at [FP + 8 + 8*i].
+    None (default) = non-variadic call, all args in registers.
+    All args stay in .args regardless, so operand/liveness scans that walk
+    list(ir.args) (codegen, licm) see the stack-passed ones too."""
+    def __init__(self, dest, func_name, args, n_reg=None):
         self.dest = dest; self.func_name = func_name; self.args = args
+        self.n_reg = n_reg
     def __repr__(self):
         return f"{self.dest} = {self.func_name}({', '.join(str(a) for a in self.args)})"
+
+class IRVaStart:
+    """dest = address of the first stack-passed variadic argument (FP + 8)."""
+    def __init__(self, dest): self.dest = dest
+    def __repr__(self): return f"{self.dest} = va_start()"
 
 class IRReturn:
     """return [value]"""

@@ -1029,13 +1029,25 @@ class CodeGen:
             self._emit("$halt")
             return
 
+        # Variadic call: the first n_reg args (named params) go in registers,
+        # the rest are stored just below the caller's SP so the callee's
+        # va_start finds them at [FP + 8 + 8*i] (callee FP == entry SP).
+        n_reg    = getattr(ir, 'n_reg', None)
+        reg_args = ir.args if n_reg is None else ir.args[:n_reg]
+        extras   = []      if n_reg is None else ir.args[n_reg:]
+
         # See the matching check in _gen_IRFuncBegin -- same hard 4-argument
         # ceiling, same "fail loudly instead of silently dropping" fix.
-        if len(ir.args) > len(ARG):
-            print(f"\n[COMPILE ERROR] Call to '{fname}' passes {len(ir.args)} arguments; "
-                  f"this calling convention only supports up to {len(ARG)} (passed in "
-                  f"{', '.join(ARG)}). 5th+ arguments are silently dropped, not spilled to "
-                  f"the stack -- not implemented.")
+        if len(reg_args) > len(ARG):
+            print(f"\n[COMPILE ERROR] Call to '{fname}' passes {len(reg_args)} register "
+                  f"arguments; this calling convention only supports up to {len(ARG)} "
+                  f"(passed in {', '.join(ARG)}). 5th+ arguments are silently dropped, "
+                  f"not spilled to the stack -- not implemented.")
+            sys.exit(1)
+        # SP is bumped by one ALU immediate (-512..511) around a variadic call.
+        if len(extras) > 62:
+            print(f"\n[COMPILE ERROR] Variadic call to '{fname}' passes {len(extras)} "
+                  f"stack arguments; the limit is 62.")
             sys.exit(1)
 
         # 1. Save all currently live allocated temps to the caller-save area.
@@ -1046,10 +1058,32 @@ class CodeGen:
             self._emit(f"$st ($i64) [{FP} + {slot}] {reg}")
             saved_name_slot[name] = slot
 
+        # 1b. Variadic stack args: reserve len(extras)+1 slots below SP (slot 0
+        #     is where the callee's prologue saves the caller FP), store each
+        #     extra at [newSP + 8 + 8*i]. $r25 is safe scratch here: every live
+        #     temp was just saved and is restored in step 5, and args/RET/fixed
+        #     regs are elsewhere (same reasoning as _gen_IRIndirectCall).
+        if extras:
+            resv = 8 * (len(extras) + 1)
+            self._emit(f"+ {SP} ($i64) {SP} -{resv}")
+            scr = '$r25'
+            for i, arg in enumerate(extras):
+                if isinstance(arg, Const):
+                    self._load_const(scr, arg.value)
+                elif isinstance(arg, Temp):
+                    name = arg.name
+                    if name in saved_name_slot:
+                        self._emit(f"$ld ($i64) {scr} [{FP} + {saved_name_slot[name]}]")
+                    elif name in self._spill_map:
+                        self._emit(f"$ld ($i64) {scr} [{FP} + {self._spill_map[name]}]")
+                    else:
+                        self._emit(f"+ {scr} ($i64) {ZERO} {self._ra.reg(arg)}")
+                self._emit(f"$st ($i64) [{SP} + {8 + 8 * i}] {scr}")
+
         # 2. Set up arguments in r2–r5.
         #    Read from saved slots to avoid register-aliasing bugs
         #    (e.g. arg0 source is r2, which we'd clobber when writing arg1 to r3).
-        for i, arg in enumerate(ir.args[:4]):
+        for i, arg in enumerate(reg_args[:4]):
             if isinstance(arg, Const):
                 self._load_const(ARG[i], arg.value)
             elif isinstance(arg, Temp):
@@ -1064,6 +1098,10 @@ class CodeGen:
 
         # 3. Make the call
         self._emit(f"$call {fname}")
+        # 3b. Release the variadic stack area (the callee's epilogue restored
+        #     SP to its entry value, i.e. the lowered one).
+        if extras:
+            self._emit(f"+ {SP} ($i64) {SP} {8 * (len(extras) + 1)}")
         # After return: $r1 = return value; all other pool regs may be clobbered.
         # The allocator's _map is STALE — correct values are only in caller-save slots.
         # We must NOT call _spill_evict() here (it would store stale register values).
@@ -1099,6 +1137,12 @@ class CodeGen:
         for name, reg in saved:
             slot = saved_name_slot[name]
             self._emit(f"$ld ($i64) {reg} [{FP} + {slot}]")
+
+    def _gen_IRVaStart(self, ir):
+        """dest = FP + 8: address of the first stack-passed variadic argument
+        (the caller stored them at [entry_SP + 8 + 8*i], and FP == entry SP)."""
+        dest = self._alloc_reg(ir.dest)
+        self._emit(f"+ {dest} ($i64) {FP} 8")
 
     def _gen_IRFuncAddr(self, ir):
         """Load the code address of a named function into a register.

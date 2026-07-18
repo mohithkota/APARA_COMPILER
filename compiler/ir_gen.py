@@ -175,6 +175,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._func_names   = set()   # all C function definition names (for function pointers)
         self._func_ret_ftag = {}     # func name -> '$f32'/'$f64' for float-returning fns
         self._func_param_ftags = {}  # func name -> [param float tag or None, ...]
+        self._variadic_fns = {}      # func name -> number of NAMED (fixed) params
         self._struct_field_ftag = {} # (struct name, field name) -> '$f32'/'$f64'
         # Maps variable name → DMEM stride per element for pointer arithmetic.
         # All pointer types currently use stride=8 (one 8-byte DMEM slot per element).
@@ -862,6 +863,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         for ext in node.ext:
             if isinstance(ext, A.FuncDef):
                 self._func_names.add(ext.decl.name)
+                # variadic? record how many params are NAMED — call sites pass
+                # those in registers and everything after on the stack
+                if ext.decl.type.args:
+                    ps = ext.decl.type.args.params
+                    if any(isinstance(p, A.EllipsisParam) for p in ps):
+                        self._variadic_fns[ext.decl.name] = sum(
+                            1 for p in ps if isinstance(p, A.Decl) and p.name)
                 # record float RETURN types up front so a call site compiled
                 # before the callee's definition still knows the result is float
                 rt = self._float_tag_of_type(ext.decl.type.type)
@@ -1780,6 +1788,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRIndirectCall(res, func_ptr, args))
             return res
 
+        # ── va_start: address of the first stack-passed variadic argument ────
+        if fname == '__va_start':
+            self._emit(IRVaStart(res))
+            return res
+
         # ── NOR / NAND / XNOR ────────────────────────────────────────────────
         if fname == '__nor'  and len(args) >= 2:
             self._emit(IRBinOp(res, '~|', args[0], args[1])); return res
@@ -1976,7 +1989,10 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._emit(IRVecReduce(res, args[0], tstr, op)); return res
 
         # ── Default: regular function call ────────────────────────────────────
-        self._emit(IRCall(res, fname, args))
+        # Calls to a variadic function split at n_reg: named params in
+        # registers, the rest stack-passed (see IRCall docstring).
+        self._emit(IRCall(res, fname, args,
+                          n_reg=self._variadic_fns.get(fname)))
         return res
 
     def _arrayref(self, node):

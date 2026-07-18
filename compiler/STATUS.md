@@ -32,14 +32,68 @@ Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/univers
 | Vector intrinsics (__vadd/__dot/__vreduce_max, vu8_t) | ✅ | |
 | Floating point (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–07 vs gcc; gaps: struct float fields, float truthiness |
 | Function pointers (assign, call, callbacks, tables, &f, ==, returns) | ✅ | compile-time linker pass; fn01–04 vs gcc |
-| variadic funcs; real strings; >4 args | ❌ | strings are address-of only |
+| Variadic functions (va_start/va_arg/va_end, int/i64 args) | ✅ | stack-passed extras; va01–03 vs gcc; float va_args untested |
+| >4 named args | ❌ | **next up** (variadic stack-passing mechanism is the natural vehicle) |
+| real strings | — | not needed for the APARA accelerator (address-of only, by design) |
 
 Integer subset is functionally complete + verified universal (13/13 novel-algorithm
 battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-18 — FUNCTION POINTERS DONE: compiler-side linker pass unblocks them without any toolchain change (fn01–04 16/16) (Latest)
+## 2026-07-18 — VARIADIC FUNCTIONS DONE: stack-passed extras + near-pure-C va_list macros (va01–03 12/12) (Latest)
+
+**Calling convention extension** (ours to define, no toolchain change):
+- Named (fixed) params of a variadic function pass in r2–r5 as always.
+- For the extras, the CALLER reserves `8*(n_extra+1)` bytes just below its SP
+  (`+ $r27 ($i64) $r27 -K`), stores extra i at `[newSP + 8 + 8*i]` (slot 0 is
+  where the callee's prologue saves the caller FP), calls, then releases the
+  area. Since the callee sets FP = entry SP, the callee finds extra i at
+  `[FP + 8 + 8*i]`. Limit: 62 stack args (single ALU-immediate SP bump);
+  fail-loudly check added.
+
+**va_list machinery is almost pure C** — only ONE new intrinsic:
+`__va_start()` → IRVaStart → `+ dest ($i64) $r26 8` (= FP+8). The rest rides
+on existing pointer support:
+
+    long long *__va_start();
+    #define va_list long long *
+    #define va_start(ap, last) ((ap) = __va_start())
+    #define va_arg(ap, type)   ((type)*(ap)++)     /* deref + stride-8 bump */
+    #define va_end(ap)
+
+**Shared-source golden verify**: tests guard the macros with `#ifdef
+__APARA__`. `preprocess()` now passes `-D__APARA__`, and `try_golden_verify`
+receives the RAW file text (not the preprocessed source) so native gcc takes
+the real `<stdarg.h>` branch. This raw-source switch applies to all golden
+tests (verified: full gate unchanged).
+
+**Plumbing**: IRCall gains `n_reg` (split point: first n_reg args in
+registers, rest on stack); ALL args stay in `.args` so every operand/liveness
+scan (codegen `_get_src_temps`, licm) keeps working unmodified. ir_gen
+pre-pass records variadic functions (EllipsisParam) with their named-param
+count; existing param loops already skip EllipsisParam. Extras are stored via
+$r25 scratch (safe: all live temps already caller-saved, same reasoning as
+the indirect-call sequence).
+
+**New suite `testing/vararg/` va01–va03 = 12/12 golden checks vs gcc**:
+va01 sum(n,...) with 0/1/3/6 extras; va02 two named params + non-constant
+args (array elements, expressions) + variadic calls in a loop; va03 variadic
+calling variadic, nested variadic-call args, variadic mixed with normal
+calls. Full gate green: feature_sweep 16/16, universal 21/21, pointer_bugs
+15/15, fp 50/50, fnptr 16/16 — zero regressions.
+
+Known scope limits: float/double variadic args untested (va_arg loads raw
+8-byte words — f64 bits would pass through, f32 promotion semantics
+unverified); variadic INDIRECT calls (through a function pointer) not wired.
+
+Remaining ❌: >4 named args (NEXT — reuse the variadic stack-passing
+mechanism). Real strings are NOT needed for the APARA accelerator (decided
+2026-07-18): address-of-only stays by design.
+
+---
+
+## 2026-07-18 — FUNCTION POINTERS DONE: compiler-side linker pass unblocks them without any toolchain change (fn01–04 16/16)
 
 Function pointers were "blocked at the assembler" (2026-06-17: $set's grammar
 only takes numeric immediates, so no way to materialize a label's address).
@@ -3384,7 +3438,7 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | 2D arrays (global + local + params) | **Done** | row-major, array decay |
 | Float arithmetic (+,-,*,/) | **Done** | f32+f64 arith/cmp/casts/vars/arrays/params, fp01–07 vs gcc |
 | String literals | Partial | address-of only |
-| Variadic functions | Not started | |
+| Variadic functions | **Done** | stack-passed extras + __va_start intrinsic (2026-07-18); va01–03 vs gcc |
 
 ## Remaining work (priority order)
 
@@ -3394,8 +3448,11 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | 2 | **Function pointers** | Done ✓ | compile-time linker pass, 2026-07-18 |
 | 3 | **Float arithmetic** (+,-,*,/) | Done ✓ | full scalar f32/f64 subset, 2026-07-18 |
 | 4 | **Sub-word LD/ST** ($i32/$i16/$i8) | Low | **Hardware engine bug** |
+| 5 | **Variadic functions** | Done ✓ | stack-passed extras, 2026-07-18 |
+| 6 | **>4 named args** | Low | None — **next session**; reuse the variadic stack-passing area |
+| — | Real strings | Dropped | not needed for the APARA accelerator (2026-07-18) |
 
-**Overall compiler completeness: ~92% of a basic C compiler**
+**Overall compiler completeness: ~94% of a basic C compiler**
 
 ---
 
