@@ -6,7 +6,7 @@ AS=$BIN_DIR/mcode_assemble
 DISAS=$BIN_DIR/mcode_disassemble
 RUN=$BIN_DIR/mcode_run
 
-NAME=array
+NAME=test_array
 
 [ -f $NAME.golden ] && cp $NAME.golden $NAME.result
 $ALIGN  $NAME.mcode           > $NAME.aligned.mcode

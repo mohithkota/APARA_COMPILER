@@ -37,6 +37,25 @@ import re
 
 # ── Register dependency parser ─────────────────────────────────────────────────
 
+def _mem_may_alias(acc, writes):
+    """May memory access `acc` (base, off) alias ANY store address in `writes`?
+    Two accesses are provably DISJOINT only when they share the same base
+    register and have different constant offsets. Different base registers
+    prove nothing -- two registers can hold the same address (e.g. two temps
+    both computed as FP-16), so they must be treated as a conflict. Tuple
+    equality alone missed exactly that: a store via $r8 and a load via $r9 of
+    the same stack slot landed in one bundle and the load read stale data
+    (fp03 j=-3 garbage, 2026-07-18)."""
+    ab, ao = acc
+    for wb, wo in writes:
+        # provably disjoint: same base register, different constant offsets
+        disjoint = (ab == wb and ao != wo
+                    and not ao.startswith('$') and not wo.startswith('$'))
+        if not disjoint:
+            return True
+    return False
+
+
 def _parse_deps(text):
     """
     Parse one APARA instruction text.
@@ -76,10 +95,12 @@ def _parse_deps(text):
         return (frozenset({m.group(1)}) if m else frozenset()), frozenset(), False, None, None
 
     if t.startswith('$ld'):
-        # $ld ($[iu]N) $rd [$rb + off]   off = integer or $reg
+        # $ld ($[iuf]N) $rd [$rb + off]   off = integer or $reg
         # N>64 (u128/u256) writes a register PAIR/QUAD starting at rd, not just rd --
         # a single $ld fills multiple consecutive registers in that case.
-        m = re.match(r'\$ld\s+\(\$[iu](\d+)\)\s+(\$r\d+)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]', t)
+        # The tag may be $f32/$f64 (float load) -- it MUST be parsed for hazards
+        # too, or the load's dest/base registers and memory access go untracked.
+        m = re.match(r'\$ld\s+\(\$[iuf](\d+)\)\s+(\$r\d+)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]', t)
         if m:
             nbits, rd, rb, off = m.group(1), m.group(2), m.group(3), m.group(4)
             n_regs = max(1, int(nbits) // 64)
@@ -92,11 +113,12 @@ def _parse_deps(text):
         return frozenset(), frozenset(), False, None, None
 
     if t.startswith('$st'):
-        # $st ($[iu]N) [$rb + off] $rs   off = integer or $reg
+        # $st ($[iuf]N) [$rb + off] $rs   off = integer or $reg
         # N>64 (u128/u256) READS a register PAIR/QUAD starting at rs, not just rs --
         # a single $st reads multiple consecutive registers as its source group
         # (same convention as $ld's dest group; see isa.g mcode_store_instruction).
-        m = re.match(r'\$st\s+\(\$[iu](\d+)\)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]\s+(\$r\d+)', t)
+        # Float tags ($f32/$f64) must be parsed for hazards too (as for $ld).
+        m = re.match(r'\$st\s+\(\$[iuf](\d+)\)\s+\[(\$r\d+)\s*\+\s*(-?\d+|\$r\d+)\]\s+(\$r\d+)', t)
         if m:
             nbits, rb, off, rs = m.group(1), m.group(2), m.group(3), m.group(4)
             n_regs = max(1, int(nbits) // 64)
@@ -182,13 +204,17 @@ def _parse_deps(text):
 
     if t.startswith('?'):
         # ? ($iN) $r op $goto label  →  reads r; ends bundle
-        m = re.match(r'\?\s+\(\$i\d+\)\s+(\$r\d+)', t)
+        m = re.match(r'\?\s+\(\$[iuf]\d+\)\s+(\$r\d+)', t)
         reads = frozenset({m.group(1)}) if m else frozenset()
         return frozenset(), reads, True, None, None
 
-    # ALU: op $rd ($iN) $rs1 rs2_or_imm
+    # ALU: op $rd ($iN)/($uN)/($fN) $rs1 rs2_or_imm
     # op may be: + - * / << >> | & ^ ~| ~& ~^
-    m = re.match(r'([+\-*/<>&|^~]{1,3})\s+(\$r\d+)\s+\(\$i\d+\)\s+(\$r\d+)\s+(-?\d+|\$r\d+)', t)
+    # The type tag may be integer ($iN), unsigned ($uN) or float ($fN) — a float
+    # arithmetic op has the same operand layout, so it MUST be parsed for hazards
+    # too (else the bundler treats it as dependency-free and reorders it before
+    # its operands are built).
+    m = re.match(r'([+\-*/<>&|^~]{1,3})\s+(\$r\d+)\s+\(\$[iuf]\d+\)\s+(\$r\d+)\s+(-?\d+|\$r\d+)', t)
     if m:
         rd, rs1, rs2 = m.group(2), m.group(3), m.group(4)
         reads = {rs1}
@@ -312,7 +338,9 @@ def _pack_bundles(flat):
             elif c_ctrl:                                split = True  # ctrl ends bundle
             elif instr['reads']  & c_writes:           split = True  # RAW hazard
             elif instr['writes'] & c_writes:           split = True  # WAW hazard
-            elif instr['mem_access'] in c_mem_writes:   split = True  # memory RAW/WAW hazard
+            elif (instr['mem_access'] is not None
+                  and _mem_may_alias(instr['mem_access'], c_mem_writes)):
+                                                        split = True  # memory RAW/WAW hazard
             # Phase hazard: the aligner places $ld/$st in LATER slots than ALU/$set
             # instructions within a bundle, regardless of textual order — confirmed
             # 2026-06-17 by comparing unaligned vs aligned mcode (e.g. every function
@@ -443,7 +471,7 @@ def _schedule_block(block):
         if cctrl[0] or csize[0] >= 8:                     return False
         if ins['reads']  & cw:                            return False
         if ins['writes'] & cw:                            return False
-        if ins['mem_access'] is not None and ins['mem_access'] in cmw: return False
+        if ins['mem_access'] is not None and _mem_may_alias(ins['mem_access'], cmw): return False
         if ins['mem_access'] is None and (ins['writes'] & cmr):        return False
         if ins['text'].startswith('$call') and _SP_REG in cw:         return False
         return True

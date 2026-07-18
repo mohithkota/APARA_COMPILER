@@ -501,7 +501,34 @@ class CodeGen:
         # 0 == 0 is always true → unconditional jump; no dedicated ONE register needed
         self._emit(f"? ($i64) {ZERO} == $goto {label}")
 
-    def _emit_cond_branch(self, left, op, right, true_lbl, false_lbl):
+    def _emit_cond_branch(self, left, op, right, true_lbl, false_lbl, ftype=None):
+        # Float comparison: float-subtract the operands, then branch on the
+        # SIGN of the diff. The branch instruction sign-extends its register
+        # from the test type's width (___execute_branch_operation___), so a
+        # ($i32) tag reads bit 31 -- exactly the f32 sign bit ($f64 -> ($i64),
+        # bit 63). The extra `+ ftype scr $r0` adds +0.0, canonicalizing a -0.0
+        # diff to +0.0 so a==b / a>=b hold for +0 vs -0 operands. (NaN is out
+        # of scope, as everywhere in this integer-first toolchain.)
+        if ftype:
+            all_names = [t.name for t in [left, right] if isinstance(t, Temp)]
+            l_reg, l_bor = self._operand_reg(left, protect=all_names)
+            r_reg, r_bor = self._operand_reg(right, protect=[l_reg] + all_names)
+            scr = self._safe_borrow(protect=[l_reg, r_reg])
+            tt = '($i32)' if ftype == '$f32' else '($i64)'
+            if op in ('<', '<='):
+                self._emit(f"- {scr} ({ftype}) {r_reg} {l_reg}")
+                op = {'<': '>', '<=': '>='}[op]
+            else:
+                self._emit(f"- {scr} ({ftype}) {l_reg} {r_reg}")
+            self._emit(f"+ {scr} ({ftype}) {scr} {ZERO}")
+            self._emit(f"? {tt} {scr} {op} $goto {true_lbl}")
+            self._ra.unborrow(scr)
+            if r_bor: self._ra.unborrow(r_reg)
+            if l_bor: self._ra.unborrow(l_reg)
+            if false_lbl:
+                self._emit_jump(false_lbl)
+            return
+
         # Constant fold when both operands are known at compile time
         if isinstance(left, Const) and isinstance(right, Const):
             lv, rv = left.value, right.value
@@ -668,7 +695,8 @@ class CodeGen:
         self._emit_jump(ir.label)
 
     def _gen_IRCondJump(self, ir):
-        self._emit_cond_branch(ir.left, ir.op, ir.right, ir.true_label, ir.false_label)
+        self._emit_cond_branch(ir.left, ir.op, ir.right, ir.true_label,
+                               ir.false_label, ftype=getattr(ir, 'ftype', None))
 
     # ── data movement ──────────────────────────────────────────────────────────
 
@@ -918,8 +946,11 @@ class CodeGen:
         d    = ir.dest.name
         op   = ir.op
 
-        # Constant-fold both-const case
-        if isinstance(ir.left, Const) and isinstance(ir.right, Const):
+        ftype = getattr(ir, 'ftype', None)   # '$f32'/'$f64' for float arithmetic
+
+        # Constant-fold both-const case (integer only -- float bit patterns must
+        # not be folded as integers).
+        if not ftype and isinstance(ir.left, Const) and isinstance(ir.right, Const):
             lv, rv = ir.left.value, ir.right.value
             try:
                 result = {
@@ -949,24 +980,30 @@ class CodeGen:
             return
 
         apara = self._APARA_OP.get(op, op)
-        # All integer ALU ops use $i64 (64-bit two's-complement). Signedness
-        # would only matter for '>>' (logical vs arithmetic), but the sim's
-        # $u64 shift path is broken (returns 0), so $i64 is kept -- see the
-        # note in ir_gen._binop.
+        # Integer ALU ops use $i64; a float op uses its $f32/$f64 tag (the tag's
+        # Float_Flag makes the simulator do fp_add/fp_sub/fp_mul/fp_div).
+        tt = f'({ftype})' if ftype else '($i64)'
         l_reg, l_bor = self._operand_reg(ir.left, protect=[d] + sn)
 
-        if isinstance(ir.right, Const):
+        # Float constant operands are bit patterns, not valid 10-bit immediates,
+        # so a float op always takes the load-into-register path.
+        if isinstance(ir.right, Const) and not ftype:
             rv = ir.right.value
             if -512 <= rv <= 511:
-                self._emit(f"{apara} {dest} ($i64) {l_reg} {rv}")
+                self._emit(f"{apara} {dest} {tt} {l_reg} {rv}")
             else:
                 scr = self._safe_borrow(protect=[d, l_reg])
                 self._load_const(scr, rv)
-                self._emit(f"{apara} {dest} ($i64) {l_reg} {scr}")
+                self._emit(f"{apara} {dest} {tt} {l_reg} {scr}")
                 self._ra.unborrow(scr)
+        elif isinstance(ir.right, Const):
+            scr = self._safe_borrow(protect=[d, l_reg])
+            self._load_const(scr, ir.right.value)
+            self._emit(f"{apara} {dest} {tt} {l_reg} {scr}")
+            self._ra.unborrow(scr)
         else:
             r_reg = self._alloc_reg(ir.right, protect=[d, l_reg])
-            self._emit(f"{apara} {dest} ($i64) {l_reg} {r_reg}")
+            self._emit(f"{apara} {dest} {tt} {l_reg} {r_reg}")
 
         if l_bor: self._ra.unborrow(l_reg)
 

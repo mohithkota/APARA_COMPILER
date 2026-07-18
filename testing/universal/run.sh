@@ -6,7 +6,7 @@ AS=$BIN_DIR/mcode_assemble
 DISAS=$BIN_DIR/mcode_disassemble
 RUN=$BIN_DIR/mcode_run
 
-NAME=u8_reverse_accumulate
+NAME=u9_and_loop_cond
 
 [ -f $NAME.golden ] && cp $NAME.golden $NAME.result
 $ALIGN  $NAME.mcode           > $NAME.aligned.mcode

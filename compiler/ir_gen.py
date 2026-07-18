@@ -173,6 +173,9 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._cont_to      = None
         self._str_n        = 0
         self._func_names   = set()   # all C function definition names (for function pointers)
+        self._func_ret_ftag = {}     # func name -> '$f32'/'$f64' for float-returning fns
+        self._func_param_ftags = {}  # func name -> [param float tag or None, ...]
+        self._struct_field_ftag = {} # (struct name, field name) -> '$f32'/'$f64'
         # Maps variable name → DMEM stride per element for pointer arithmetic.
         # All pointer types currently use stride=8 (one 8-byte DMEM slot per element).
         self._ptr_stride      = {}
@@ -438,7 +441,15 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def _record_ptr(self, name, ctype_node):
         """If ctype_node is a PtrDecl, record name as a pointer in _ptr_stride
         (DMEM slot stride) and _ptr_elem_bytes (pointee width for the load/store
-        type tag)."""
+        type tag). A NON-pointer declaration must instead clear any stale entry:
+        _ptr_stride is not scope-popped, so a pointer param `int *a` in one
+        function would otherwise leak onto a later function's array/scalar `a`,
+        and _eval_addr's pointer path (which outranks the array path) would
+        dereference the array instead of decaying it."""
+        if not isinstance(ctype_node, A.PtrDecl):
+            self._ptr_stride.pop(name, None)
+            self._ptr_elem_bytes.pop(name, None)
+            return
         if isinstance(ctype_node, A.PtrDecl):
             pointed = ctype_node.type  # the pointed-to type node
             self._ptr_stride[name] = 8  # DMEM stride is always 8 for now
@@ -654,6 +665,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 fdmem = 8  # pointer = one 8-byte slot
             else:
                 fdmem = 8  # scalar: one 8-byte slot regardless of C type
+            # float field tag for _float_tag_of on s.f / p->f arithmetic
+            if isinstance(ftype, A.TypeDecl):
+                fft = self._float_tag_of_type(ftype)
+                if fft:
+                    self._struct_field_ftag[(name, fname)] = fft
             layout[fname] = (offset, fdmem, sub_struct)
             offset += fdmem
         if not name:
@@ -846,6 +862,21 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         for ext in node.ext:
             if isinstance(ext, A.FuncDef):
                 self._func_names.add(ext.decl.name)
+                # record float RETURN types up front so a call site compiled
+                # before the callee's definition still knows the result is float
+                rt = self._float_tag_of_type(ext.decl.type.type)
+                if rt:
+                    self._func_ret_ftag[ext.decl.name] = rt
+                # record float PARAM types so call sites convert int-literal
+                # arguments (half(3) must pass 3.0f's bits)
+                pf = []
+                if ext.decl.type.args:
+                    for p in ext.decl.type.args.params:
+                        t = p.type if isinstance(p, A.Decl) else None
+                        pf.append(self._float_tag_of_type(t)
+                                  if isinstance(t, A.TypeDecl) else None)
+                if any(pf):
+                    self._func_param_ftags[ext.decl.name] = pf
         self._collect_enums(node)   # register enum constants everywhere
         for ext in node.ext: self.visit(ext)
 
@@ -904,7 +935,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return
         # Skip function declarations (no body — just a prototype/forward declaration)
         if isinstance(node.type, A.FuncDecl): return
-        init_vals = self._flatten_init(node.init) if node.init else []
+        # Element float tag (float/double scalars and arrays thereof): drives
+        # IEEE bit-pattern encoding of initializers in _flatten_init.
+        _t = node.type
+        while isinstance(_t, A.ArrayDecl):
+            _t = _t.type
+        elem_ftag = self._float_tag_of_type(_t if isinstance(_t, A.TypeDecl) else None)
+        init_vals = self._flatten_init(node.init, ftag=elem_ftag) if node.init else []
 
         # Detect struct variable BEFORE computing total/esz so _STRUCT_TOTAL is populated.
         self._record_struct_var(node.name, node.type)
@@ -976,6 +1013,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     # RHS may be an array name / pointer expression that decays
                     # to an address (e.g. `int *p = arr`), so use _visit_operand.
                     val = self._visit_operand(node.init)
+                    if elem_ftag:   # float a = 3; stores 3.0f bits
+                        val = self._float_operand(node.init, val, elem_ftag)
                     addr = self._tmp()
                     self._emit(IRLoadAddr(addr, fp_off))
                     self._emit(IRStore(addr, Const(0), val, esz))
@@ -988,7 +1027,26 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._global_array_elem[node.name] = ssize
             self._array_elem[node.name] = ssize
 
-    def _flatten_init(self, init_node):
+    def _const_float(self, node):
+        """Compile-time float value of a numeric constant expression, or None."""
+        if isinstance(node, A.Constant):
+            try: return float(node.value.rstrip('uUlLfF'))
+            except Exception: return None
+        if isinstance(node, A.UnaryOp) and node.op == '-':
+            v = self._const_float(node.expr)
+            return -v if v is not None else None
+        return None
+
+    def _flatten_init(self, init_node, ftag=None):
+        # Float/double target: encode each initializer as its IEEE bit pattern
+        # of the DECLARED element width (a plain `1.5` in a float[] is f32).
+        if ftag and isinstance(init_node, (A.Constant, A.UnaryOp)):
+            v = self._const_float(init_node)
+            if v is not None:
+                import struct
+                if ftag == '$f32':
+                    return [struct.unpack('<I', struct.pack('<f', v))[0]]
+                return [struct.unpack('<Q', struct.pack('<d', v))[0]]
         if isinstance(init_node, A.Constant):
             try: return [int(init_node.value, 0)]
             except: return [0]
@@ -1001,16 +1059,16 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     if isinstance(e, A.NamedInitializer):
                         ci = self._const_int(e.name[0]) if e.name else None
                         if ci is not None: idx = ci
-                        vals_e = self._flatten_init(e.expr)
+                        vals_e = self._flatten_init(e.expr, ftag)
                     else:
-                        vals_e = self._flatten_init(e)
+                        vals_e = self._flatten_init(e, ftag)
                     for k, v in enumerate(vals_e):
                         d[idx + k] = v
                     idx += len(vals_e)
                 n = max(d) + 1 if d else 0
                 return [d.get(i, 0) for i in range(n)]
             vals = []
-            for expr in init_node.exprs: vals.extend(self._flatten_init(expr))
+            for expr in init_node.exprs: vals.extend(self._flatten_init(expr, ftag))
             return vals
         if isinstance(init_node, A.UnaryOp) and init_node.op == '-':
             sub = self._flatten_init(init_node.expr)
@@ -1064,6 +1122,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 self._array_elem[p.name] = esz
             self._record_ptr(p.name, p.type)        # track pointer variables
             self._record_struct_var(p.name, p.type) # track struct / ptr-to-struct params
+            self._var_ctype[p.name] = p.type        # sizeof + float type tracking
             if _is_unsigned_decl(p.type):
                 self._unsigned_vars.add(p.name)
             else:
@@ -1099,12 +1158,25 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # to an address (`p = arr`); compound ops (+=,-=) operate on the
         # scalar value.
         rval = self._visit_operand(node.rvalue) if op == '=' else self._visit_expr(node.rvalue)
+        lv_ftag = self._float_tag_of(node.lvalue)
         if op == '=':
+            # implicit conversion into a float lvalue (`a = 3` stores 3.0f bits)
+            if lv_ftag:
+                rval = self._float_operand(node.rvalue, rval, lv_ftag)
             self._assign_lval(node.lvalue, rval)
             return rval
         old  = self._visit_expr(node.lvalue)
         res  = self._tmp()
         base_op = op[:-1]   # '+=' → '+', '-=' → '-', etc.
+        # Float compound assignment (x += 2.5f): float-tag the binop and
+        # convert a mixed operand, exactly as _binop does.
+        cmp_ftag = lv_ftag or self._float_tag_of(node.rvalue)
+        if cmp_ftag and base_op in ('+', '-', '*', '/'):
+            old  = self._float_operand(node.lvalue, old, cmp_ftag)
+            rv   = self._float_operand(node.rvalue, rval, cmp_ftag)
+            self._emit(IRBinOp(res, base_op, old, rv, ftype=cmp_ftag))
+            self._assign_lval(node.lvalue, res)
+            return res
         # Scale rval by pointer stride for pointer += / pointer -=
         actual_rval = rval
         if base_op in ('+', '-') and isinstance(node.lvalue, A.ID):
@@ -1274,6 +1346,12 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def visit_Return(self, node):
         # Return value decays too (`return arr;` yields the array's address)
         val = self._visit_operand(node.expr) if node.expr else None
+        # Implicit conversion to a float return type (`return 2;` in a
+        # float fn must return 2.0f's bits, not integer 2).
+        if val is not None:
+            ret_ftag = self._func_ret_ftag.get(self._func_name)
+            if ret_ftag:
+                val = self._float_operand(node.expr, val, ret_ftag)
         self._emit(IRReturn(val))
 
     def generic_visit(self, node):
@@ -1282,6 +1360,16 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
     def _visit_expr(self, node):
         if node is None: return Const(0)
         if isinstance(node, A.Constant):
+            # Float/double literal -> its IEEE bit pattern (f32 single, f64 double).
+            if node.type in ('float', 'double'):
+                import struct
+                try:
+                    v = float(node.value.rstrip('fFlL'))
+                except Exception:
+                    v = 0.0
+                if node.type == 'float':
+                    return Const(struct.unpack('<I', struct.pack('<f', v))[0])
+                return Const(struct.unpack('<Q', struct.pack('<d', v))[0])
             raw = node.value
             # Strip C literal suffixes (u,U,l,L,f,F) — but only on non-hex literals
             # because hex digits include 'f'/'F' (e.g. 0x0F must not become '0x0')
@@ -1304,6 +1392,24 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if isinstance(node, A.Cast):
             expr_val  = self._visit_expr(node.expr)
             dest_type = _c_decl_to_apara_type(node.to_type.type if node.to_type else None)
+            src_ftag  = self._float_tag_of(node.expr)
+            dest_is_float = dest_type in ('$f32', '$f64')
+            # int/float conversions via $cast (to-type) rd (from-type) rs.
+            if src_ftag and not dest_is_float:      # (int)floatexpr
+                res = self._tmp()
+                self._emit(IRCast(res, expr_val,
+                                  dest_type if dest_type != '$i64' else '$i32', src_ftag))
+                return res
+            if dest_is_float and not src_ftag:      # (float)intexpr
+                res = self._tmp()
+                self._emit(IRCast(res, expr_val, dest_type, '$i32'))
+                return res
+            if dest_is_float and src_ftag:          # (float)doubleexpr etc.
+                if dest_type == src_ftag:
+                    return expr_val
+                res = self._tmp()
+                self._emit(IRCast(res, expr_val, dest_type, src_ftag))
+                return res
             if dest_type == '$i64':
                 return expr_val   # no narrowing needed
             res = self._tmp()
@@ -1350,8 +1456,114 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     or self._expr_is_unsigned(node.right))
         return False
 
+    def _float_tag_of_type(self, t):
+        """'$f32'/'$f64' if type node t is float/double, else None."""
+        if t is None:
+            return None
+        at = _c_decl_to_apara_type(t)
+        return at if at in ('$f32', '$f64') else None
+
+    def _structref_struct_name(self, base, reftype):
+        """Struct type name of a StructRef's BASE expression: s.f ('.'),
+        p->f ('->'), pts[i].f (struct arrays), and nested s.a.b chains."""
+        if isinstance(base, A.ID):
+            if reftype == '->':
+                return self._var_struct_ptr_type.get(base.name)
+            return self._var_struct_type.get(base.name)
+        if isinstance(base, A.ArrayRef):
+            b = base.name
+            while isinstance(b, A.ArrayRef):
+                b = b.name
+            return self._array_struct_elem.get(b.name) if isinstance(b, A.ID) else None
+        if isinstance(base, A.StructRef):   # nested: outer field's sub-struct
+            outer = self._structref_struct_name(base.name, base.type)
+            if outer and isinstance(base.field, A.ID):
+                ent = self._struct_layouts.get(outer, {}).get(base.field.name)
+                if ent and ent[2]:
+                    return ent[2]
+            return None
+        return None
+
+    def _float_tag_of_decl_elem(self, t):
+        """Element float tag of a declared array/pointer type node: unwraps
+        ArrayDecl/PtrDecl layers to the scalar TypeDecl (float garr[3] -> $f32,
+        double *p -> $f64)."""
+        while isinstance(t, (A.ArrayDecl, A.PtrDecl)):
+            t = t.type
+        return self._float_tag_of_type(t if isinstance(t, A.TypeDecl) else None)
+
+    def _float_tag_of(self, node):
+        """Return '$f32'/'$f64' if expression `node` is float-typed, else None.
+        Threads float-ness through the AST (mirrors _expr_is_unsigned)."""
+        if isinstance(node, A.Constant):
+            if node.type in ('float', 'double'):
+                return '$f32' if node.type == 'float' else '$f64'
+            return None
+        if isinstance(node, A.ID):
+            return self._float_tag_of_type(self._var_ctype.get(node.name))
+        if isinstance(node, A.Cast):
+            return self._float_tag_of_type(node.to_type.type if node.to_type else None)
+        if isinstance(node, A.UnaryOp):
+            if node.op in ('-', '+'):
+                return self._float_tag_of(node.expr)
+            if node.op == '*' and isinstance(node.expr, A.ID):   # *p of float*
+                return self._float_tag_of_decl_elem(self._var_ctype.get(node.expr.name))
+            return None
+        if isinstance(node, A.ArrayRef):
+            base = node.name
+            while isinstance(base, A.ArrayRef):   # 2D: a[i][j]
+                base = base.name
+            if isinstance(base, A.ID):
+                return self._float_tag_of_decl_elem(self._var_ctype.get(base.name))
+            return None
+        if isinstance(node, A.FuncCall) and isinstance(node.name, A.ID):
+            return self._func_ret_ftag.get(node.name.name)
+        if isinstance(node, A.StructRef):
+            sname = self._structref_struct_name(node.name, node.type)
+            if sname and isinstance(node.field, A.ID):
+                return self._struct_field_ftag.get((sname, node.field.name))
+            return None
+        if isinstance(node, A.BinaryOp):
+            lt = self._float_tag_of(node.left)
+            rt = self._float_tag_of(node.right)
+            # C usual arithmetic conversions: double wins over float
+            if '$f64' in (lt, rt):
+                return '$f64'
+            return lt or rt
+        return None
+
+    def _float_operand(self, node, val, ftag):
+        """Ensure `val` (the IR value of expression `node`) carries float bits
+        of type `ftag`, applying C's usual arithmetic conversions to a mixed
+        operand: an integer side of a float binop/comparison is converted
+        (int -> f32/f64), and an f32 side of an f64 op is widened. Integer
+        CONSTANTS are re-encoded at compile time; everything else goes through
+        a runtime $cast."""
+        have = self._float_tag_of(node)
+        if have == ftag:
+            return val
+        if isinstance(val, Const) and have is None:
+            import struct
+            v = float(val.value)
+            if ftag == '$f32':
+                return Const(struct.unpack('<I', struct.pack('<f', v))[0])
+            return Const(struct.unpack('<Q', struct.pack('<d', v))[0])
+        res = self._tmp()
+        self._emit(IRCast(res, val, ftag, have or '$i32'))
+        return res
+
     def _binop(self, node):
         op = node.op
+        # Float arithmetic: emit the ALU op with a $f32/$f64 tag (the tag's
+        # Float_Flag makes the simulator do fp math). Gated on _float_tag_of so
+        # integer paths are untouched.
+        ftag = self._float_tag_of(node)
+        if ftag and op in ('+', '-', '*', '/'):
+            l = self._float_operand(node.left,  self._visit_expr(node.left),  ftag)
+            r = self._float_operand(node.right, self._visit_expr(node.right), ftag)
+            res = self._tmp()
+            self._emit(IRBinOp(res, op, l, r, ftype=ftag))
+            return res
         if op == '&&':
             res = self._tmp(); fl = self._lbl('andF'); el = self._lbl('andE')
             l = self._visit_expr(node.left)
@@ -1411,7 +1623,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             res = self._emit_binop(op, l, r)
         elif op in ('>','<','>=','<=','==','!='):
             tl = self._lbl('cT'); el = self._lbl('cE')
-            self._emit(IRCondJump(l, op, r, tl))
+            cmp_ftag = self._float_tag_of(node)
+            if cmp_ftag:
+                l = self._float_operand(node.left,  l, cmp_ftag)
+                r = self._float_operand(node.right, r, cmp_ftag)
+            self._emit(IRCondJump(l, op, r, tl, ftype=cmp_ftag))
             self._emit(IRAssign(res, Const(0))); self._emit(IRJump(el))
             self._emit(IRLabel(tl)); self._emit(IRAssign(res, Const(1)))
             self._emit(IRLabel(el))
@@ -1463,14 +1679,20 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return Const(self._sizeof_bytes(node.expr))
         if op == '-':
             v = self._visit_expr(node.expr); res = self._tmp()
-            self._emit(IRBinOp(res, '-', Const(0), v)); return res
+            # Float negation must be a FLOAT subtract (0.0 - v). An integer
+            # 0 - bits would arithmetically negate the bit pattern instead
+            # (-1.25 came out as -3.5, fp05).
+            ftag = self._float_tag_of(node.expr)
+            self._emit(IRBinOp(res, '-', Const(0), v, ftype=ftag)); return res
         if op == '~':
             v = self._visit_expr(node.expr); res = self._tmp()
             self._emit(IRBinOp(res, '^', v, Const(-1))); return res
         if op == '!':
             v = self._visit_expr(node.expr); res = self._tmp()
             tl = self._lbl('nT'); el = self._lbl('nE')
-            self._emit(IRCondJump(v, '==', Const(0), tl))
+            # float truthiness: !f must treat -0.0 as zero -> float compare
+            self._emit(IRCondJump(v, '==', Const(0), tl,
+                                  ftype=self._float_tag_of(node.expr)))
             self._emit(IRAssign(res, Const(0))); self._emit(IRJump(el))
             self._emit(IRLabel(tl)); self._emit(IRAssign(res, Const(1)))
             self._emit(IRLabel(el)); return res
@@ -1536,13 +1758,19 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         # address (structs are excluded from _is_array_name, so _visit_operand
         # alone would load the first word instead).
         args = []
-        for a in (node.args.exprs if node.args else []):
+        param_ftags = self._func_param_ftags.get(fname, ())
+        for i, a in enumerate(node.args.exprs if node.args else []):
             if (isinstance(a, A.ID) and a.name in self._var_struct_type
                     and a.name not in self._ptr_stride
                     and self._lookup(a.name) is not None):
                 args.append(self._addr_of_var(a.name))
                 continue
-            args.append(self._visit_operand(a))
+            v = self._visit_operand(a)
+            # implicit conversion into a float parameter (half(3) -> 3.0f bits)
+            pft = param_ftags[i] if i < len(param_ftags) else None
+            if pft:
+                v = self._float_operand(a, v, pft)
+            args.append(v)
 
         res   = self._tmp()
 
@@ -1850,7 +2078,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if isinstance(cond, A.BinaryOp) and cond.op in ('>','<','>=','<=','==','!='):
             l = self._visit_operand(cond.left)
             r = self._visit_operand(cond.right)
-            self._emit(IRCondJump(l, cond.op, r, true_lbl, false_lbl))
+            ftag = self._float_tag_of(cond)
+            if ftag:
+                l = self._float_operand(cond.left,  l, ftag)
+                r = self._float_operand(cond.right, r, ftag)
+            self._emit(IRCondJump(l, cond.op, r, true_lbl, false_lbl, ftype=ftag))
             return
         val = self._visit_expr(cond)
-        self._emit(IRCondJump(val, '!=', Const(0), true_lbl, false_lbl))
+        # float truthiness: if(f) is f != 0.0 (float compare, so -0.0 is false)
+        self._emit(IRCondJump(val, '!=', Const(0), true_lbl, false_lbl,
+                              ftype=self._float_tag_of(cond)))

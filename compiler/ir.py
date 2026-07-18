@@ -56,9 +56,10 @@ class IRAssign:
 class IRBinOp:
     """dest = left op right.  `unsigned` selects the $u type tag where signedness
     changes the operation (e.g. '>>' logical vs arithmetic)."""
-    def __init__(self, dest, op, left, right, unsigned=False):
+    def __init__(self, dest, op, left, right, unsigned=False, ftype=None):
         self.dest = dest; self.op = op; self.left = left; self.right = right
         self.unsigned = unsigned
+        self.ftype = ftype        # '$f32'/'$f64' for float arithmetic, else None
     def __repr__(self): return f"{self.dest} = {self.left} {self.op} {self.right}"
 
 class IRUnaryOp:
@@ -140,9 +141,10 @@ class IRGlobalAddrOf:
 
 class IRCondJump:
     """if left op right goto true_label [else false_label]"""
-    def __init__(self, left, op, right, true_label, false_label=None):
+    def __init__(self, left, op, right, true_label, false_label=None, ftype=None):
         self.left = left; self.op = op; self.right = right
         self.true_label = true_label; self.false_label = false_label
+        self.ftype = ftype        # '$f32'/'$f64' for a float comparison, else None
     def __repr__(self): return f"if {self.left} {self.op} {self.right} goto {self.true_label}"
 
 class IRJump:

@@ -1,25 +1,3 @@
-// Standalone demonstration of the confirmed $vreduce bug in the APARA
-// simulator (engine_isp/assembler/src/McodeOperations.cpp,
-// __vreduce_operation__) -- see ENGINE_ISP_BUG_REPORT.md for the full
-// writeup. This file isolates just the minimum needed to show it clearly:
-//
-//   1. Positive-only control (no element has its high bit set): signed and
-//      unsigned reduce MUST agree, and do -- proving the instruction
-//      tagging/dispatch itself is fine.
-//   2. One negative-bit-pattern element per width: signed reduce sign-
-//      extends (correct), unsigned reduce SHOULD zero-extend (giving a
-//      different, larger result) but the simulator's actual bug makes it
-//      sign-extend too, silently matching the signed answer instead.
-//
-// Each value is written into results[] and independently verified --
-// see isa_coverage_tests/test_alu_full.c / compiler/STATUS.md 2026-06-20
-// for the "no bias" methodology (gcc + golden_stubs.h ground truth,
-// checked against the real simulator's own PostCondition mechanism).
-// golden_stubs.h's __vreduce_* implementations are architecturally
-// correct (zero-extend for unsigned) on purpose, so results[3]/[5]/[7]
-// below are EXPECTED to show "Error: PostCondition ..." when this runs
-// against the real simulator -- that mismatch IS the bug, not a flaw in
-// this test.
 #define N_RESULTS 8
 long long results[N_RESULTS];
 

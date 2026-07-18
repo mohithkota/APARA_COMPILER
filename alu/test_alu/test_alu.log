@@ -1926,8 +1926,8 @@ LOG:Get_Operands: 0xbc  McodeStoreInstruction
 LOG:Get_Operands: 0xbd  McodeNullInstruction
 LOG:Get_Operands: 0xbe  McodeNullInstruction
 LOG:Get_Operands: 0xbf  McodeNullInstruction
-Info: ___execute_call_operation___
-Info: 184: Call!
+Info: ___execute_call_operation___ npc = 0xc8
+Info: 184: Call! npc=0xc8
 LOG:Execute     : 0xb8  McodeCallInstruction
 Info: 185: Null!
 LOG:Execute     : 0xb9  McodeNullInstruction
@@ -3767,8 +3767,8 @@ LOG:Get_Operands: 0x19c  McodeLoadInstruction
 LOG:Get_Operands: 0x19d  McodeNullInstruction
 LOG:Get_Operands: 0x19e  McodeNullInstruction
 LOG:Get_Operands: 0x19f  McodeNullInstruction
-Info: ___execute_return_operation___
-Info: 408: Return!
+Info: ___execute_return_operation___ npc= 0xc0
+Info: 408: Return! npc=0xc0
 LOG:Execute     : 0x198  McodeReturnInstruction
 Info: 409: Null!
 LOG:Execute     : 0x199  McodeNullInstruction
@@ -3825,14 +3825,16 @@ RunLog[0]: 0xc0 $halt        ->
 Info: Stopped after 119 ticks.
 Info: number of non-null instructions executed = 81
 Info: number of null instructions executed = 328
-Warning: Unknown verify line keyword reg
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
+Info: RunLog[0]: 0xd = Get_Register(1)
+
+Info: PostCondition Reg[0][1] = 0xd (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x82] = 0xd (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x83] = 0x7 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x84] = 0x1e (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x85] = 0x3 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x86] = 0x1 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x87] = 0x2 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x88] = 0xb (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x89] = 0x9 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x8a] = 0x50 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x8b] = 0x1 (mask=0xffffffffffffffff)

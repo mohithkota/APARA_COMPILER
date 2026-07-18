@@ -30,7 +30,7 @@ Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/univers
 | goto / labels | ✅ | |
 | designated initializers ({[2]=30}) | ✅ | |
 | Vector intrinsics (__vadd/__dot/__vreduce_max, vu8_t) | ✅ | |
-| Floating point (+ - * /) | ❌ | only $fsqrt — next phase |
+| Floating point (f32/f64: arith, cmp, casts, vars, arrays, params) | ✅ | fp01–07 vs gcc; gaps: struct float fields, float truthiness |
 | Function pointers | ❌ | blocked at assembler |
 | variadic funcs; real strings; >4 args | ❌ | strings are address-of only |
 
@@ -39,7 +39,171 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-17 — FEATURE SWEEP GREEN: sizeof, enum, static locals, goto, designated inits, anon-struct typedef all implemented (16/16) (Latest)
+## 2026-07-18 — FP STEP 7 DONE: bit-exact float result verification (fp09 6/6) — FP CAMPAIGN FULLY COMPLETE (Latest)
+
+The last (optional) FP item. `try_golden_verify` (compiler.py) now supports two
+new golden-convention arrays alongside `results`: **`fresults[]`** (float) and
+**`dresults[]`** (double). The gcc driver captures their IEEE bit patterns via
+`__builtin_memcpy` (a value cast would numerically convert), and each APARA
+DMEM word is compared BIT-EXACTLY. Two conventions encoded in the harness:
+- element count = total_bytes / **stride** (DMEM footprint, one 8-byte word per
+  element), not / elem_bytes — dividing by elem_bytes over-read gcc's arrays;
+- f32 expectations are shifted **<<32**: APARA stores sub-word (i32/f32) data
+  in the HIGH half of its 8-byte DMEM word.
+
+fp09 = 6/6 bit-exact vs gcc, which also proves the simulator's f32 AND f64
+arithmetic are IEEE-identical to the host (including 1.1*3.0's last-bit
+rounding = 0x400A666666666667 and 1.1-0.1 = exactly 1.0).
+
+Full gate green: feature_sweep 16/16, universal 21/21, pointer_bugs 15/15,
+fp01–fp09 = **50/50**. All 7 FP-plan steps + all gap closures complete; the
+floating-point campaign is finished.
+
+## 2026-07-18 — FP GAPS ALL CLOSED (fp08 8/8): implicit int→float conversions everywhere, struct float fields, float truthiness
+
+All "known deliberate gaps" from the FP campaign are now closed, gcc-verified
+(fp08), full gate green (16/16, 21/21, 15/15, fp01–fp08 = 44/44):
+- **int args to float params** (`half(3)`) — pre-pass records
+  `_func_param_ftags` per function; `_call` converts each argument.
+- **int returns in float functions** (`return 3;`) — `visit_Return` converts
+  via the function's `_func_ret_ftag`.
+- **int→float in decl-init and assignment** (`float a = 7; a = 9;`) — both
+  store the IEEE bits now.
+- **float COMPOUND assignment** (`acc /= 4.0f`) — was an integer binop on the
+  bit patterns; now float-tagged with mixed-operand conversion, same as
+  `_binop`.
+- **struct float/double fields** (`p.x*2.0f`, `p->y`, `pts[i].f`, nested
+  `s.a.b`) — `_register_struct` records `_struct_field_ftag`; `_float_tag_of`
+  resolves StructRef bases via new `_structref_struct_name`.
+- **float truthiness** (`if(f)`, `!f`) — condition/`!` lowering pass the float
+  tag so -0.0 is falsy (float compare instead of raw-bits test).
+
+The scalar f32/f64 subset is now C-semantics-complete for everything outside
+step 7 (optional bit-exact float result verification), which remains open.
+
+## 2026-07-18 — FP CAMPAIGN COMPLETE (Steps 4–6 + globals/arrays): comparisons, f64, mixed types, params/returns, float arrays all pass vs gcc
+
+Steps 4–6 of `testing/fp_check/FP_PLAN.md`, all gcc-verified, full gate green
+(feature_sweep 16/16, universal 21/21, pointer_bugs 15/15, fp01–fp07 = 36/36).
+
+- **Step 4 — float comparisons (fp04 8/8).** All 6 operators + float-driven
+  `while`. Lowering: float-subtract, `+0.0` (canonicalizes -0), branch on the
+  diff's SIGN via an ($i32) test tag for f32 / ($i64) for f64 — the branch
+  instruction sign-extends from the test-type width, so bit 31/63 IS the float
+  sign bit. IRCondJump grew an `ftype`; both creation sites pass it.
+- **Step 5 — double + usual arithmetic conversions (fp05 8/8).** New
+  `_float_operand`: a mixed int operand of a float op/comparison converts
+  (constants re-encoded to IEEE bits at compile time, otherwise a runtime
+  `$cast`), and f32 widens to f64 (`_float_tag_of` prefers $f64). Fixed float
+  **unary minus** — it was an integer `0 - bits` (turned -1.25 into -3.5); now
+  a float subtract when the operand is float.
+- **Step 6 — params/returns (fp06 4/4).** Params now recorded in `_var_ctype`;
+  float return tags pre-collected per function (`_func_ret_ftag`) in the
+  FileAST pre-pass so calls compiled before the callee's definition work.
+- **Float globals + arrays (fp07 4/4).** Global float/double initializers are
+  IEEE-encoded at the DECLARED element width (`_flatten_init` gained `ftag`;
+  `float g[]={1.5}` packs f32). `_float_tag_of` extended to ArrayRef (1D/2D)
+  and `*p` via the declared element type (`_float_tag_of_decl_elem`).
+
+Known deliberate gaps (see FP_PLAN.md): struct float fields, int-literal args
+to float params, `return 2` in float functions, float truthiness `if(f)`.
+Coverage table FP row -> ✅ (scalar f32/f64 subset).
+
+## 2026-07-18 — FP Step 3 GREEN: int→float cast works incl. negatives; simulator ternary-promotion bug + 2 more bundler holes fixed
+
+FP campaign Step 3 (`(float)i` via `$cast ($f32) rd ($i32) rs`). The compiler
+side was already in place from Step 1; fp03 exposed two toolchain bugs:
+
+- **Simulator `cast_int_to_float` ternary-promotion bug (McodeFpuUtils.cpp:517)**
+  — `double x = (unsigned ? (u & 0xffffffff) : (int) u);` promotes the signed
+  arm's `int` back to uint64_t (the unsigned arm's type), so `(float)(-3)`
+  became `(double)(2^64-3)` = 0x5F800000 and then saturated to INT64_MIN on the
+  way back. All POSITIVE int→float casts were unaffected, which is why Step 1
+  passed. Fixed with an explicit if/else + `Sign_Extend_64` from the source
+  width; rebuilt + deployed to engine_new/bin (same workflow as the Jul-17 sim
+  fixes). Verified by hand-written `$cast` micro-test and fp03.
+- **Bundler `$ld`/`$st` regexes ignored float tags (bundler.py)** — `($f32)`
+  loads/stores parsed as nothing: no dest/base register deps, no memory-hazard
+  tracking. Widened to `[iuf]` (same hole class as the Jul-17 ALU/compare fix).
+- **Bundler memory-hazard check was tuple-equality (bundler.py)** — a store
+  via `$r8` and a load via `$r9` of the SAME address landed in one bundle
+  (both regs held FP-16), so the load read stale data. New `_mem_may_alias`:
+  after a store, a memory access stays in the bundle only if provably disjoint
+  (same base register, different constant offsets). Applied to both
+  `_pack_bundles` and the clustering heuristic.
+
+Verified: fp03 = 14, -6, 3, 17 vs gcc (int→float positive/negative, ×, ÷, +);
+integer narrowing casts re-checked post-rebuild (44/255/4464/-56 ✓); full gate
+re-run GREEN (feature_sweep 16/16, universal 21/21, pointer_bugs 15/15,
+fp01/fp02/fp03 0 err).
+
+**Next:** FP Step 4 — float comparisons (`a<b`, `a==b` → branch/cmov).
+
+## 2026-07-18 — TWO integer codegen bugs found via u2_binsearch hang: _ptr_stride cross-function leak + loop_reg temp-name collision
+
+The universal-suite re-run (lost in the Jul-18 forced shutdown) hung on
+u2_binsearch. Root-caused to two independent pre-existing bugs, both fixed:
+
+**Bug 1 — `_ptr_stride` leaks across functions (ir_gen.py `_record_ptr`).**
+`_ptr_stride` is never scope-popped, and in `_eval_addr` the pointer path
+outranks the array path. So `bsearch(int *a, ...)` registers `a` as a pointer,
+and a LATER function's local array `a` inherits that stale entry: passing the
+array to a call then LOADS `a[0]` and passes the value as the "pointer"
+(callee reads zeros; binsearch returned -1 for every query). Repro'd minimally
+(d2.c: `get(int*,int)` + `int a[7]` local in main → returned 0s). Fix in
+`_record_ptr`: a non-pointer declaration now pops any stale
+`_ptr_stride`/`_ptr_elem_bytes` entry for that name (same shadowing pattern as
+`_unsigned_vars` add/discard).
+
+**Bug 2 — loop_reg fresh temps collide with the function's own temps
+(loop_reg.py).** `Temp.reset()` runs per function during IR generation, so
+`_tN` names are only unique within a function — but `promote_loop_counters`
+created scaffolding temps with bare `Temp()`, which continues the global
+counter from wherever the LAST function left it. In u2_binsearch the preheader
+temps came out as `_t11`/`_t12`, colliding with bsearch's own `_t11`/`_t12`:
+two live values shared one register (`$r8` held the address of `lo`, then got
+clobbered with another slot's address before the loop), so `m=(lo+hi)/2` read
+the wrong slot and the loop never terminated → the hang. Only triggers when
+LICM+loop-reg run together (numbering alignment); each pass alone passed. Fix:
+loop_reg temps now use their own `_lrN` namespace (`_new_temp()`), which can
+never collide with `_tN`.
+
+Verified: u2_binsearch 4/4 (3, 0, 6, -1); d2/d3/d4 minimal repros pass; full
+gate GREEN — feature_sweep 16/16, universal 21/21, pointer_bugs 15/15,
+fp01/fp02 0 errors (all with the rebuilt Jul-17 toolchain).
+
+## 2026-07-18 — FP CAMPAIGN Steps 1–2: f32 literals, arithmetic, variables, float↔int casts all pass vs gcc; 3 simulator FP bugs found+fixed
+
+Floating-point campaign per `testing/fp_check/FP_PLAN.md`. Session cut short by a
+forced shutdown right after Step 2 passed; state recorded here on resume.
+
+**Compiler changes** (all gated on `_is_float_expr` — integer paths untouched):
+- ir.py / ir_gen.py / codegen.py — float type tracking (`_is_float_expr` mirroring
+  `_expr_is_unsigned`), float literals parsed to IEEE bit patterns (struct.pack),
+  float tag on IRBinOp → `+ ($f32) …`, float↔int casts via `$cast`.
+- bundler.py — ALU-op regex (l.191) and compare regex (l.185) only matched `($i\d+)`
+  tags, so `($f32)` ops had **zero hazard tracking** and got reordered before their
+  constant-materialization (`<<16`/`|`) completed. Fixed to accept `i`/`u`/`f` tags.
+
+**Three simulator bugs found + fixed** (prof_git_folder …/assembler/src, toolchain
+rebuilt):
+1. `McodeOperations.cpp` `___cast_operation___` — int↔float dispatch called the two
+   conversion functions **swapped** (each read its operand as the wrong type → garbage).
+2. `McodeExecute.cpp` `___execute_cast_operation___` — the float path (the function
+   MachineRun actually calls) was an unimplemented stub leaving `ovalues`
+   uninitialized; now routes through the fixed `___cast_operation___`.
+3. `McodeFpuUtils.cpp` `fp_sub` — case 32 subtracted the raw **integer bit patterns**
+   (`as - bs` instead of `sa - sb`); case 64 used `+` instead of `-`. fp_mul/fp_div
+   checked clean.
+
+**Verified:** fp01 (Step 1: literals + arith + float→int cast) = 5, 7, 12, 2 vs gcc ✅;
+fp02 (Step 2: float variables load/store, `a+b`/`a-b`/`a*b`/`c/d`) = 5, 2, 5, 2 vs
+gcc ✅. Regression gates after sim rebuild + bundler change: feature_sweep 16/16 ✅,
+pointer_bugs 15/15 ✅, universal re-run pending (result lost in shutdown).
+
+**Next:** FP Step 3 — int→float cast (`(float)i`), then comparisons, f64, params.
+
+## 2026-07-17 — FEATURE SWEEP GREEN: sizeof, enum, static locals, goto, designated inits, anon-struct typedef all implemented (16/16)
 
 Divide-and-conquer of the coverage table's ⚠️/❌ integer items. Six fixes, each
 gated (feature sweep + real suite + pointer battery), zero regressions:
@@ -3163,7 +3327,7 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 | Function pointers | Not started | |
 | Pointer arithmetic (all ops) | **Done** | stride=8 APARA alignment |
 | 2D arrays (global + local + params) | **Done** | row-major, array decay |
-| Float arithmetic (+,-,*,/) | Not started | Only sqrt via intrinsic |
+| Float arithmetic (+,-,*,/) | **Done** | f32+f64 arith/cmp/casts/vars/arrays/params, fp01–07 vs gcc |
 | String literals | Partial | address-of only |
 | Variadic functions | Not started | |
 
@@ -3173,7 +3337,7 @@ r6–r25 = GEN (20)  r29=ONE  r30=SCR  r31=SCIDX
 |---|---------|--------|---------|
 | 1 | **Register spilling** (>28 live vars) | Done ✓ | — |
 | 2 | **Function pointers** | Medium | None — next |
-| 3 | **Float arithmetic** (+,-,*,/) | Low | ISA `$fadd/$fsub/$fmul/$fdiv` needed |
+| 3 | **Float arithmetic** (+,-,*,/) | Done ✓ | full scalar f32/f64 subset, 2026-07-18 |
 | 4 | **Sub-word LD/ST** ($i32/$i16/$i8) | Low | **Hardware engine bug** |
 
 **Overall compiler completeness: ~88% of a basic C compiler**

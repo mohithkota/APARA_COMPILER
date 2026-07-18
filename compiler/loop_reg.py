@@ -38,6 +38,19 @@ from ir import *
 from licm import _find_loops, _jump_targets
 
 
+_lr_n = 0
+def _new_temp():
+    """Fresh temp in a namespace ('_lrN') that cannot collide with ir_gen's
+    per-function '_tN' names. Temp() would continue the global counter from
+    wherever the LAST function's IR generation left it (Temp.reset() runs per
+    function), so a bare Temp() here can reuse a name the current function
+    already defines -- two live values then share one register (u2_binsearch
+    infinite-loop bug, 2026-07-18)."""
+    global _lr_n
+    _lr_n += 1
+    return Temp(f"_lr{_lr_n}")
+
+
 def _is_zero(off):
     return isinstance(off, Const) and off.value == 0
 
@@ -148,7 +161,7 @@ def _promote_one(instrs, s, e, promoted_offsets):
     eb_for_off = {}
     uns_for_off = {}
     for off, d in promote.items():
-        vreg = Temp()
+        vreg = _new_temp()
         off_for_vreg[off] = vreg
         eb_for_off[off] = next(iter(d['ebs']))
         uns_for_off[off] = any(uns for (_, _, _, _, uns) in d['loads'])
@@ -170,7 +183,7 @@ def _promote_one(instrs, s, e, promoted_offsets):
     # Preheader: load each promoted slot's initial value into its vreg.
     preheader = []
     for off, vreg in off_for_vreg.items():
-        pa = Temp()
+        pa = _new_temp()
         la = IRLoadAddr(pa, off); la._lr = True
         ld = IRLoad(vreg, pa, Const(0), eb_for_off[off], uns_for_off[off]); ld._lr = True
         preheader.append(la)
@@ -207,7 +220,7 @@ def _promote_one(instrs, s, e, promoted_offsets):
     def writeback_block():
         blk = []
         for off, vreg in off_for_vreg.items():
-            wa = Temp()
+            wa = _new_temp()
             la = IRLoadAddr(wa, off); la._lr = True
             st = IRStore(wa, Const(0), vreg, eb_for_off[off]); st._lr = True
             blk.append(la)

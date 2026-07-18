@@ -1386,8 +1386,8 @@ LOG:Get_Operands: 0x8c  McodeStoreInstruction
 LOG:Get_Operands: 0x8d  McodeNullInstruction
 LOG:Get_Operands: 0x8e  McodeNullInstruction
 LOG:Get_Operands: 0x8f  McodeNullInstruction
-Info: ___execute_call_operation___
-Info: 136: Call!
+Info: ___execute_call_operation___ npc = 0x98
+Info: 136: Call! npc=0x98
 LOG:Execute     : 0x88  McodeCallInstruction
 Info: 137: Null!
 LOG:Execute     : 0x89  McodeNullInstruction
@@ -2383,8 +2383,8 @@ LOG:Get_Operands: 0x10c  McodeLoadInstruction
 LOG:Get_Operands: 0x10d  McodeNullInstruction
 LOG:Get_Operands: 0x10e  McodeNullInstruction
 LOG:Get_Operands: 0x10f  McodeNullInstruction
-Info: ___execute_return_operation___
-Info: 264: Return!
+Info: ___execute_return_operation___ npc= 0x90
+Info: 264: Return! npc=0x90
 LOG:Execute     : 0x108  McodeReturnInstruction
 Info: 265: Null!
 LOG:Execute     : 0x109  McodeNullInstruction
@@ -2441,9 +2441,11 @@ RunLog[0]: 0x90 $halt        ->
 Info: Stopped after 74 ticks.
 Info: number of non-null instructions executed = 51
 Info: number of null instructions executed = 214
-Warning: Unknown verify line keyword reg
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
-Warning: Unknown verify line keyword mem
+Info: RunLog[0]: 0x3e8 = Get_Register(1)
+
+Info: PostCondition Reg[0][1] = 0x3e8 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x84] = 0x3e8 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x85] = 0xbb8 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x86] = 0x3e8 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x87] = 0x1e8480 (mask=0xffffffffffffffff)
+Info: PostCondition Mem[0x88] = 0x7d0 (mask=0xffffffffffffffff)

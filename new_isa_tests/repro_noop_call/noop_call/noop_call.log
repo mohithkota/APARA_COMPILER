@@ -211,8 +211,8 @@ LOG:Get_Operands: 0xc  McodeNullInstruction
 LOG:Get_Operands: 0xd  McodeNullInstruction
 LOG:Get_Operands: 0xe  McodeNullInstruction
 LOG:Get_Operands: 0xf  McodeNullInstruction
-Info: ___execute_call_operation___
-Info: 8: Call!
+Info: ___execute_call_operation___ npc = 0x40
+Info: 8: Call! npc=0x40
 LOG:Execute     : 0x8  McodeCallInstruction
 Info: ___execute_alu_operation___
 Info: 9: Alu!
@@ -402,8 +402,8 @@ LOG:Get_Operands: 0x54  McodeNullInstruction
 LOG:Get_Operands: 0x55  McodeNullInstruction
 LOG:Get_Operands: 0x56  McodeNullInstruction
 LOG:Get_Operands: 0x57  McodeNullInstruction
-Info: ___execute_call_operation___
-Info: 80: Call!
+Info: ___execute_call_operation___ npc = 0x18
+Info: 80: Call! npc=0x18
 LOG:Execute     : 0x50  McodeCallInstruction
 Info: 81: Null!
 LOG:Execute     : 0x51  McodeNullInstruction

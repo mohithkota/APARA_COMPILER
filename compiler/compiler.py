@@ -279,14 +279,27 @@ def try_golden_verify(source, ir_globals, out_dir, base_name):
     genuine compile/run error in the native build, which gets printed
     so it's never a silent fallback).
     """
-    results_global = next((g for g in ir_globals if g.name == 'results'), None)
-    if results_global is None:
+    # Golden-convention arrays: `results` (integer, compared by value) plus the
+    # FP step-7 variants `fresults` (float) / `dresults` (double), whose IEEE
+    # bit patterns are captured from the gcc run and compared BIT-EXACTLY
+    # (each APARA element sits in its own 8-byte DMEM word, f32 bits
+    # zero-extended, so the word equals the pattern).
+    _CONV = (('results', 'value'), ('fresults', 'f32'), ('dresults', 'f64'))
+    arrays = []
+    for aname, kind in _CONV:
+        g = next((g for g in ir_globals if g.name == aname), None)
+        if g is not None:
+            arrays.append((g, kind))
+    if not arrays:
         return False
     if not os.path.isfile(_GOLDEN_STUBS_PATH):
         return False
 
-    n_results = results_global.total_bytes // results_global.elem_bytes
-    base_word = results_global.dmem_addr // 8
+    # total_bytes is the DMEM footprint (one 8-byte word per element unless
+    # packed), so the element COUNT divides by the stride, not elem_bytes.
+    def _n_elems(g):
+        return g.total_bytes // (getattr(g, 'stride', None) or g.elem_bytes)
+    n_results = sum(_n_elems(g) for g, _ in arrays)
 
     try:
         with tempfile.TemporaryDirectory(prefix='golden_verify_') as scratch:
@@ -298,9 +311,19 @@ def try_golden_verify(source, ir_globals, out_dir, base_name):
                 f.write('\n#undef main\n#include <stdio.h>\n')
                 f.write('int main(void) {\n')
                 f.write('    __test_main();\n')
-                f.write(f'    for (int i = 0; i < {n_results}; i++) {{\n')
-                f.write('        printf("%016llx\\n", (unsigned long long) results[i]);\n')
-                f.write('    }\n    return 0;\n}\n')
+                for g, kind in arrays:
+                    n = _n_elems(g)
+                    f.write(f'    for (int i = 0; i < {n}; i++) {{\n')
+                    if kind == 'value':
+                        f.write(f'        printf("%016llx\\n", (unsigned long long) {g.name}[i]);\n')
+                    elif kind == 'f32':
+                        f.write(f'        unsigned int __b; __builtin_memcpy(&__b, &{g.name}[i], 4);\n')
+                        f.write('        printf("%016llx\\n", (unsigned long long) __b);\n')
+                    else:   # f64
+                        f.write(f'        unsigned long long __b; __builtin_memcpy(&__b, &{g.name}[i], 8);\n')
+                        f.write('        printf("%016llx\\n", __b);\n')
+                    f.write('    }\n')
+                f.write('    return 0;\n}\n')
 
             bin_path = os.path.join(scratch, '_driver')
             cc = subprocess.run(['gcc', '-O0', '-o', bin_path, driver_path],
@@ -324,8 +347,17 @@ def try_golden_verify(source, ir_globals, out_dir, base_name):
 
     result_path = os.path.join(out_dir, f'{base_name}.result')
     with open(result_path, 'w') as f:
-        for i, val_hex in enumerate(out_lines):
-            f.write(f"0 mem 0x{base_word + i:x} 0x{val_hex}\n")
+        k = 0
+        for g, kind in arrays:
+            base_word = g.dmem_addr // 8
+            for i in range(_n_elems(g)):
+                v = int(out_lines[k], 16)
+                # APARA stores sub-word (i32/f32) data in the HIGH half of its
+                # 8-byte DMEM word, so the expected word is the f32 bits << 32.
+                if kind == 'f32':
+                    v <<= 32
+                f.write(f"0 mem 0x{base_word + i:x} 0x{v:016x}\n")
+                k += 1
     print(f"      golden    →  {result_path}  ({n_results} independently-verified "
           f"PostCondition checks via gcc + golden_stubs.h)")
     return True
