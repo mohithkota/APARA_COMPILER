@@ -255,13 +255,12 @@ def eval_ir(instructions):
     return ret_val, final_dmem
 
 
-# Stable location relative to this file -- see isa_coverage_tests/golden/
-# golden_stubs.h's own header for what's in it and why each piece is there
-# ("no bias": every implementation is derived from the ISA spec / confirmed
-# hardware behavior, never from reading this compiler's own source).
+# Stable location next to this file -- see golden_stubs.h's own header for
+# what's in it and why each piece is there ("no bias": every implementation
+# is derived from the ISA spec / confirmed hardware behavior, never from
+# reading this compiler's own source).
 _GOLDEN_STUBS_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '..', 'isa_coverage_tests', 'golden', 'golden_stubs.h')
+    os.path.dirname(os.path.abspath(__file__)), 'golden_stubs.h')
 
 
 def try_golden_verify(source, ir_globals, out_dir, base_name):

@@ -52,17 +52,22 @@ binaries live outside this repo (they are the accelerator's, not the compiler's)
 ## Repo layout
 
 ```
+apara-cc                gcc-like front door: ./apara-cc prog.c --run
 compiler/               compiler source (the important part)
 ├── compiler.py          entry point — CLI, preprocessing, data.map + golden-result generation
 ├── ir.py                 IR node class definitions
 ├── ir_gen.py             C AST → Three-Address IR (pycparser NodeVisitor); central _eval_addr
 ├── codegen.py             IR → APARA mcode (28-register dynamic allocator + spilling)
 ├── bundler.py             VLIW list scheduler + bundle packer (hazard detection)
+├── golden_stubs.h         intrinsic implementations for the native gcc golden build
 └── STATUS.md              dated project log — what's done, what's blocked, what's next
 
-alu/, array/, branch/, ldst/, pointer/, matmul_tests/, isa_coverage_tests/, new_isa_tests/
-                        hardware-verified test programs (one per feature / ISA instruction)
-testing/                differential test campaigns (see "Testing" below)
+engine_patches/         REQUIRED simulator fixes as a --check/--apply installer
+testing/                the golden gate (run_gate.sh, 7 suites) + the fuzz1000 campaign
+
+Development history (hardware-verified per-instruction suites, older campaigns,
+bug reports, meeting material) lives on the `archive/full-history` branch —
+main carries only what a compiler USER needs.
 ```
 
 Each test directory follows the same pattern: a `.c` source, a generated `.mcode`, a
@@ -135,26 +140,17 @@ Real strings are intentionally out of scope for the APARA accelerator.
 
 ## Testing
 
-`testing/` holds differential test campaigns that drove the recent hardening (each verified
-against gcc):
+`testing/` holds the verification suites (each verified against gcc):
 
-- `testing/pointer_bugs/` — the `t01..t15` pointer-variation battery + the `_eval_addr`
-  refactor plan and campaign notes
-- `testing/universal/` — novel-algorithm universality tests (sort, search, gcd, sieve, …) that
-  probe for bias / general-purpose correctness, plus the campaign map
-- `testing/stress/` — differential stress tests (signed/unsigned edges, shifts, div/mod, …) and
-  `STRESS_FINDINGS.md`
-- `testing/fp_check/` — floating-point campaign fp01–fp09 (arith, cmp, casts, params, arrays,
-  bit-exact result verification) + `FP_PLAN.md`
-- `testing/fnptr/` — function pointers fn01–fn04 (assign/call, callbacks, dispatch tables,
-  `&f`, fp returns/comparison)
-- `testing/vararg/` — variadic functions va01–va03 (va_start/va_arg, mixed named+variadic,
-  nested variadic calls)
-- `testing/many_args/` — >4 named args ma01–ma03 (5/6/8-param functions, recursion,
-  variadic-with-5-named combo)
-- `testing/fuzz/` — randomized differential fuzz campaign: seeded whole-program generator
-  (`gen_fuzz.py`, UB-free by construction) + driver (`run_campaign.sh`); 400 seeds, every
-  executed program verified slot-for-slot against gcc — found 3 latent bugs on day one
+- `testing/run_gate.sh` — the full golden gate: 7 suites, 71 tests, one command
+- `testing/feature_sweep/`, `universal/`, `pointer_bugs/`, `fp_check/`,
+  `fnptr/`, `vararg/`, `many_args/` — the golden test sources
+- `testing/fuzz1000/` — the full-ISA campaign: directed battery d01–d12,
+  randomized generator, coverage auditor (102/102 instruction×type), and
+  `check_engine_fixes.sh`
+
+Older campaigns (stress, fuzz v1, per-instruction hardware suites) are on the
+`archive/full-history` branch.
 
 ## History recovery
 
