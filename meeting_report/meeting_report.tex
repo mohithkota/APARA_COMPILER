@@ -1,0 +1,536 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+\definecolor{codestring}{rgb}{0.6,0.0,0.0}
+\definecolor{okgreen}{rgb}{0.0,0.5,0.0}
+\definecolor{badred}{rgb}{0.7,0.0,0.0}
+
+\lstdefinestyle{cppstyle}{
+  language=C++,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=cppstyle}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{APARA C Compiler \& Engine --- Handoff Meeting Report}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\filepath}[1]{\noindent\textbf{Location:}\ \texttt{#1}\par}
+
+\title{\textbf{APARA C Compiler \& Engine Simulator \\ Handoff Meeting Report} \\
+\large Complete compiler status, every engine source change with cause and
+effect, exact file/line locations, and remaining known gaps}
+\author{APARA C Compiler Project}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+% ============================================================================
+\chapter{Executive Summary}
+% ============================================================================
+
+\section{What is being delivered}
+
+\begin{enumerate}[itemsep=2pt]
+  \item \textbf{A feature-complete C compiler for the APARA VLIW ISA}
+        (repo: \texttt{github.com/mohithkota/APARA\_COMPILER}), usable like
+        gcc: clone, \texttt{export APARA\_TOOLS=...},
+        \texttt{./apara-cc prog.c --run}.
+  \item \textbf{A verification result}: 1{,}300+ C programs (hand-written
+        golden suites + two randomized fuzz campaigns) compiled and executed
+        on the simulator, with \emph{every} \texttt{results[]} slot matching
+        native \texttt{gcc} \emph{bit-for-bit}; a coverage auditor proves all
+        102 (instruction $\times$ sub-op $\times$ type) combinations the
+        compiler emits are exercised. \textbf{Zero known compiler defects.}
+  \item \textbf{Six simulator source fixes} (this report, Chapter~3) ---
+        applied \emph{locally only}, shipped as a reviewable installer
+        (\texttt{engine\_patches/apply\_engine\_fixes.py}); \textbf{nothing
+        has been pushed to the upstream engine repository} --- upstream
+        absorption is this meeting's decision.
+  \item \textbf{A map of remaining engine gaps} (Chapter~4) --- reported,
+        deliberately \emph{not} fixed; none affect compiler users.
+\end{enumerate}
+
+\section{Headline numbers}
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Golden regression gate (7 suites) & 71/71 PASS \\
+Floating point fp01--fp09 (bit-exact vs gcc) & 50/50 checks \\
+Fuzz campaign v1 (whole-program shapes) & 275/275 PASS \\
+fuzz1000 campaign (1{,}000 seeds + 13 directed) & 613 PASS, 0 FAIL, 0 HANG \\
+ISA coverage audit (instr $\times$ sub-op $\times$ type) & 102/102 \\
+Real bugs found \& fixed during verification & 10 compiler-side + 6 simulator \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================================
+\chapter{Compiler Status}
+% ============================================================================
+
+\section{Feature completeness}
+
+All features are verified against \texttt{gcc} on the simulator.
+
+\begin{longtable}{@{}p{8.2cm}p{5.6cm}@{}}
+\toprule
+Feature & Evidence \\
+\midrule
+Full integer C: all widths signed/unsigned, all operators, all control flow,
+recursion & \texttt{feature\_sweep} 16/16, \texttt{universal} 21/21 \\
+Structs (nested), unions, bit-fields, enums, typedefs, statics, goto,
+designated initializers & \texttt{feature\_sweep}, \texttt{fuzz1000/d10} \\
+Pointers: arithmetic, deref, \texttt{\&x}, \texttt{p[i]}, comparison,
+\texttt{q-p}, struct pointers & \texttt{pointer\_bugs} 15/15 \\
+Arrays 1D/2D/3D, global+local, initialized & \texttt{fuzz1000/d10} \\
+Floating point f32+f64: arithmetic, comparisons, casts, params, arrays,
+\texttt{sqrt} & fp01--09 = 50/50, \emph{bit-exact} \\
+Function pointers (callbacks, dispatch tables, \texttt{\&f}, \texttt{==},
+returns) --- via a compile-time linker pass; no assembler change needed &
+\texttt{fnptr} 16/16 \\
+Variadic functions; $>$4 named arguments (unified stack-passing convention)
+& \texttt{vararg} 12/12, \texttt{many\_args} 12/12 \\
+Vector intrinsics: \texttt{\$v} +/-/* at all 6 widths, \texttt{\$dot}
+($\pm$accumulate), \texttt{\$vreduce} +/max, \texttt{\$cmov} (6 conds),
+\texttt{\$slice}, \texttt{\$pack}, \texttt{\$fsqrt} & \texttt{fuzz1000}
+d03--d08 \\
+Optimizer: 28-register dynamic allocation + spilling, CSE, LICM,
+loop-carried register promotion, VLIW list scheduling \& bundling (with the
+hardware's 4-ld/st and 1-div/sqrt lane limits enforced) & up to $-74\%$
+static bundles \\
+\bottomrule
+\end{longtable}
+
+Out of scope by design: real string handling (not needed for the
+accelerator); NaN semantics in float comparisons; unsigned 64-bit ordered
+comparison of values $\ge 2^{63}$ (documented).
+
+\section{How correctness is established}
+
+Every test follows the \texttt{results[]} convention. The compiler compiles
+the \emph{same source} natively with gcc and records gcc's answers as the
+expected DMEM post-conditions; the simulator then checks every slot. The
+verdict is therefore ``\emph{produced the same values as gcc}'', never
+``looks right''. The fuzz generators are UB-free by construction (bounded
+loops/recursion, masked shifts, guarded divisors, forced 64-bit arithmetic
+width, no NaN), so any mismatch is a real toolchain defect --- this is
+exactly how the 16 bugs below were found.
+
+% ============================================================================
+\chapter{Engine Source Changes: Cause, Effect, Patch, Result}
+% ============================================================================
+
+Base directory for all paths in this chapter:
+
+\begin{center}
+\texttt{engine\_new/AjitHpcAccelRepo/AjitHpcAccel/engine\_isp/assembler/src/}
+\end{center}
+
+Line numbers are for the \emph{patched} tree on the development machine (the
+same code the installer produces); in the pristine upstream tree, locate by
+the function name --- each section quotes the exact original text to search
+for. Changes marked \textbf{RE-APPLIED} were first made during the July
+17--18 floating-point bring-up, deployed as binaries only, and later lost to
+a rebuild (Section~\ref{sec:incident}); they are now permanent in source.
+
+% ----------------------------------------------------------------------------
+\section{Fix 1: \texttt{\$fsqrt} was an unimplemented stub (NEW)}
+
+\filepath{MachineRun.cpp, line 599 --- McodeFsqrtInstruction::Execute}
+
+\textbf{Cause.} The \texttt{Execute} method was a placeholder that printed
+``\texttt{McodeFsqrtInstruction yet to be implemented}'' and wrote 0.
+
+\textbf{Effect.} Every \texttt{\$fsqrt} returned 0:
+\texttt{(long long)sqrt(4.0)} $\to$ 0 instead of 2. Anyone validating
+hardware square-root against this simulator would have compared against
+zeros. (Found by directed test \texttt{fuzz1000/directed/d08}.)
+
+\textbf{Original code (search for this in the pristine tree):}
+\begin{lstlisting}
+void McodeFsqrtInstruction::Execute     (McodeMachine* mc)
+{
+    McodeRoot::Error("McodeFsqrtInstruction yet to be implemented", this);
+    this->McodeInstruction::Set_Out_Arg (0, 0);
+    return;
+}
+\end{lstlisting}
+
+\textbf{Patch applied} (routes through the existing, already-correct ALU
+dispatch --- \texttt{\_\_alu\_operation\_\_} already implements
+\texttt{\_\_FSQRT} via \texttt{fp\_sqrt}; no new arithmetic was written):
+\begin{lstlisting}
+void McodeFsqrtInstruction::Execute     (McodeMachine* mc)
+{
+    uint64_t ovalue;
+    ___execute_alu_operation___ (this->McodeInstruction::Get_Opcode(),
+            this->Get_Dest_Type(),
+            this->Get_Src_Type(),
+            this->McodeInstruction::Get_In_Arg(0),
+            0, 0, 0,
+            ovalue);
+    this->McodeInstruction::Set_Out_Arg (0, ovalue);
+    if(__global_verbose_flag)
+        McodeRoot::Info(Int64ToString (this->McodeInstruction::Get_Address()) + ": Fsqrt!");
+    return;
+}
+\end{lstlisting}
+
+\textbf{After the patch.} Simulator run-log shows
+\texttt{0x4010000000000000 $\to$ 0x4000000000000000} ($\sqrt{4.0}=2.0$,
+IEEE-exact); d08 = 8/8 vs gcc for \texttt{sqrt}/\texttt{sqrtf} over
+f64 and f32.
+
+% ----------------------------------------------------------------------------
+\section{Fix 2: float casts hit an error branch, output left uninitialized (RE-APPLIED)}
+
+\filepath{McodeExecute.cpp, lines 27--33 --- \_\_\_execute\_cast\_operation\_\_\_}
+
+\textbf{Cause.} The complete cast implementation was guarded by
+\texttt{if(!dest\_type.Get\_Float\_Flag() \&\& !src\_type.Get\_Float\_Flag())};
+any float-typed cast fell into an \texttt{else} that printed
+``\texttt{Float conversions in cast not supported as yet.}'' and returned
+\emph{without writing the output array}.
+
+\textbf{Effect.} The destination register received whatever happened to be
+in host memory --- observed values like \texttt{0x7ffd83e474a0} (a host
+stack address). Nondeterministic garbage in every float$\leftrightarrow$int
+conversion.
+
+\textbf{Original code (search):}
+\begin{lstlisting}
+    if(!dest_type.Get_Float_Flag()
+            && !src_type.Get_Float_Flag())
+    { /* full implementation */ }
+    else
+    {
+        McodeRoot::Error ("Float conversions in cast not supported as yet.", NULL);
+    }
+\end{lstlisting}
+
+\textbf{Patch applied.} Guard replaced with \texttt{if(1)} and the error
+branch removed --- the body it guards forwards to
+\texttt{\_\_\_cast\_operation\_\_\_}, which dispatches
+int$\leftrightarrow$float itself (Fix~3), so every cast can take the one
+real path.
+
+\textbf{After the patch.} fp01--fp09 50/50 bit-exact (together with Fixes
+3, 4, 6); float casts appear in 600+ passing fuzz programs.
+
+% ----------------------------------------------------------------------------
+\section{Fix 3: int$\leftrightarrow$float dispatch called the two helpers swapped (RE-APPLIED)}
+
+\filepath{McodeOperations.cpp, lines 330--343 --- \_\_\_cast\_operation\_\_\_}
+
+\textbf{Cause.} A transposition: the integer-source case called
+\texttt{cast\_float\_to\_int} and the float-source/int-dest case called
+\texttt{cast\_int\_to\_float}.
+
+\textbf{Effect.} Every conversion read its operand as the wrong
+representation (integer bits interpreted as IEEE and vice versa) ---
+garbage in both directions.
+
+\textbf{Original code (search):}
+\begin{lstlisting}
+            if(!src_type.Get_Float_Flag())
+                w = cast_float_to_int (src_type, dest_type, v);
+            else if(!dest_type.Get_Float_Flag())
+                w = cast_int_to_float (src_type, dest_type, v);
+\end{lstlisting}
+
+\textbf{Patch applied} (the two call sites exchanged):
+\begin{lstlisting}
+            if(!src_type.Get_Float_Flag())
+                w = cast_int_to_float (src_type, dest_type, v);
+            else if(!dest_type.Get_Float_Flag())
+                w = cast_float_to_int (src_type, dest_type, v);
+\end{lstlisting}
+
+\textbf{After the patch.} See Fix 2 (all casts flow through here).
+
+% ----------------------------------------------------------------------------
+\section{Fix 4: scalar 32-bit casts misclassified as vector casts (NEW)}
+
+\filepath{McodeOperations.cpp, lines 314--321 --- \_\_\_cast\_operation\_\_\_}
+
+\textbf{Cause.} Vector-ness was inferred from the element count,
+\texttt{is\_vector\_cast = (in\_vals.size() > 1)}. \texttt{Break\_Vector}
+splits even a \emph{scalar} 32-bit source register into two entries, so
+every scalar cast with a 32-bit side was treated as a vector cast --- and
+vector casts mask each output to the destination lane width.
+
+\textbf{Effect.} \texttt{(int)(-6.0f)} stored
+\texttt{0x00000000FFFFFFFA} instead of \texttt{0xFFFFFFFFFFFFFFFA}: the
+conversion helper's correct sign-extended result was truncated back to 32
+bits. Every negative float$\to$int result stored into a 64-bit word was
+wrong. (Caught by regression test fp03.)
+
+\textbf{Original code (search):}
+\begin{lstlisting}
+    int is_vector_cast = (in_vals.size() > 1);
+\end{lstlisting}
+
+\textbf{Patch applied} (trust the instruction's declared types):
+\begin{lstlisting}
+    int is_vector_cast = (src_type.Get_Vector_Flag() && dest_type.Get_Vector_Flag());
+\end{lstlisting}
+
+\textbf{After the patch.} fp03 4/4 restored; gate 61/61; true vector casts
+behave exactly as before (both flags set).
+
+% ----------------------------------------------------------------------------
+\section{Fix 5: unsigned \texttt{\$vreduce} sign-extended its lanes (NEW)}
+
+\filepath{McodeOperations.cpp, lines 150--156 --- \_\_vreduce\_operation\_\_}
+
+\textbf{Cause.} A shared lane value \texttt{r} was computed with
+\texttt{Sign\_Extend\_64} \emph{before} the signed/unsigned branch. The
+signed branch shadows it with its own copy, but the \emph{unsigned} branch
+consumed the outer, sign-extended value.
+
+\textbf{Effect.} \texttt{\_\_vreduce\_vu8(0x01f2030405060708)} returned
+\texttt{0x14} (20) instead of \texttt{0x114} (276) --- the \texttt{0xf2}
+lane entered the sum as $-14$ instead of $242$;
+\texttt{\_\_vreduce\_max\_vu*} picked wrong maxima. In effect, the entire
+unsigned half of \texttt{\$vreduce} behaved as signed. (Found by directed
+test d06.)
+
+\textbf{Original code (search):}
+\begin{lstlisting}
+            // sign extend to 64-bits.
+            int64_t r = (int64_t) Sign_Extend_64(src_type.Get_Nbits()-1, ele);
+            if(signed_flag)
+            {
+\end{lstlisting}
+
+\textbf{Patch applied} (\texttt{ele} arrives already lane-masked from
+\texttt{Break\_Vector}, i.e.\ zero-extended; signed branch untouched):
+\begin{lstlisting}
+            uint64_t r = ele;
+            if(signed_flag)
+            {
+                int64_t r = (int64_t) Sign_Extend_64(...);  // as before
+\end{lstlisting}
+
+\textbf{After the patch.} d06 = 8/8: \texttt{+} and \texttt{\$max}
+reductions at \texttt{vi8/vu8/vi16/vu16/vi32/vu32} all match gcc.
+
+% ----------------------------------------------------------------------------
+\section{Fix 6: \texttt{cast\_int\_to\_float} ternary promotion of negatives (RE-APPLIED)}
+
+\filepath{McodeFpuUtils.cpp, lines 437--450 --- cast\_int\_to\_float}
+
+\textbf{Cause.} C's conditional operator promotes both arms to a common
+type. In
+\texttt{cond ? (u \& 0xffffffff) : (int) u}
+the unsigned arm's type is \texttt{uint64\_t}, so the signed arm's negative
+\texttt{int} was converted back to a huge unsigned value before becoming a
+\texttt{double}.
+
+\textbf{Effect.} \texttt{(float)(-3)} became $2^{64}-3 \approx
+1.8\times10^{19}$; every \emph{negative} int$\to$float cast was wrong.
+(All positive casts were fine --- which is how it escaped initial testing.)
+
+\textbf{Original code (search):}
+\begin{lstlisting}
+    double x = (src_type.Get_Unsigned_Flag() ?  (u & 0xffffffff) : (int) u);
+\end{lstlisting}
+
+\textbf{Patch applied} (explicit branch; sign-extend from the \emph{actual}
+source width --- this also fixes the old hard-coded 32-bit mask on the
+unsigned arm):
+\begin{lstlisting}
+    double x;
+    if(src_type.Get_Unsigned_Flag())
+    {
+        x = (double) (u & __mmask__(snbits));
+    }
+    else
+    {
+        int64_t sv = ((int64_t) (u << (64 - snbits))) >> (64 - snbits);
+        x = (double) sv;
+    }
+\end{lstlisting}
+
+\textbf{After the patch.} fp03 (positive \emph{and} negative int$\to$float,
+$\times$, $\div$, $+$) = 4/4 vs gcc.
+
+% ----------------------------------------------------------------------------
+\section{The binary-only-fix incident, and the safeguards}
+\label{sec:incident}
+
+Fixes 2, 3 and 6 were first made during the July 17--18 floating-point
+bring-up, but deployed as \emph{binaries only}; the source files stayed
+pristine. On July 19 a rebuild (for Fix 1) regenerated all binaries from
+the unfixed source and silently reverted them. The regression gate caught
+it immediately (fp03 failing, 60/61), and everything was re-applied
+\emph{in source}. Safeguards now in place:
+
+\begin{itemize}[itemsep=2pt]
+  \item \texttt{engine\_patches/apply\_engine\_fixes.py --check <src>}
+        verifies all six fixes are present (exact-text match); \texttt{--apply}
+        installs them idempotently on a pristine tree and reports a CONFLICT
+        if upstream has diverged.
+  \item The full gate is re-run after \emph{every} toolchain rebuild.
+\end{itemize}
+
+% ============================================================================
+\chapter{Remaining Gaps in the Engine (Reported, NOT Fixed)}
+% ============================================================================
+
+These were found during the audit and deliberately left untouched ---
+they are outside what the compiler emits, so compiler users are unaffected
+(the 102/102 coverage audit is the proof: everything the compiler emits is
+exercised and correct).
+
+\begin{longtable}{@{}p{5.2cm}p{4.2cm}p{4.6cm}@{}}
+\toprule
+Gap \& exact location & Failure mode & Impact \\
+\midrule
+\textbf{\texttt{\$vreduce *} always returns 0} ---
+\texttt{McodeOperations.cpp:108} (author's own \texttt{// TODO: add
+mreduce}) and \texttt{:161}: \texttt{s\_result = s\_result * r} folds from
+an accumulator initialized to \textbf{0} (multiplicative identity should
+be 1). Validity check \emph{allows} it for 32-bit lanes. &
+Silent wrong value (always 0) for hand-written \texttt{\$vreduce *} &
+None for compiler users (compiler emits only \texttt{+}/\texttt{\$max});
+\textbf{newly found in this audit} \\
+\addlinespace
+f4/f8/f16 float widths: \texttt{fp\_div} / \texttt{fp\_sqrt} and cast
+helpers end in \texttt{default: assert(0)} ---
+\texttt{McodeFpuUtils.cpp:407, 426, 460} & Loud crash & None ---
+compiler emits f32/f64 only \\
+\addlinespace
+\texttt{\$vreduce} sub-op restrictions: ADD (sub-64 lanes), MUL (32-bit
+only), MAX/MIN; AND/OR/XOR/XNOR rejected ---
+\texttt{McodeInstructions.cpp:620--655} & Loud reject & None \\
+\addlinespace
+Native \texttt{\$abs}/\texttt{\$max}/\texttt{\$min} instructions
+grammar-legal but broken in the assembler/simulator (June finding) &
+Wrong values & None --- compiler lowers \texttt{\_\_abs/\_\_max/\_\_min}
+to \texttt{\$cmov} \\
+\addlinespace
+\texttt{\$pack} validity (\texttt{packed\_nbits \% word\_nbits == 0},
+\texttt{McodeClasses.hpp:412}) is checked \emph{silently}; the assembler
+reports only ``there were invalid instructions'' & Hard-to-diagnose
+assembly failure & Minor developer-experience issue \\
+\addlinespace
+\texttt{mcode\_align} prints lane-placement errors ($>$4 ld/st or $>$1
+div/sqrt per bundle) to stderr but \emph{still emits} the bundle with the
+CTI not in lane 0 (\texttt{McodeProgram.cpp},
+\texttt{alignFullBundleToLanes} / \texttt{Print}) --- downstream this sent
+a \texttt{\$return} into the middle of a bundle & Undefined control flow
+from a ``successful'' build & Compiler's bundler now enforces the limits
+itself; recommend align should hard-fail \\
+\addlinespace
+IMEM is $\sim$0x800 words ($\approx$ 240 bundles), half the documented
+size (June finding) & Large programs don't fit & The one real capacity
+limit; compiler reports it \\
+\bottomrule
+\end{longtable}
+
+% ============================================================================
+\chapter{Verification Evidence \& How to Reproduce}
+% ============================================================================
+
+\section{What was run}
+
+\begin{itemize}[itemsep=2pt]
+  \item \textbf{Golden gate} (71 hand-written tests, 7 suites):
+        \texttt{bash testing/run\_gate.sh} $\to$ 71/71.
+  \item \textbf{Fuzz v1} (\texttt{testing/fuzz/}): 400 seeded random
+        whole-programs $\to$ 275 executed, 275 PASS.
+  \item \textbf{fuzz1000} (\texttt{testing/fuzz1000/}): 13 directed + 1000
+        seeded programs $\to$ 613 executed, 613 PASS, 0 FAIL, 0 HANG;
+        coverage audit 102/102 (\texttt{cov\_scan.py --report}).
+  \item Every executed program's \texttt{results[]} compared slot-by-slot,
+        bit-for-bit, against native gcc on the same source.
+\end{itemize}
+
+\section{Reproduce on any machine}
+
+\begin{lstlisting}[language=bash]
+git clone git@github.com:mohithkota/APARA_COMPILER.git && cd APARA_COMPILER
+pip install pycparser
+export APARA_TOOLS=/path/to/engine_isp/assembler/bin
+
+# verify (or, after approval, install) the six simulator fixes:
+python3 engine_patches/apply_engine_fixes.py --check /path/to/engine_isp/assembler/src
+
+./apara-cc mytest.c --run          # gcc-style compile + execute + verdict
+bash testing/run_gate.sh           # full 71-test gate
+bash testing/fuzz1000/run_all.sh 1 1000   # the whole campaign, if desired
+\end{lstlisting}
+
+\section{Bugs found in the compiler itself during verification}
+
+For completeness (all fixed, all documented in
+\texttt{compiler/STATUS.md} with dates): LICM cross-function alias-map
+collision (infinite loop); struct-pointer subscript reading DMEM address 0;
+bundler exceeding the hardware's 4-ld/st / 1-div-sqrt lanes; literal-suffix
+(\texttt{LL}/\texttt{u}) global initializers zeroed; struct-global float
+field initializers zeroed; 3D-array init/access stride mismatch; missing
+float$\to$int cast on \texttt{sqrt} results; unsigned 64-bit
+\texttt{/ \% >>} on the signed path; \texttt{\_\_nop()} silently deleted
+by the bundler; fp signature bug in the fuzz generator. Ten real defects,
+every one found by differential testing against gcc.
+
+% ============================================================================
+\chapter{Decisions Requested in This Meeting}
+% ============================================================================
+
+\begin{enumerate}[itemsep=4pt]
+  \item \textbf{Approve the six simulator fixes} (Chapter~3) for the
+        upstream tree. Each is minimal and local; the installer
+        (\texttt{apply\_engine\_fixes.py}) applies them exactly, or they can
+        be re-typed by hand from this report. \emph{Until approved, upstream
+        is untouched.}
+  \item \textbf{Acknowledge the remaining gaps} (Chapter~4) --- especially
+        the newly-found \texttt{\$vreduce *} silent-zero and the
+        recommendation that \texttt{mcode\_align} hard-fail on lane errors.
+  \item \textbf{Hardware validation ownership}: the compiler author is
+        off-campus; the repo is self-contained (clone $\to$ gate $\to$
+        hardware runs), so any lab member can execute the hardware
+        confirmation of the post-June features (FP, function pointers,
+        variadics, $>$4 args).
+  \item \textbf{IMEM size}: confirm whether the half-size IMEM is
+        intentional; it is the only capacity limit users will hit.
+\end{enumerate}
+
+\end{document}

@@ -261,6 +261,18 @@ the actual source width.)
   bundle** — never discard align/assemble stderr (the compiler's bundler
   now enforces these limits itself; see STATUS 2026-07-18).
 
+## Reported, NOT fixed: `$vreduce *` multiply-reduce always returns 0
+
+**Found during the 2026-07-19 audit, left untouched pending review.**
+`McodeOperations.cpp:108` carries the author's own `// TODO: add mreduce`;
+the execute loop (`McodeOperations.cpp:161`) folds `s_result = s_result * r`
+with `s_result` initialized to **0**, so any multiply-reduction is always 0
+(the multiplicative identity should be 1). The validity check
+(`McodeInstructions.cpp:627` area) *allows* `$vreduce *` for 32-bit lanes,
+making this a **silent-zero** result for anyone who hand-writes it. The
+compiler never emits `$vreduce *` (only `+` and `$max`), so compiler users
+are unaffected.
+
 ## Process incident (why "re-applied" fixes exist)
 
 The Jul-17/18 FP-campaign simulator fixes (items 2, 3, 6) were built and
