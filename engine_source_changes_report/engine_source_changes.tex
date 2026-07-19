@@ -1,0 +1,504 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+\definecolor{codestring}{rgb}{0.6,0.0,0.0}
+
+\lstdefinestyle{cppstyle}{
+  language=C++,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=4,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=cppstyle}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{APARA Simulator (engine\_isp) --- Source Fixes: What Changed and Why}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\title{\textbf{APARA Simulator (\texttt{engine\_isp}) \\ Source Fixes Applied During Compiler Verification \\ \large What Changed, and Why Each Change Was Necessary}}
+\author{APARA C Compiler Project --- Verification \& Audit}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+% ============================================================================
+\chapter{Introduction: Why These Edits Were Made}
+% ============================================================================
+
+\section{Context}
+
+The APARA C compiler is now feature-complete (integer C, floating point,
+function pointers, variadic functions, $>$4 arguments). To find any remaining
+defects before hardware bring-up, we ran a \textbf{differential verification
+campaign}: 1{,}013 C programs (a 13-test directed battery plus 1{,}000
+randomly generated whole programs), each compiled twice --- once by the APARA
+compiler and executed on the \texttt{engine\_isp} simulator, and once natively
+by \texttt{gcc}. Every \texttt{results[]} slot must match \texttt{gcc}
+bit-for-bit. The generated programs are constructed to be free of undefined
+behaviour, so \emph{every mismatch is a genuine toolchain defect}, either in
+the compiler or in the simulator.
+
+A coverage auditor additionally proves that the campaign leaves nothing
+untouched: all 102 (instruction $\times$ sub-operation $\times$ type-tag)
+combinations the compiler can emit are exercised by at least one passing,
+\texttt{gcc}-verified program.
+
+\section{Why the simulator source had to be edited}
+
+Six defects found by this campaign are in the \emph{simulator}, not the
+compiler. They could not be worked around from the compiler side:
+
+\begin{itemize}[itemsep=2pt]
+  \item Three make \textbf{ISA-documented instructions produce silently wrong
+        values} (\texttt{\$fsqrt} returns 0; unsigned \texttt{\$vreduce}
+        treats lanes as signed; scalar float$\to$int casts lose their sign
+        extension). A compiler cannot emit correct code for an instruction the
+        simulator executes incorrectly --- and ``silently wrong'' is the worst
+        failure mode for hardware validation, because the RTL would be judged
+        against a wrong reference.
+  \item Three are \textbf{re-applications of the July 17--18 floating-point
+        fixes} (cast dispatch swap, the unimplemented float-cast branch, and
+        the \texttt{cast\_int\_to\_float} promotion bug). Those had been fixed
+        and deployed as binaries during the FP campaign, but the source tree
+        had been left pristine; a later rebuild silently reverted them
+        (Chapter~\ref{ch:process}). They are now fixed \emph{in source}.
+\end{itemize}
+
+Each edit is \textbf{minimal and local}: it uses machinery that already exists
+in the file (e.g.\ \texttt{\$fsqrt} is routed through the existing ALU
+dispatch, which already implements \texttt{fp\_sqrt}), changes no interfaces,
+and alters no behaviour outside the defective case. After \emph{every} rebuild
+the full regression gate was re-run (feature\_sweep 16/16, universal 21/21,
+pointer\_bugs 15/15, fp01--09 50/50), and the final campaign result is
+\textbf{613 PASS / 0 FAIL / 0 HANG} with 102/102 coverage.
+
+\section{Summary of all changes}
+
+\begin{longtable}{@{}p{0.5cm}p{3.6cm}p{4.3cm}p{5.6cm}@{}}
+\toprule
+\# & File / function & Defect & Why the edit was necessary \\
+\midrule
+1 & \texttt{MachineRun.cpp} \newline \texttt{McodeFsqrtInstruction::Execute} &
+    \texttt{\$fsqrt} was an unimplemented stub returning 0 &
+    \texttt{\$fsqrt} is in the ISA and the assembler grammar; every
+    \texttt{sqrt}/\texttt{sqrtf} silently produced 0 \\
+\addlinespace
+2 & \texttt{McodeExecute.cpp} \newline \texttt{\_\_\_execute\_cast\_operation\_\_\_} &
+    float casts fell into an error branch, output register left
+    \emph{uninitialized} &
+    all f32/f64 $\leftrightarrow$ int casts landed host-memory garbage in
+    registers (re-applied Jul-17 fix) \\
+\addlinespace
+3 & \texttt{McodeOperations.cpp} \newline \texttt{\_\_\_cast\_operation\_\_\_} &
+    int$\leftrightarrow$float dispatch called the two helpers swapped &
+    every conversion read its operand as the wrong representation
+    (re-applied Jul-17 fix) \\
+\addlinespace
+4 & \texttt{McodeOperations.cpp} \newline \texttt{\_\_\_cast\_operation\_\_\_} &
+    scalar 32-bit casts misclassified as \emph{vector} casts &
+    the result was masked to 32 bits, destroying the sign extension of
+    negative float$\to$int results \\
+\addlinespace
+5 & \texttt{McodeOperations.cpp} \newline \texttt{\_\_vreduce\_operation\_\_} &
+    unsigned \texttt{\$vreduce} sign-extended its lanes &
+    \texttt{\$vu8/\$vu16/\$vu32} reductions summed/compared lanes as negative
+    numbers \\
+\addlinespace
+6 & \texttt{McodeFpuUtils.cpp} \newline \texttt{cast\_int\_to\_float} &
+    C ternary promotion turned negative ints into $2^{64}-n$ &
+    every \emph{negative} int$\to$float cast was wrong
+    (re-applied Jul-18 fix) \\
+\bottomrule
+\end{longtable}
+
+% ============================================================================
+\chapter{The Six Changes in Detail}
+% ============================================================================
+
+\section{\texttt{\$fsqrt} executed as an unimplemented stub (NEW)}
+
+\textbf{File / function:} \texttt{MachineRun.cpp},
+\texttt{McodeFsqrtInstruction::Execute}
+
+\textbf{Symptom.} Every \texttt{\$fsqrt} produced 0:
+\texttt{(long long)sqrt(4.0)} returned 0 instead of 2. Found by directed test
+\texttt{d08\_fsqrt\_float.c}; the simulator printed
+``\texttt{McodeFsqrtInstruction yet to be implemented}'' and set the output
+to 0.
+
+\textbf{Root cause.} The \texttt{Execute} body was a placeholder. All the
+machinery already existed: the constructor sets opcode \texttt{\_\_FSQRT},
+and \texttt{\_\_alu\_operation\_\_} already dispatches \texttt{\_\_FSQRT} to
+\texttt{fp\_sqrt} --- the instruction class simply never invoked it.
+
+\textbf{Why we edited it.} \texttt{\$fsqrt} is a documented ISA instruction
+that the compiler lowers \texttt{sqrt()}/\texttt{sqrtf()} to; without this
+fix the instruction cannot be validated at all, and a hardware implementation
+would have no correct simulator reference. The edit only \emph{connects} the
+stub to the existing, already-tested ALU execution path --- no new arithmetic
+code was written.
+
+\textbf{Before:}
+\begin{lstlisting}
+void McodeFsqrtInstruction::Execute     (McodeMachine* mc)
+{
+    McodeRoot::Error("McodeFsqrtInstruction yet to be implemented", this);
+    this->McodeInstruction::Set_Out_Arg (0, 0);
+    return;
+}
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+void McodeFsqrtInstruction::Execute     (McodeMachine* mc)
+{
+    uint64_t ovalue;
+    ___execute_alu_operation___ (this->McodeInstruction::Get_Opcode(),
+            this->Get_Dest_Type(),
+            this->Get_Src_Type(),
+            this->McodeInstruction::Get_In_Arg(0),
+            0, 0, 0,
+            ovalue);
+    this->McodeInstruction::Set_Out_Arg (0, ovalue);
+    if(__global_verbose_flag)
+        McodeRoot::Info(Int64ToString (this->McodeInstruction::Get_Address()) + ": Fsqrt!");
+    return;
+}
+\end{lstlisting}
+
+\textbf{Verification.} \texttt{sqrt(4.0)}, \texttt{sqrt(2.25)},
+\texttt{sqrtf(9.0f)} etc.\ all bit-match gcc (d08 = 8/8 golden checks);
+run-log shows \texttt{0x4010000000000000 $\to$ 0x4000000000000000}
+($4.0 \to 2.0$, exact).
+
+% ----------------------------------------------------------------------------
+\section{Float casts fell into an unimplemented error branch (RE-APPLIED)}
+
+\textbf{File / function:} \texttt{McodeExecute.cpp},
+\texttt{\_\_\_execute\_cast\_operation\_\_\_}
+
+\textbf{Symptom.} Any \texttt{\$cast} with a float type on either side printed
+``\texttt{Float conversions in cast not supported as yet.}'' and left the
+output array \emph{uninitialized} --- host-process stack garbage (values such
+as \texttt{0x7ffd83e474a0}) landed in the destination register.
+
+\textbf{Root cause.} The complete implementation (which forwards to
+\texttt{\_\_\_cast\_operation\_\_\_}, and that function dispatches
+int$\leftrightarrow$float itself) was guarded by
+\texttt{if (neither type is float)}; float casts took the error branch.
+
+\textbf{Why we edited it.} Floating-point support in the compiler is verified
+bit-exactly against gcc (fp01--fp09), and every float$\leftrightarrow$int
+conversion goes through \texttt{\$cast}. Reading uninitialized memory is also
+nondeterministic --- results changed from run to run, which would make any
+hardware-vs-simulator comparison meaningless. The guard was removed so every
+cast takes the one real implementation; no conversion logic was added here.
+
+\textbf{Before:}
+\begin{lstlisting}
+    if(!dest_type.Get_Float_Flag()
+            && !src_type.Get_Float_Flag())
+    {
+        /* ... full implementation ... */
+    }
+    else
+    {
+        McodeRoot::Error ("Float conversions in cast not supported as yet.", NULL);
+    }
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+    if(1)   /* every cast takes the main path; ___cast_operation___
+               dispatches int<->float itself */
+    {
+        /* ... full implementation (unchanged) ... */
+    }
+\end{lstlisting}
+
+\textbf{Verification.} fp01--fp09 (50/50 golden checks, bit-exact incl.\
+rounding); campaign-wide float casts in 600+ random programs.
+
+% ----------------------------------------------------------------------------
+\section{int$\leftrightarrow$float cast dispatch called the helpers swapped (RE-APPLIED)}
+
+\textbf{File / function:} \texttt{McodeOperations.cpp},
+\texttt{\_\_\_cast\_operation\_\_\_}
+
+\textbf{Symptom.} Every int$\to$float and float$\to$int conversion produced
+garbage: each helper interpreted its operand as the wrong representation
+(integer bits read as IEEE and vice versa).
+
+\textbf{Root cause.} The dispatch was inverted: an \emph{integer source} was
+sent to \texttt{cast\_float\_to\_int}, and a float source with integer
+destination to \texttt{cast\_int\_to\_float}.
+
+\textbf{Why we edited it.} This is a plain transposition bug --- the two
+correctly implemented helpers were wired to the opposite conditions. The edit
+swaps the two call sites back; nothing else changes.
+
+\textbf{Before:}
+\begin{lstlisting}
+            if(!src_type.Get_Float_Flag())
+                w = cast_float_to_int (src_type, dest_type, v);
+            else if(!dest_type.Get_Float_Flag())
+                w = cast_int_to_float (src_type, dest_type, v);
+            else
+                w = cast_float_to_float (src_type, dest_type, v);
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+            if(!src_type.Get_Float_Flag())
+                w = cast_int_to_float (src_type, dest_type, v);
+            else if(!dest_type.Get_Float_Flag())
+                w = cast_float_to_int (src_type, dest_type, v);
+            else
+                w = cast_float_to_float (src_type, dest_type, v);
+\end{lstlisting}
+
+\textbf{Verification.} Same as change 2 (all casts flow through here).
+
+% ----------------------------------------------------------------------------
+\section{Scalar 32-bit casts misclassified as vector casts (NEW)}
+
+\textbf{File / function:} \texttt{McodeOperations.cpp},
+\texttt{\_\_\_cast\_operation\_\_\_}
+
+\textbf{Symptom.} \texttt{(int)(-6.0f)} stored \texttt{0x00000000FFFFFFFA}
+instead of the sign-extended \texttt{0xFFFFFFFFFFFFFFFA}; regression test
+fp03 caught it. The conversion itself was correct
+(\texttt{cast\_float\_to\_int} returns the full sign-extended 64-bit value)
+--- the result was then masked back to 32 bits.
+
+\textbf{Root cause.} Vector-ness was inferred from the number of unpacked
+input elements, \texttt{in\_vals.size() > 1}. But \texttt{Break\_Vector}
+splits even a \emph{scalar} 32-bit source register into two 32-bit entries,
+so every scalar cast with a 32-bit source was treated as a vector cast, and
+vector casts mask each output to the destination lane width.
+
+\textbf{Why we edited it.} The type words themselves carry an explicit
+\texttt{Vector\_Flag}; inferring vector-ness from a size heuristic contradicts
+the instruction's own declared type and cannot distinguish ``scalar f32''
+from ``vector of two f32 lanes''. Using the declared flags makes the scalar
+path take the unmasked (sign-preserving) result, and leaves true vector casts
+exactly as before.
+
+\textbf{Before:}
+\begin{lstlisting}
+    int is_vector_cast = (in_vals.size() > 1);
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+    int is_vector_cast = (src_type.Get_Vector_Flag() && dest_type.Get_Vector_Flag());
+\end{lstlisting}
+
+\textbf{Verification.} fp03 (negative float$\to$int) restored to 4/4;
+full gate 61/61; d02 cast matrix 8/8.
+
+% ----------------------------------------------------------------------------
+\section{Unsigned \texttt{\$vreduce} sign-extended its lanes (NEW)}
+
+\textbf{File / function:} \texttt{McodeOperations.cpp},
+\texttt{\_\_vreduce\_operation\_\_}
+
+\textbf{Symptom.} \texttt{\_\_vreduce\_vu8(0x01f2030405060708)} returned
+\texttt{0x14} (20) instead of \texttt{0x114} (276): the \texttt{0xf2} lane
+was summed as $-14$ instead of $242$. \texttt{\_\_vreduce\_max\_vu8} likewise
+picked the wrong maximum. Found by directed test \texttt{d06\_vreduce.c}.
+
+\textbf{Root cause.} A shared lane variable \texttt{r} was computed with
+\texttt{Sign\_Extend\_64} \emph{before} the signed/unsigned branch; the
+signed branch shadows it with its own (correct) sign-extended copy, but the
+\emph{unsigned} branch used the outer, sign-extended value.
+
+\textbf{Why we edited it.} The entire point of the \texttt{\$vu*} type tags is
+zero-extension of lanes; with this bug the unsigned reductions were
+indistinguishable from the signed ones, i.e.\ half of the
+\texttt{\$vreduce} ISA surface was unimplemented in effect. The lane value
+arriving from \texttt{Break\_Vector} is already masked to the lane width, so
+the unsigned branch simply uses it directly. The signed branch is untouched.
+
+\textbf{Before:}
+\begin{lstlisting}
+            // sign extend to 64-bits.
+            int64_t r = (int64_t) Sign_Extend_64(src_type.Get_Nbits()-1, ele);
+            if(signed_flag)
+            {
+                int64_t r = (int64_t) Sign_Extend_64(...);  // shadows outer r
+                ...
+            }
+            else
+            {
+                ... uses the OUTER, sign-extended r ...
+            }
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+            uint64_t r = ele;      // zero-extended: ele is already lane-masked
+            if(signed_flag)
+            {
+                int64_t r = (int64_t) Sign_Extend_64(...);  // unchanged
+                ...
+            }
+            else
+            {
+                ... unsigned branch now sums/compares zero-extended lanes ...
+            }
+\end{lstlisting}
+
+\textbf{Verification.} d06 = 8/8 golden checks covering
+\texttt{+}/\texttt{\$max} at \texttt{vi8/vu8/vi16/vu16/vi32/vu32} vs gcc.
+
+% ----------------------------------------------------------------------------
+\section{\texttt{cast\_int\_to\_float}: ternary promotion of negatives (RE-APPLIED)}
+
+\textbf{File / function:} \texttt{McodeFpuUtils.cpp},
+\texttt{cast\_int\_to\_float}
+
+\textbf{Symptom.} \texttt{(float)(-3)} became $2^{64}-3 \approx 1.8\times
+10^{19}$ as a double, then saturated on any conversion back. All
+\emph{positive} int$\to$float casts were unaffected, which is how the bug
+originally escaped notice.
+
+\textbf{Root cause.} In
+\texttt{cond ? (u \& 0xffffffff) : (int) u}
+the C conditional operator promotes both arms to a common type --- here the
+unsigned arm's \texttt{uint64\_t} --- so the signed arm's negative
+\texttt{int} value was converted back to a huge unsigned number before
+becoming a double.
+
+\textbf{Why we edited it.} This is a classic C promotion pitfall, invisible
+in code review but fatal for every negative operand. The replacement makes
+the signedness handling explicit (branch, then sign-extend from the actual
+source width) --- it also fixes the old unsigned arm's hard-coded 32-bit
+mask, which mishandled unsigned 8/16/64-bit sources.
+
+\textbf{Before:}
+\begin{lstlisting}
+    double x = (src_type.Get_Unsigned_Flag() ?  (u & 0xffffffff) : (int) u);
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}
+    double x;
+    if(src_type.Get_Unsigned_Flag())
+    {
+        x = (double) (u & __mmask__(snbits));
+    }
+    else
+    {
+        int64_t sv = ((int64_t) (u << (64 - snbits))) >> (64 - snbits);
+        x = (double) sv;
+    }
+\end{lstlisting}
+
+\textbf{Verification.} fp03 (positive and negative int$\to$float, $\times$,
+$\div$, $+$) = 4/4 vs gcc; hand-written \texttt{\$cast} micro-test from the
+original Jul-18 session.
+
+% ============================================================================
+\chapter{Checked and Found Already Correct (No Change Made)}
+% ============================================================================
+
+For completeness, the campaign also re-audited areas with a history of
+defects; the following are \textbf{correct in the current source} and were
+left untouched:
+
+\begin{itemize}
+  \item \texttt{McodeFpu.hpp} \texttt{\_\_float32\_sub\_\_} /
+        \texttt{\_\_float64\_sub\_\_}: the July~17 \texttt{fp\_sub} defects
+        (bit-pattern subtraction at 32-bit; `$+$' instead of `$-$' at 64-bit)
+        are \emph{not present} --- both macros convert through double and
+        subtract correctly.
+  \item The unsigned scalar ALU path (\texttt{\_\_uexec\_64\_\_} on raw
+        \texttt{uint64\_t} + \texttt{CastToU64}) is correct, including
+        unsigned divide and logical right shift. The older build's
+        \texttt{\$u64}-zeroing defect no longer exists; consequently the
+        compiler now emits \texttt{(\$u64)} for unsigned \texttt{/},
+        \texttt{\%} (its divide step) and \texttt{>>}, all verified against
+        gcc (including a logical shift by 63).
+  \item The July~5 backward-\texttt{\$call} sign-extension fix is present;
+        every call to an earlier-defined function in the 61-test gate is a
+        backward call.
+\end{itemize}
+
+Two \emph{behavioural} findings in the assembler worth knowing (not changed):
+
+\begin{itemize}
+  \item \texttt{\$pack} requires \texttt{packed\_nbits \% word\_nbits == 0}
+        (\texttt{McodeClasses.hpp:412}); violations are reported only as the
+        generic ``\texttt{there were invalid instructions}'' with no
+        per-instruction message.
+  \item \texttt{mcode\_align} reports lane-placement failures ($>$4
+        load/store or $>$1 divide/sqrt per bundle) on stderr but \emph{still
+        emits the bundle} with the control-transfer instruction not moved to
+        lane~0 --- downstream this caused a return into the middle of a
+        bundle. The compiler's bundler now enforces these limits itself, and
+        our scripts no longer discard align/assemble stderr.
+\end{itemize}
+
+% ============================================================================
+\chapter{Process Note: Keeping Fixes in Source}
+\label{ch:process}
+% ============================================================================
+
+Changes 2, 3 and 6 were originally made during the July 17--18
+floating-point campaign, but only the \emph{binaries} were deployed; the
+source tree was left pristine. When the toolchain was rebuilt on July~19
+(for the \texttt{\$fsqrt} fix), the rebuild regenerated all binaries from the
+unfixed source and silently reverted those three fixes. The regression gate
+caught this immediately (fp03 failing, 60/61), and all fixes were re-applied
+\emph{in source} with explanatory comments.
+
+Two safeguards are now in place:
+
+\begin{itemize}
+  \item \texttt{testing/fuzz1000/check\_engine\_fixes.sh} greps the simulator
+        source for all six fixes; it is run before and after any rebuild.
+  \item The full regression gate (61 golden tests) plus, when relevant, the
+        fuzz campaigns are re-run after \emph{every} toolchain rebuild.
+\end{itemize}
+
+\textbf{Recommendation for the upstream tree:} absorbing the six diffs in
+Chapter~2 brings the upstream simulator in line with the reference against
+which the compiler is verified. Each is minimal, local, and documented at the
+change site with a comment beginning ``\texttt{Re-applied fix}'' or referring
+to the fuzz1000 campaign.
+
+\end{document}
