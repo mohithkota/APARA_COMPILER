@@ -4,7 +4,7 @@
 # on the simulator, classify. Failing seeds keep their whole directory in
 # fail_<seed>/ for triage; passing ones are cleaned up.
 cd "$(dirname "$0")"
-BIN=/home/mohithkota/complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin
+BIN=${APARA_TOOLS:-/home/mohithkota/complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin}
 CC="python3 ../../compiler/compiler.py"
 
 FIRST=${1:-1}; LAST=${2:-100}

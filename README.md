@@ -6,6 +6,35 @@ own toolchain. **The C feature set for the APARA accelerator is complete** — i
 vector), floating point (bit-exact vs gcc), function pointers, variadics, and >4 args. See
 [`compiler/STATUS.md`](compiler/STATUS.md) for the full, dated change history.
 
+## Getting started (fresh clone → working compiler)
+
+```bash
+# 1. Prerequisites: python3, gcc, and pycparser
+pip install pycparser
+
+# 2. Point the compiler at the APARA engine toolchain binaries
+export APARA_TOOLS=/path/to/engine_isp/assembler/bin
+
+# 3. REQUIRED: verify the toolchain has the six simulator fixes this
+#    compiler is verified against (silently wrong results without them —
+#    $fsqrt returns 0, float casts are garbage, unsigned vreduce is signed).
+#    --check reports; --apply patches the SOURCE (then rebuild with scons).
+#    Rationale + before/after code: ENGINE_SOURCE_CHANGES.md and
+#    engine_source_changes_report/engine_source_changes.pdf
+python3 engine_patches/apply_engine_fixes.py --check /path/to/engine_isp/assembler/src
+
+# 4. Compile and run a program, gcc-style
+./apara-cc mytest.c --run     # compiles, assembles, executes, verifies vs gcc
+
+# 5. Confirm your setup with the full regression gate (61 golden tests)
+bash testing/run_gate.sh
+```
+
+Programs that follow the `results[]` convention (a global `long long results[N]`)
+are automatically verified against native gcc: the compiler generates the
+expected values by compiling the same source with gcc, and the simulator
+checks every slot — a PASS means "produced the correct values."
+
 ## Pipeline
 
 ```

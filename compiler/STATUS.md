@@ -41,7 +41,26 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-19 — fuzz1000 CAMPAIGN (testing/fuzz1000/): full-ISA coverage battery; SEVEN more bugs found & fixed (compiler, sim, AND process) (Latest)
+## 2026-07-19 — HANDOFF HARDENING: clone-and-use like gcc (Latest)
+
+For a clean handoff (works on any machine, no tribal knowledge):
+- **`apara-cc`** — gcc-like front door: `./apara-cc prog.c --run` compiles,
+  assembles, executes and prints the PASS/FAIL verdict vs the gcc golden.
+- **`APARA_TOOLS` env var** — generated run.sh, `testing/run_gate.sh`, and
+  the fuzz drivers all resolve the toolchain from it (hardcoded home paths
+  removed); missing-toolchain errors are explicit.
+- **`engine_patches/apply_engine_fixes.py`** — the six simulator fixes as an
+  idempotent, checkable installer (`--check`/`--apply`) so any pristine
+  upstream toolchain can be brought to the verified state AFTER the
+  professor reviews and agrees (his tree is never touched otherwise;
+  nothing was pushed to his repository).
+- **`testing/run_gate.sh`** — the full 71-test golden gate, in-repo.
+- **README "Getting started"** — fresh clone → working compiler in 5 steps.
+Verified: gate 71/71 via the new script, `apara-cc` end-to-end smoke test.
+
+---
+
+## 2026-07-19 — fuzz1000 CAMPAIGN (testing/fuzz1000/): full-ISA coverage battery; SEVEN more bugs found & fixed (compiler, sim, AND process)
 
 New `testing/fuzz1000/` — the "leave nothing untouched" campaign: a directed
 battery (d01–d12) + extended generator (`gen_full.py`: all int widths

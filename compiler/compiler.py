@@ -400,11 +400,23 @@ def write_result_file(path, ret_val, final_dmem, init_dmem):
 
 # ── shell script generators ───────────────────────────────────────────────────
 
+DEFAULT_TOOLS = '/home/mohithkota/complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin'
+
+
 def write_run_script(script_path, mcode_name):
+    # APARA_TOOLS: directory holding mcode_align/mcode_assemble/mcode_run.
+    # Resolved AT RUN TIME by the generated script (env var first, then the
+    # value this compiler was configured with), so a cloned repo works on any
+    # machine by exporting APARA_TOOLS=/path/to/engine_isp/assembler/bin.
     content = f"""\
 #!/bin/bash
 cd "$(dirname "$0")"
-BIN_DIR=/home/mohithkota/complier_Apara/engine_new/AjitHpcAccelRepo/AjitHpcAccel/engine_isp/assembler/bin
+BIN_DIR=${{APARA_TOOLS:-{os.environ.get('APARA_TOOLS', DEFAULT_TOOLS)}}}
+if [ ! -x "$BIN_DIR/mcode_run" ]; then
+  echo "ERROR: APARA toolchain not found at $BIN_DIR"
+  echo "       export APARA_TOOLS=/path/to/engine_isp/assembler/bin"
+  exit 1
+fi
 ALIGN=$BIN_DIR/mcode_align
 AS=$BIN_DIR/mcode_assemble
 DISAS=$BIN_DIR/mcode_disassemble

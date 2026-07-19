@@ -1,0 +1,47 @@
+#!/bin/bash
+# apara-cc -- gcc-like front door for the APARA C compiler.
+#
+#   ./apara-cc prog.c            compile -> prog/prog.mcode (+ data.map, run.sh,
+#                                gcc-golden prog.result when results[] is used)
+#   ./apara-cc prog.c --run      ...then assemble + execute on the simulator
+#                                and print the PASS/FAIL verdict
+#
+# Requirements: python3 + pycparser, gcc (for the golden reference), and for
+# --run the engine toolchain:  export APARA_TOOLS=.../engine_isp/assembler/bin
+# (see README "Getting started"). Any extra flags are passed through to
+# compiler.py (e.g. --global-base, --stack-top).
+set -e
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SRC=""
+RUN=0
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --run) RUN=1 ;;
+    *.c)   SRC="$a" ;;
+    *)     ARGS+=("$a") ;;
+  esac
+done
+if [ -z "$SRC" ]; then
+  echo "usage: apara-cc <file.c> [--run] [compiler.py flags]"; exit 2
+fi
+python3 -c "import pycparser" 2>/dev/null || {
+  echo "ERROR: python package 'pycparser' missing (pip install pycparser)"; exit 1; }
+
+python3 "$HERE/compiler/compiler.py" --preprocess "$SRC" "${ARGS[@]}"
+
+if [ $RUN -eq 1 ]; then
+  base=$(basename "$SRC" .c)
+  dir="$(dirname "$SRC")/$base"
+  out=$(cd "$dir" && bash run.sh 2>&1) || { echo "$out" | tail -5; exit 1; }
+  if echo "$out" | grep -q "expected"; then
+    echo "== FAIL (simulator result differs from gcc golden):"
+    echo "$out" | grep "expected" | head -8
+    exit 1
+  elif echo "$out" | grep -q "Halt!"; then
+    echo "$out" | grep "PostCondition" | head -12
+    echo "== PASS ($dir)"
+  else
+    echo "== ERROR: program did not halt (see $dir/$base.log)"; exit 1
+  fi
+fi
