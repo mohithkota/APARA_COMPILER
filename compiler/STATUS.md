@@ -41,7 +41,71 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-18 — FUZZ CAMPAIGN (testing/fuzz/): randomized differential testing; TWO more latent bugs found & fixed (Latest)
+## 2026-07-19 — fuzz1000 CAMPAIGN (testing/fuzz1000/): full-ISA coverage battery; SEVEN more bugs found & fixed (compiler, sim, AND process) (Latest)
+
+New `testing/fuzz1000/` — the "leave nothing untouched" campaign: a directed
+battery (d01–d12) + extended generator (`gen_full.py`: all int widths
+signed/unsigned, 2D/3D arrays, unions, bit-fields, enums, statics, goto,
+f32+f64, intrinsics, plus everything from v1) + `cov_scan.py`, a coverage
+AUDITOR that scans every passing program's mcode and proves each
+(instruction × sub-op × type-tag) on the checklist was emitted and executed.
+**Final: directed 13/13 + fuzz seeds 1–1000 = 613 PASS / 0 FAIL / 0 HANG /
+0 COMPILE-FAIL (400 SKIP = IMEM size guard), checklist 102/102 covered —
+every result slot of every executed program bit-matched native gcc.**
+`check_engine_fixes.sh` now greps the engine SOURCE for all six sim fixes —
+run it before/after any toolchain rebuild. The checklist encodes
+justified conventions: floats load/store as raw-width ints; `%` is synthetic
+(only its `/` appears); `<`/`<=` branches canonicalize to `>`/`>=`; casts use
+$i32 as the generic int side; vector tags are $v-prefixed.
+
+**Compiler bugs found & fixed:**
+1. **Global initializers with literal suffixes zeroed** — `int('0x01LL',0)`
+   raised and `except: return [0]` swallowed it; every `LL`/`u`-suffixed
+   initializer became 0 (ir_gen `_flatten_init`).
+2. **Struct-global float-field initializers zeroed** — one ftag applied to
+   the whole InitList; `{2.5, 1.5f, 7}` became `{0,0,7}`. New
+   `_flatten_struct_init` encodes per-field (guarded to float-bearing structs
+   so bitfield layouts keep the old path).
+3. **3D arrays: init laid out flat, accesses strode by inner-ROW size** (16
+   for `long long[..][..][2]`) — int 3D arrays worked by symmetric luck.
+   N-D decls now record full dims (`_array_ndims`) and `_2d_base_and_offset`
+   walks any-depth subscript chains with per-level strides.
+4. **`(long long)sqrt(x)` skipped the float→int cast** — `_float_tag_of`
+   didn't know fsqrt intrinsics return floats; raw IEEE bits were stored.
+5. **Unsigned 64-bit `/`, `%`, `>>` used the signed path** — IRBinOp had a
+   dead `unsigned` field; now set by `_binop` (via `_expr_is_unsigned`) and
+   honored by codegen ($u64 tag; the `%` expansion's divide carries it).
+   The old "u64>> is a sim limit" no longer holds on the current engine
+   build (verified: logical shift by 63 correct) — comment removed.
+6. **`__nop()` was silently DELETED by the bundler** (`_parse_flat` dropped
+   `$null`); kept now — codegen only emits $null for an explicit nop.
+7. Golden driver now links `-lm` (sqrt/sqrtf natively); `__pack` directed
+   test fixed (packed_nbits must be a multiple of word_nbits — the
+   assembler checks this SILENTLY, no error text).
+
+**Simulator bugs found & fixed (in SOURCE, see process note):**
+- `$fsqrt` Execute was a "yet to be implemented" stub silently producing 0
+  (MachineRun.cpp); now routes through the standard ALU path → fp_sqrt.
+- `$vreduce` UNSIGNED variants sign-extended lanes (shared `r` in
+  McodeOperations.cpp) — `__vreduce_vu8` summed 0xf2 as −14; unsigned lanes
+  now zero-extend.
+- Scalar 32-bit casts misclassified as vector (`is_vector_cast =
+  in_vals.size()>1` fires for Break_Vector'd scalars) → result masked to 32
+  bits, stripping sign extension of e.g. `(int)(-6.0f)`; now uses the
+  actual type Vector_Flags.
+
+**PROCESS INCIDENT — sim fixes lived only in binaries:** rebuilding the
+toolchain for the fsqrt fix silently REVERTED the Jul-17/18 FP-campaign sim
+fixes (cast dispatch swap, execute-cast float stub, cast_int_to_float
+ternary promotion) — they had been built and deployed but the SOURCE was
+left pristine. Detected because the gate dropped to 60/61. All four are now
+re-applied IN SOURCE with re-application comments, so a rebuild can never
+lose them again. fp_sub's macros were already correct in this tree.
+Full gate re-verified 61/61 after every rebuild.
+
+---
+
+## 2026-07-18 — FUZZ CAMPAIGN (testing/fuzz/): randomized differential testing; TWO more latent bugs found & fixed
 
 New `testing/fuzz/` — `gen_fuzz.py` (seeded random whole-program generator
 mixing every supported feature; UB-free by construction: bounded loops &

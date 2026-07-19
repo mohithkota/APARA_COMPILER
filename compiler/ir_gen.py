@@ -191,6 +191,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         self._ptr_elem_bytes  = {}
         # 2D array info: name → (outer_dim, inner_dim)
         self._array_dims      = {}
+        self._array_ndims     = {}   # name -> full dims list for N-D arrays
         # 2D array info: name → row stride in bytes (inner_dim * col_stride)
         self._array_row_stride = {}
         # Struct support
@@ -257,16 +258,18 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if isinstance(x, Const): return ('c', x.value)
         return ('?', id(x))
 
-    def _emit_binop(self, op, left, right):
+    def _emit_binop(self, op, left, right, unsigned=False):
         """Emit `res = left op right`, reusing a prior identical computation
         (CSE) when both operands are the same values and we are still in the
-        same straight-line region. Returns the result operand."""
-        key = (op, self._operand_key(left), self._operand_key(right))
+        same straight-line region. Returns the result operand.
+        `unsigned` selects the $u64 ALU tag where signedness changes the
+        result (/, %, >>) — it is part of the CSE key."""
+        key = (op, self._operand_key(left), self._operand_key(right), unsigned)
         cached = self._cse_table.get(key)
         if cached is not None:
             return cached
         res = self._tmp()
-        self._emit(IRBinOp(res, op, left, right))
+        self._emit(IRBinOp(res, op, left, right, unsigned=unsigned))
         self._cse_table[key] = res
         return res
 
@@ -796,43 +799,63 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
     # ── 2D array helpers ──────────────────────────────────────────────────────
 
+    def _md_root_id(self, node):
+        """Root ID name of a multi-level ArrayRef chain (a[i][j](..)), or None."""
+        n = node
+        depth = 0
+        while isinstance(n, A.ArrayRef):
+            depth += 1
+            n = n.name
+        if depth >= 2 and isinstance(n, A.ID):
+            return n.name
+        return None
+
     def _2d_base_and_offset(self, node):
         """
         Compute (base_addr_temp, byte_offset_temp) for A[i][j].
         node: ArrayRef(name=ArrayRef(name=ID('A'), subscript=i), subscript=j)
         """
-        row_node = node.name                    # A[i]
-        arr_name = row_node.name.name           # 'A'
-        row_idx  = self._visit_expr(row_node.subscript)   # i
-        col_idx  = self._visit_expr(node.subscript)       # j
-
-        row_stride = self._array_row_stride.get(arr_name, 8)
+        # Walk the subscript chain down to the root ID — handles ANY depth
+        # (a[i][j], a[i][j][k], ...). Strides per level come from the full
+        # dims list when recorded (N-D decls); 2-level chains without one
+        # keep the legacy row/col strides (e.g. 2D params).
+        subs, n = [], node
+        while isinstance(n, A.ArrayRef):
+            subs.append(n.subscript)
+            n = n.name
+        subs.reverse()                          # outermost index first
+        arr_name = n.name
         col_stride = self._array_elem.get(arr_name, 8)
-
-        # row_off = i * row_stride
-        if isinstance(row_idx, Const):
-            row_off = Const(row_idx.value * row_stride)
+        dims = self._array_ndims.get(arr_name)
+        if dims and len(dims) == len(subs):
+            strides = []
+            for m in range(len(subs)):
+                mult = col_stride
+                for d in dims[m + 1:]:
+                    mult *= d
+                strides.append(mult)
         else:
-            row_off = self._tmp()
-            self._emit(IRBinOp(row_off, '*', row_idx, Const(row_stride)))
+            strides = ([self._array_row_stride.get(arr_name, 8)]
+                       * (len(subs) - 1)) + [col_stride]
 
-        # col_off = j * col_stride
-        if isinstance(col_idx, Const):
-            col_off = Const(col_idx.value * col_stride)
-        else:
-            col_off = self._tmp()
-            self._emit(IRBinOp(col_off, '*', col_idx, Const(col_stride)))
-
-        # total_off = row_off + col_off
-        if isinstance(row_off, Const) and isinstance(col_off, Const):
-            total_off = Const(row_off.value + col_off.value)
-        elif isinstance(row_off, Const) and row_off.value == 0:
-            total_off = col_off
-        elif isinstance(col_off, Const) and col_off.value == 0:
-            total_off = row_off
-        else:
-            total_off = self._tmp()
-            self._emit(IRBinOp(total_off, '+', row_off, col_off))
+        total_off = Const(0)
+        for sub, stride in zip(subs, strides):
+            idx = self._visit_expr(sub)
+            if isinstance(idx, Const):
+                part = Const(idx.value * stride)
+            else:
+                part = self._tmp()
+                self._emit(IRBinOp(part, '*', idx, Const(stride)))
+            if isinstance(total_off, Const) and isinstance(part, Const):
+                total_off = Const(total_off.value + part.value)
+            elif isinstance(total_off, Const) and total_off.value == 0:
+                total_off = part
+            elif isinstance(part, Const) and part.value == 0:
+                pass
+            else:
+                s = self._tmp()
+                self._emit(IRBinOp(s, '+', total_off, part))
+                total_off = s
 
         # Base address of the 2D array
         info = self._lookup(arr_name)
@@ -978,6 +1001,20 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._var_ctype[node.name] = node.type   # for sizeof
         is_struct_var = node.name in self._var_struct_type
 
+        # Struct (or struct-array) initializer whose struct has FLOAT fields:
+        # re-flatten with per-field IEEE encoding (see _flatten_struct_init).
+        if node.init is not None and isinstance(node.init, A.InitList):
+            sname = (self._var_struct_type.get(node.name) if is_struct_var
+                     else self._array_struct_elem.get(node.name))
+            if sname and any(self._struct_field_ftag.get((sname, f))
+                             for f in self._struct_layouts.get(sname, {})):
+                if node.name in self._array_struct_elem:
+                    init_vals = []
+                    for e in node.init.exprs:
+                        init_vals.extend(self._flatten_struct_init(e, sname))
+                else:
+                    init_vals = self._flatten_struct_init(node.init, sname)
+
         if _is_unsigned_decl(node.type):
             self._unsigned_vars.add(node.name)
         else:
@@ -986,14 +1023,25 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         total = _type_size(node.type)
         esz   = _elem_size(node.type)
 
-        # Detect 2D array: type = ArrayDecl(dim=rows, type=ArrayDecl(dim=cols, type=T))
+        # Detect multi-dimensional array (2D, 3D, ...): walk ALL ArrayDecl
+        # levels down to the SCALAR type. The old code stopped at two levels,
+        # so a 3D array's "col_stride" was the size of its innermost ROW
+        # (16 for long long[..][..][2]) instead of the scalar stride — the
+        # init was laid out flat while accesses strode by 16 (fuzz1000 d10,
+        # 2026-07-18; int 3D arrays worked by luck: 8-byte inner rows).
         if isinstance(node.type, A.ArrayDecl) and isinstance(node.type.type, A.ArrayDecl):
-            outer_dim  = int(node.type.dim.value)      if node.type.dim      else 0
-            inner_dim  = int(node.type.type.dim.value) if node.type.type.dim else 0
-            col_stride = max(_type_size(node.type.type.type), 8)
-            self._array_row_stride[node.name] = inner_dim * col_stride
-            self._array_dims[node.name]       = (outer_dim, inner_dim)
-            esz = col_stride   # per-scalar stride; alloc uses total//esz = rows*cols elems
+            dims, _t = [], node.type
+            while isinstance(_t, A.ArrayDecl):
+                dims.append(int(_t.dim.value) if _t.dim else 0)
+                _t = _t.type
+            col_stride = max(_type_size(_t), 8)
+            row_elems = 1
+            for d in dims[1:]:
+                row_elems *= d
+            self._array_row_stride[node.name] = row_elems * col_stride
+            self._array_dims[node.name]       = (dims[0], dims[1])
+            self._array_ndims[node.name]      = dims
+            esz = col_stride   # per-scalar stride; alloc uses total//esz = n scalars
 
         # For struct vars use esz=8 (each slot 8-byte); total already = struct_dmem from registry.
         if is_struct_var:
@@ -1066,6 +1114,32 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             return -v if v is not None else None
         return None
 
+    def _flatten_struct_init(self, init_node, sname):
+        """Flatten a struct initializer with PER-FIELD float encoding: the
+        plain _flatten_init applies ONE ftag to every element, which zeroed
+        the float/double fields of initialized struct globals (fuzz1000 d12,
+        2026-07-18 — {2.5, 1.5f, 7} became {0, 0, 7}). Only called for
+        structs that HAVE a float field (see visit_Decl guard), so bitfield
+        and other specially-laid-out structs keep the old path."""
+        lay = self._struct_layouts.get(sname, {})
+        fields = sorted(lay.items(), key=lambda kv: kv[1][0])
+        if not isinstance(init_node, A.InitList):
+            return self._flatten_init(init_node)
+        exprs = list(init_node.exprs)
+        vals = []
+        for k, (fname, (off, sz, sub)) in enumerate(fields):
+            if k >= len(exprs):
+                break
+            if sub:
+                vals.extend(self._flatten_struct_init(exprs[k], sub))
+            else:
+                ftag = self._struct_field_ftag.get((sname, fname))
+                vals.extend(self._flatten_init(exprs[k], ftag=ftag))
+        n_words = self._struct_total_dmem.get(sname, 8 * len(fields)) // 8
+        while len(vals) < n_words:
+            vals.append(0)
+        return vals
+
     def _flatten_init(self, init_node, ftag=None):
         # Float/double target: encode each initializer as its IEEE bit pattern
         # of the DECLARED element width (a plain `1.5` in a float[] is f32).
@@ -1077,8 +1151,15 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                     return [struct.unpack('<I', struct.pack('<f', v))[0]]
                 return [struct.unpack('<Q', struct.pack('<d', v))[0]]
         if isinstance(init_node, A.Constant):
-            try: return [int(init_node.value, 0)]
-            except: return [0]
+            # Strip integer literal suffixes (u/U/l/L) BEFORE parsing: a bare
+            # int('0x01LL', 0) raises and the old `except: return [0]` silently
+            # zeroed every suffixed initializer (fuzz1000 d01/d04..d09,
+            # 2026-07-18). 'f'/'F' must NOT be stripped here — they are valid
+            # hex digits (0xFF); float constants take the ftag path above.
+            try: return [int(init_node.value.rstrip('uUlL'), 0)]
+            except Exception:
+                try: return [ord(init_node.value.strip("'"))]
+                except Exception: return [0]
         if isinstance(init_node, A.InitList):
             # designated array initializers: {[2]=30, [4]=50} -> place each value
             # at its index, zero-fill the gaps (built up to the highest index).
@@ -1225,7 +1306,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         elif isinstance(lval, A.StructRef):
             self._structref_write(lval, val)
         elif isinstance(lval, A.ArrayRef):
-            if isinstance(lval.name, A.ArrayRef) and isinstance(lval.name.name, A.ID):
+            if isinstance(lval.name, A.ArrayRef) and self._md_root_id(lval):
                 self._2d_arrayref_write(lval, val)
                 return
             a = self._eval_addr(lval)
@@ -1418,7 +1499,7 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         if isinstance(node, A.FuncCall): return self._call(node)
         if isinstance(node, A.StructRef): return self._structref_read(node)
         if isinstance(node, A.ArrayRef):
-            if isinstance(node.name, A.ArrayRef) and isinstance(node.name.name, A.ID):
+            if isinstance(node.name, A.ArrayRef) and self._md_root_id(node):
                 return self._2d_arrayref_read(node)
             return self._arrayref(node)
         if isinstance(node, A.Cast):
@@ -1549,6 +1630,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 return self._float_tag_of_decl_elem(self._var_ctype.get(base.name))
             return None
         if isinstance(node, A.FuncCall) and isinstance(node.name, A.ID):
+            # fsqrt intrinsics return a float of the operand's width — without
+            # this, (long long)sqrt(x) skipped the float->int $cast and stored
+            # the raw IEEE bits (fuzz1000 d08, 2026-07-18).
+            _FSQRT_RET = {'sqrt': '$f64', '__fsqrt_f64': '$f64',
+                          'sqrtf': '$f32', '__fsqrt_f32': '$f32'}
+            if node.name.name in _FSQRT_RET:
+                return _FSQRT_RET[node.name.name]
             return self._func_ret_ftag.get(node.name.name)
         if isinstance(node, A.StructRef):
             sname = self._structref_struct_name(node.name, node.type)
@@ -1644,15 +1732,17 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         else:
             l = self._visit_expr(node.left); r = self._visit_expr(node.right)
         res = self._tmp()
-        # NOTE: unsigned '>>' should be a LOGICAL shift ($u64), but the
-        # simulator's $u64 ALU path zeroes the operand (Cast_Up_To_u64 ->
-        # __mmask__(64) UB, same class as the __vabs nbits=64 bug). Emitting
-        # $u64 returns 0, so we keep $i64 (arithmetic) -- correct for every
-        # unsigned value whose bit 63 is clear (i.e. all sub-64-bit unsigned
-        # and any u64 < 2^63). Only `unsigned long long >>` with the high bit
-        # set is wrong; unfixable until the simulator's $u64 shift is fixed.
         if op in ('+','-','*','/','%','&','|','^','<<','>>'):
-            res = self._emit_binop(op, l, r)
+            # Signedness changes the RESULT only for / % >> — those emit the
+            # $u64 ALU tag when either operand is unsigned (C usual arithmetic
+            # conversions). The current engine build's u64 path is correct
+            # (raw-uint64 __uexec_64__ + CastToU64); the old build's
+            # Cast_Up_To_u64/__mmask__(64) zeroing that forced $i64-everywhere
+            # is gone — re-verified empirically 2026-07-19.
+            uns = (op in ('/', '%', '>>')
+                   and (self._expr_is_unsigned(node.left)
+                        or self._expr_is_unsigned(node.right)))
+            res = self._emit_binop(op, l, r, unsigned=uns)
         elif op in ('>','<','>=','<=','==','!='):
             tl = self._lbl('cT'); el = self._lbl('cE')
             cmp_ftag = self._float_tag_of(node)

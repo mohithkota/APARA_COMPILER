@@ -945,8 +945,10 @@ class CodeGen:
         ftype = getattr(ir, 'ftype', None)   # '$f32'/'$f64' for float arithmetic
 
         # Constant-fold both-const case (integer only -- float bit patterns must
-        # not be folded as integers).
-        if not ftype and isinstance(ir.left, Const) and isinstance(ir.right, Const):
+        # not be folded as integers; unsigned ops fold at u64 semantics below,
+        # so exclude them from this signed fold).
+        if (not ftype and not getattr(ir, 'unsigned', False)
+                and isinstance(ir.left, Const) and isinstance(ir.right, Const)):
             lv, rv = ir.left.value, ir.right.value
             try:
                 result = {
@@ -962,12 +964,14 @@ class CodeGen:
             except Exception:
                 pass
 
-        # Modulo: synthesise as  a - (a/b)*b
+        # Modulo: synthesise as  a - (a/b)*b  (the DIVIDE carries the
+        # signedness; the multiply/subtract are sign-agnostic mod 2^64)
         if op == '%':
+            div_tt = '($u64)' if getattr(ir, 'unsigned', False) else '($i64)'
             l_reg, l_bor = self._operand_reg(ir.left,  protect=[d] + sn)
             r_reg, r_bor = self._operand_reg(ir.right, protect=[d, l_reg] + sn)
             tmp = self._safe_borrow(protect=[d, l_reg, r_reg])
-            self._emit(f"/ {tmp} ($i64) {l_reg} {r_reg}")
+            self._emit(f"/ {tmp} {div_tt} {l_reg} {r_reg}")
             self._emit(f"* {tmp} ($i64) {tmp} {r_reg}")
             self._emit(f"- {dest} ($i64) {l_reg} {tmp}")
             self._ra.unborrow(tmp)
@@ -976,9 +980,15 @@ class CodeGen:
             return
 
         apara = self._APARA_OP.get(op, op)
-        # Integer ALU ops use $i64; a float op uses its $f32/$f64 tag (the tag's
-        # Float_Flag makes the simulator do fp_add/fp_sub/fp_mul/fp_div).
-        tt = f'({ftype})' if ftype else '($i64)'
+        # Integer ALU ops use $i64 ($u64 when the IR marked the op unsigned —
+        # / and >> differ by signedness); a float op uses its $f32/$f64 tag
+        # (the tag's Float_Flag makes the simulator do fp math).
+        if ftype:
+            tt = f'({ftype})'
+        elif getattr(ir, 'unsigned', False):
+            tt = '($u64)'
+        else:
+            tt = '($i64)'
         l_reg, l_bor = self._operand_reg(ir.left, protect=[d] + sn)
 
         # Float constant operands are bit patterns, not valid 10-bit immediates,

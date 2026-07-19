@@ -330,7 +330,10 @@ def try_golden_verify(source, ir_globals, out_dir, base_name):
                 f.write('    return 0;\n}\n')
 
             bin_path = os.path.join(scratch, '_driver')
-            cc = subprocess.run(['gcc', '-O0', '-o', bin_path, driver_path],
+            # -lm: sqrt/sqrtf in a test (they lower to $fsqrt on APARA) need
+            # libm in the native golden build on toolchains where it is still
+            # separate from libc.
+            cc = subprocess.run(['gcc', '-O0', '-o', bin_path, driver_path, '-lm'],
                                  capture_output=True, text=True)
             if cc.returncode != 0:
                 print(f"\n[GOLDEN VERIFY] gcc failed -- falling back to placeholder .result:\n{cc.stderr}")

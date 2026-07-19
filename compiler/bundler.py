@@ -279,7 +279,10 @@ def _parse_flat(mcode_text):
             bundle_texts = []
             while i < len(lines) and lines[i].strip() != ';':
                 t = lines[i].strip()
-                if t and t != '$null':
+                # Keep $null: codegen only emits it for an explicit __nop()
+                # (never as padding), so dropping it here silently deleted the
+                # user's nop (fuzz1000 coverage audit, 2026-07-19).
+                if t:
                     bundle_texts.append(t)
                 i += 1
             i += 1  # skip ';'
