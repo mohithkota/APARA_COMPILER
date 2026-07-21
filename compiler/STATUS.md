@@ -3648,3 +3648,119 @@ cmp_wd/
 ├── ldst/                   ← test_ldst (hardware ✓)
 └── new_isa_tests/          ← 14 ISA instruction tests (all compile ✓)
 ```
+
+---
+
+## Optimization pipeline & roadmap (updated 2026-07-21)
+
+Work on branch `optimization-infrastructure` (main left pristine). Goal: a
+general-purpose optimizer built on **reusable shared analyses**, not
+benchmark-specific passes.
+
+### Current pipeline order
+
+```
+IVSR → strength-reduce → LICM → loop_reg → [CopyProp → Global DCE] → scheduling → bundling
+                                            └── next milestone ──┘
+```
+Each IR transform runs on pristine `ir_gen.instructions`, builds fresh IR
+objects (verification IR stays untouched), and is tiered with a no-spill
+fallback in `compiler.py`. A/B knobs: `APARA_NO_IVSR`, `APARA_NO_STRENGTH_REDUCE`,
+`APARA_NO_LOOPOPT` (and planned `APARA_NO_COPYPROP`); debug `APARA_IVSR_DEBUG`.
+
+### Done (committed 6617883)
+
+- **`parallelism_profile.py`** — read-only per-loop ILP profiler: N (instrs/iter),
+  B (bundles/iter = achieved II), critical path (current vs after-renaming),
+  RecMII (true loop-carried recurrence, register vs stack-slot tagged), ResMII
+  (lane floor + driver: mem-lanes / 8-wide / div), MII, B/MII headroom, register
+  free-count. Corpus `--rank` mode. Drives every decision below.
+- **`strength_reduce.py`** — power-of-two SR: `*2^n→<<`, and (only when unsigned)
+  `/2^n→>>`, `%2^n→&`. Signed div/mod correctly refused. *Measured throughput-
+  marginal on this ISA* (mul and shift are equal-cost ALU ops); kept as hygiene.
+- **`ivsr.py`** — induction-variable / pointer strength reduction. Maintains each
+  `base + invariant + iv*stride` address in one incrementing pointer (preheader
+  init + `p += step`); function-scoped dead-temp elimination removes the orphaned
+  arithmetic. Single-def-map tracing; reuses loop_reg-style clean-slot/escape
+  analysis; profitability gate protects small loops. **Verified: matmul inner
+  loop N 27→17; executed instructions −32.7% (12×12), −35.3% (16×16), gcc-golden
+  PASS.** Zero regressions (43/45 verifiable tests; 2 pre-existing failures).
+
+### Profiler-driven bottleneck analysis (post-IVSR)
+
+- Dominant remaining cost is **compiler-generated add-zero copies**
+  (`+ rd ($i64) $r0 rs`, emitted by `codegen._gen_IRAssign` for every temp copy,
+  never coalesced). **5 of 17 instrs (29%) in the matmul hot loop**; 22/175
+  program-wide (mm12); 46/486 (conv). Sources: loop_reg promotion moves +
+  value-copy IRAssigns.
+- These copies **inflate recurrences**: matmul hot loop shows RecMII=3 but the
+  true recurrences (acc+=prod, k+=1, pointer+=stride) are each RecMII=**1** — so
+  it is only *falsely* recurrence-bound. Conv inner loop RecMII=10 is a genuine
+  **float** accumulator (not safely breakable → needs `$dot` vectorization).
+- Conclusion: the next pass is **not** loop unrolling (matmul falsely
+  recurrence-bound, conv truly float-recurrence-bound). It is a universal
+  cleanup: copy propagation + coalescing + global DCE.
+
+### Next pass — Copy Propagation + Copy Coalescing + Global DCE (planned)
+
+General, IR-analysis-based, architecture-independent; benefits arithmetic, DSP,
+image, graph, networking, string, sorting, crypto, ML code alike.
+
+Files: **NEW** `ir_analysis.py` (first shared-analysis module), **NEW**
+`copyprop.py`; **MOD** `ivsr.py` (consume the shared module), `compiler.py`
+(pipeline wiring). Placement: after loop_reg (the copy producer), before
+scheduling, via a `finish(ir)=global_dce(copyprop(ir))` wrapper on every tier.
+
+Algorithm (all guarded by `DefUse`; bail on any ambiguity):
+- **Forward copy propagation.** Rule A (whole-function): both `dst`,`src`
+  single-def → replace uses of `dst` with `src`. Rule B (intra-block): `dst`
+  single-def, `src` multi-def (e.g. loop_reg's loop-carried vreg) → replace
+  same-block uses with no intervening redef of `src`.
+- **Copy coalescing (backward).** `dst=src` with `src` single-def and sole-use →
+  retarget `src`'s defining instruction to write `dst`, delete the copy.
+- **Global DCE.** Promote the function-scoped dead-temp elimination out of
+  `ivsr.py` into the shared module; run after copy-prop (and every pass that can
+  create dead code).
+
+Worked example (accumulator): `r12=0+r5; r13=r12+r10; r5=0+r13` →
+`r5 = r5 + r10` (one instruction; recurrence 3→1).
+
+Correctness: value-preserving renames guarded by single-def / no-intervening-
+redef; DCE removes only pure, unread instructions (loads are pure in this
+fault-free VM); conservative bail on doubt; final safety net is the existing
+no-spill tier fallback.
+
+### Shared analysis framework — incremental plan
+
+Introduced **now** in `ir_analysis.py` (per-function-slice scoped, so the
+recurring cross-function temp-name-collision bug is structurally impossible):
+
+- leaf helpers `dest_names` / `src_names` / `jump_targets` / `func_slices` /
+  `enclosing_func` (today duplicated across licm / loop_reg / ivsr),
+- **`DefUse`** — single-definition map + multi-def set + **def-use chains**
+  (first reusable module; shared immediately by copy-prop and IVSR),
+- **`basic_blocks`** — straight-line partition only (no edges),
+- **global DCE**.
+
+Postponed to later milestones (with reason):
+
+| Analysis | Deferred because |
+|---|---|
+| Full CFG (edges) | not needed for intra-block / single-def rules; required for SCCP reachability + GVN availability |
+| Dominator / post-dominator trees | needed for cross-block prop, SCCP, GVN, safe motion; copy-prop's conservative rules avoid it |
+| Loop tree / nest info | back-edges detected ad hoc today; unify for unroll / pipeline / interchange |
+| Shared liveness | codegen's own suffices now |
+| Alias analysis | licm's storage-class version suffices; GVN load-elim will need a shared one |
+
+Future passes reuse the same framework without rewrite: **SCCP** (DefUse + future
+CFG), **GVN** (DefUse + basic_blocks + future dominance), **loop unswitching /
+unrolling / software pipelining** (func_slices + future loop tree). The framework
+grows by addition, not rewrite. Design philosophy: optimize the compiler
+architecture, not the current benchmark corpus.
+
+### Post-implementation metrics to report (on/off, whole corpus)
+
+Full regression suite (pass/fail; new vs pre-existing failures), instruction
+count (N), bundle count (B), register pressure (peak/free), spill count,
+executed-instruction count — both improvements and regressions, small loops
+watched.
