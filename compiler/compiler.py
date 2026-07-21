@@ -25,6 +25,7 @@ typedef float float32_t; typedef double float64_t;
 typedef unsigned char vu8_t;   typedef signed char  vi8_t;
 typedef unsigned short vu16_t; typedef short        vi16_t;
 typedef unsigned int vu32_t;   typedef int          vi32_t;
+typedef float vf32_t;
 """
 
 
@@ -65,11 +66,24 @@ def build_data_map(ir_globals):
         stride = getattr(gd, 'stride', max(gd.elem_bytes, 8))
         n_elems = max(1, gd.total_bytes // max(stride, 1))
         inits = gd.init if gd.init else [0] * n_elems
+        # The engine addresses bytes big-endian within each 64-bit word: a
+        # w-byte access at byte b of a word hits bits [63-8b : 64-8b-8w]
+        # (see ___execute_store_operation___ in McodeExecute.cpp). Pack each
+        # init value exactly where a $st of its own width would put it —
+        # a 4-byte elem in an 8-byte slot lands in bits[63:32], NOT [31:0].
+        w = stride if stride < 8 else min(max(gd.elem_bytes, 1), 8)
         for i, val in enumerate(inits):
             byte_addr = gd.dmem_addr + i * stride
             word_idx  = byte_addr // 8
-            # All stores are ($i64) — value occupies the full 64-bit word
-            dmem[word_idx] = int(val) & _MASK64
+            if w >= 8:
+                dmem[word_idx] = int(val) & _MASK64
+            else:
+                shift = (8 - w - (byte_addr & 7)) * 8
+                mask  = (1 << (w * 8)) - 1
+                word  = dmem.get(word_idx, 0)
+                word &= ~(mask << shift) & _MASK64
+                word |= (int(val) & mask) << shift
+                dmem[word_idx] = word
 
     # mcode_run requires at least word 0 to be present
     dmem.setdefault(0, 0)
@@ -448,7 +462,7 @@ rm -f *.aligned.mcode *.obj *.disass.mcode *.log
 
 def compile_c_to_mcode(c_file, output_file=None, verbose=False,
                        do_preprocess=False, global_base=0x400, stack_top=0x7FF8,
-                       no_startup=False):
+                       no_startup=False, dmem_init=False):
     try:
         import pycparser
     except ImportError:
@@ -535,11 +549,41 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     # This way a program that can take LICM but not the extra promotion pressure
     # still keeps LICM, rather than losing both. The original IR is left pristine
     # for verification / data-map / counts.
-    _base = list(ir_gen.instructions)
+    # Power-of-two strength reduction (/2^n -> >>, %2^n -> &, *2^n -> <<) runs
+    # FIRST, on a fresh copy, so LICM / loop-reg / codegen all see the cheaper
+    # ops. It builds new IRBinOp objects (never mutates), so ir_gen.instructions
+    # stays pristine for verification / data-map / eval below. Value-preserving
+    # and guarded by the unsigned flag, so it can only shrink the code.
+    # Pipeline order (each transform sees the previous one's output):
+    #   IVSR  -> strength-reduce -> LICM -> loop-reg.
+    # IVSR (induction-variable / pointer strength reduction) runs FIRST, on the
+    # pristine IR, because it keys on the canonical `iv * Const` address form
+    # (before strength reduction splits it into `<<`/`*`) and on the uniform
+    # memory-backed basic-IV pattern (before loop-reg register-promotes it). It
+    # maintains each base+invariant+iv*stride address in one incrementing pointer
+    # and DCEs the orphaned per-iteration arithmetic. Power-of-two strength
+    # reduction then mops up any residual pow2 mul/div/mod. Both build fresh IR
+    # objects, so ir_gen.instructions stays pristine for verification below.
+    from strength_reduce import strength_reduce
+    from ivsr import induction_strength_reduce
+    _ir0   = list(ir_gen.instructions)
+    _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
+    def _ivsr(x):
+        return x if _no_iv else induction_strength_reduce(x)
+    def _sr(x):
+        if os.environ.get('APARA_NO_STRENGTH_REDUCE'):
+            return x
+        return strength_reduce(x)[0]
+    _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
+    # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
+    # spills under LICM (extended invariant live ranges) can still keep IVSR.
     _tiers = [
-        ("LICM+loop-reg", lambda: promote_loop_counters(hoist_loop_invariants(list(_base)))),
-        ("LICM only",     lambda: hoist_loop_invariants(list(_base))),
-        ("loop-reg only", lambda: promote_loop_counters(list(_base))),
+        ("IVSR+LICM+loop-reg", lambda: promote_loop_counters(hoist_loop_invariants(_sr(_ivsr(list(_ir0)))))),
+        ("IVSR+loop-reg",      lambda: promote_loop_counters(_sr(_ivsr(list(_ir0))))),
+        ("IVSR only",          lambda: _sr(_ivsr(list(_ir0)))),
+        ("LICM+loop-reg",      lambda: promote_loop_counters(hoist_loop_invariants(list(_base)))),
+        ("LICM only",          lambda: hoist_loop_invariants(list(_base))),
+        ("loop-reg only",      lambda: promote_loop_counters(list(_base))),
     ]
     # Debug/measurement knob: APARA_NO_LOOPOPT=1 forces the validated baseline
     # (no LICM, no loop-reg) so the two can be A/B compared on the simulator.
@@ -559,17 +603,23 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         except Exception:
             continue            # register exhaustion etc.; try a lighter tier
     if body is None:
-        # Validated baseline on the original IR (loop-aware liveness is inert
-        # without these passes, so this is exactly the pre-optimization output).
+        # Validated baseline: strength-reduced IR but no LICM / loop-reg (those
+        # are what raise register pressure into spilling; strength reduction only
+        # lowers it). Value-preserving, so this stays a safe fallback.
         # Runs outside try/except so a genuine compile error still surfaces.
         cg   = CodeGen(global_base=global_base)
-        body = cg.generate(ir_gen.instructions, global_base=global_base)
+        body = cg.generate(_base, global_base=global_base)
         if verbose:
             print("[loop-opt] disabled for this program (pressure/spill)")
 
     header = ""
     if not no_startup:
-        header = cg.startup_code(global_base=global_base, stack_top=stack_top)
+        # --dmem-init: globals are preloaded from data.map (run.sh -d / hardware
+        # DMEM image), so the per-word startup init stores are redundant IMEM
+        # weight. Safe because build_data_map packs the exact same values
+        # (incl. sub-word big-endian packing matching the engine's ld/st).
+        header = cg.startup_code(global_base=global_base, stack_top=stack_top,
+                                 skip_global_init=dmem_init)
 
     mcode = header + body
 
@@ -664,6 +714,10 @@ def main():
     ap.add_argument('--stack-top',  type=lambda x: int(x, 0), default=0x7FF8,
                     help='Initial stack pointer value (default 0x7FF8)')
     ap.add_argument('--no-startup', action='store_true')
+    ap.add_argument('--dmem-init', action='store_true',
+                    help='Rely on data.map to preload global initializers '
+                         '(skips the startup init-store code; big IMEM saving '
+                         'for large initialized arrays)')
     a = ap.parse_args()
 
     if not os.path.isfile(a.input):
@@ -671,7 +725,7 @@ def main():
         sys.exit(1)
 
     compile_c_to_mcode(a.input, a.output, a.verbose, a.preprocess,
-                       a.global_base, a.stack_top, a.no_startup)
+                       a.global_base, a.stack_top, a.no_startup, a.dmem_init)
 
 
 if __name__ == '__main__':

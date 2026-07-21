@@ -393,7 +393,8 @@ class CodeGen:
 
     # ── startup / init ─────────────────────────────────────────────────────────
 
-    def startup_code(self, global_base=None, stack_top=0x7FF8):
+    def startup_code(self, global_base=None, stack_top=0x7FF8,
+                     skip_global_init=False):
         gb = global_base if global_base is not None else self._global_base
         out = [
             "// ── APARA startup (APARA C Compiler v6: 28-reg + spilling) ──────────────────",
@@ -410,8 +411,9 @@ class CodeGen:
         b(f"+ {FP} ($i64) {ZERO} {SP}")
         # No ONE register — unconditional branch uses "? $r0 == label" (0==0)
 
-        for line in self._init_code:
-            out.append(line)
+        if not skip_global_init:            # --dmem-init: data.map preloads these
+            for line in self._init_code:
+                out.append(line)
 
         b(f"$call main")
         b(f"$halt")
@@ -459,6 +461,20 @@ class CodeGen:
                 self._emit(f"<< {scr} ($i64) {scr} 16")
                 self._emit(f"| {reg} ($i64) {reg} {scr}")
                 self._ra.unborrow(scr)
+
+    def _emit_const_via_fixed_scratch(self, reg, value, scratch='$r25'):
+        """_load_const, but with a caller-chosen fixed scratch instead of a
+        pool borrow. For sites where the pool's idea of 'free' is wrong —
+        e.g. call-argument setup, where already-written arg registers are
+        not tracked by the allocator."""
+        lines = []
+        self._append_const_lines(lines, reg, scratch, value)
+        it = iter(lines)
+        for l in it:
+            if l.strip() == '||':
+                instr = next(it).strip()
+                next(it)                      # the ';'
+                self._emit(instr)
 
     def _emit_set_const_into(self, value, reg, emit_fn):
         value = int(value)
@@ -1088,9 +1104,13 @@ class CodeGen:
         # 2. Set up arguments in r2–r5.
         #    Read from saved slots to avoid register-aliasing bugs
         #    (e.g. arg0 source is r2, which we'd clobber when writing arg1 to r3).
+        #    Consts must NOT go through _load_const here: its pool-borrowed
+        #    scratch can hand back an arg register that step 2 already wrote
+        #    (found via pf03: `fill(a, 8, 1.25f)` built 1.25f's bits using $r2,
+        #    wiping arg0). $r25 is safe for the same reason as in step 1b.
         for i, arg in enumerate(reg_args[:4]):
             if isinstance(arg, Const):
-                self._load_const(ARG[i], arg.value)
+                self._emit_const_via_fixed_scratch(ARG[i], arg.value)
             elif isinstance(arg, Temp):
                 name = arg.name
                 if name in saved_name_slot:
@@ -1187,10 +1207,11 @@ class CodeGen:
             elif fp_name in self._spill_map:
                 fp_slot = self._spill_map[fp_name]
 
-        # 2. Set up arguments in r2–r5 (same as direct call).
+        # 2. Set up arguments in r2–r5 (same as direct call, incl. the
+        #    fixed-scratch const rule — see _gen_IRCall step 2).
         for i, arg in enumerate(ir.args[:4]):
             if isinstance(arg, Const):
-                self._load_const(ARG[i], arg.value)
+                self._emit_const_via_fixed_scratch(ARG[i], arg.value)
             elif isinstance(arg, Temp):
                 name = arg.name
                 if name in saved_name_slot:

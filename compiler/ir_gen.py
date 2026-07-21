@@ -24,7 +24,7 @@ _CTYPE_TO_APARA = {
     'long long': '$i64',    'long long int': '$i64',    'int64_t': '$i64',
     'signed long long': '$i64', 'signed long long int': '$i64',
     'unsigned long long': '$u64', 'unsigned long long int': '$u64', 'uint64_t': '$u64',
-    'float':  '$f32',       'float32_t': '$f32',
+    'float':  '$f32',       'float32_t': '$f32',       'vf32_t': '$f32',
     'double': '$f64',       'float64_t': '$f64',
 }
 
@@ -126,7 +126,8 @@ def _elem_size(node):
 # (packed, no 8-byte-per-element padding) array stride. Plain char/short/int
 # arrays are NOT affected -- only arrays whose element is declared with one of
 # these exact type names. long long/pointer/struct never go through this path.
-_PACKED_ARRAY_TYPEDEFS = {'vu8_t', 'vi8_t', 'vu16_t', 'vi16_t', 'vu32_t', 'vi32_t'}
+_PACKED_ARRAY_TYPEDEFS = {'vu8_t', 'vi8_t', 'vu16_t', 'vi16_t', 'vu32_t', 'vi32_t',
+                          'vf32_t'}
 
 def _is_packed_array_decl(array_decl_node):
     """True if array_decl_node (an A.ArrayDecl) declares its element with one
@@ -302,7 +303,8 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             if name in scope: return scope[name]
         return None
 
-    def _alloc_global(self, name, total_bytes, elem_bytes, init_vals, packed=False):
+    def _alloc_global(self, name, total_bytes, elem_bytes, init_vals, packed=False,
+                      is_array=False):
         # APARA: $ld ($i32) always reads bits[63:32] of the 8-byte DMEM word.
         # Each element must be at byte_off=0 of its own word → stride = 8.
         # EXCEPT for opt-in `packed` arrays (see _is_packed_array_decl): these use
@@ -319,30 +321,42 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
         c_elem = total_bytes // max(n_elems, 1)  # actual C element size
         dmem_stride = c_elem if packed else max(c_elem, 8)
         total_dmem = n_elems * dmem_stride
-        addr = self._next_global
-        self._next_global += total_dmem
+        # every global starts on an 8-byte word boundary: a packed array of
+        # odd byte size must not push its successor to a misaligned address
+        # (an unaligned $st($i64) silently lands on the containing word and
+        # clobbers the packed neighbor — found via pf01, 2026-07-19)
+        addr = (self._next_global + 7) & ~7
+        self._next_global = addr + total_dmem
         # elem_bytes is the C type size (drives instruction type $i32 vs $i64)
         # stride is the DMEM allocation stride (always 8 for APARA alignment)
         gd = IRGlobalDecl(name, addr, total_dmem, elem_bytes, init_vals, stride=dmem_stride)
         self._globals[name] = gd
         self._emit(gd)
         self._define(name, 'global', gd)
-        if n_elems > 1:
+        if n_elems > 1 or is_array:
+            # is_array: a declared T a[1] must still DECAY to its address in a
+            # call — the n_elems>1 heuristic passed one-element arrays by VALUE
+            # (found via pf04's 1-element bias array, 2026-07-19)
             self._global_array_elem[name] = dmem_stride  # bare array name in a call
             # now decays to its address instead of loading element 0 (see __init__)
         return gd
 
-    def _alloc_local(self, name, total_bytes, elem_bytes, packed=False):
+    def _alloc_local(self, name, total_bytes, elem_bytes, packed=False,
+                     is_array=False):
         # Each element gets its own 8-byte-aligned DMEM word so byte_off=0 always,
         # except for opt-in `packed` arrays -- see _alloc_global for why.
         n_elems = max(1, total_bytes // max(elem_bytes, 1))
         dmem_stride = elem_bytes if packed else max(elem_bytes, 8)
         total_dmem = n_elems * dmem_stride
+        # keep the frame 8-aligned past a packed array of odd byte size
+        # (same clobber hazard as _alloc_global — see comment there)
+        total_dmem = (total_dmem + 7) & ~7
         self._frame_off += total_dmem
         fp_off = -self._frame_off
         self._var_offsets[name] = fp_off
         self._local_elem_bytes[name] = elem_bytes
-        if elem_bytes != total_bytes:
+        if elem_bytes != total_bytes or is_array:
+            # is_array: same 1-element-array decay rule as _alloc_global
             self._array_elem[name] = dmem_stride  # DMEM stride for index computation
         self._define(name, 'local', fp_off)
         return fp_off
@@ -473,6 +487,13 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 sz = self._struct_total_dmem.get(pointed.type.name)
                 if sz:
                     self._ptr_stride[name] = sz
+            # pointer-to-packed-elem (vu8_t*/vf32_t*/...): elements are laid
+            # out at their natural size, so p[i]/p+i must stride by the elem
+            # width, mirroring the packed-array layout in _alloc_global.
+            pt = pointed.type if isinstance(pointed, A.TypeDecl) else pointed
+            if isinstance(pt, A.IdentifierType) and any(
+                    n in _PACKED_ARRAY_TYPEDEFS for n in pt.names):
+                self._ptr_stride[name] = _type_size(pt)
 
     # ── central address evaluator (REFACTOR_PLAN.md) ─────────────────────────
 
@@ -1042,6 +1063,19 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
             self._array_dims[node.name]       = (dims[0], dims[1])
             self._array_ndims[node.name]      = dims
             esz = col_stride   # per-scalar stride; alloc uses total//esz = n scalars
+            # ...but `total` is the true C byte size, so total//esz only equals the
+            # scalar count when the scalar is already >= 8 bytes. For int/short/
+            # char/float 2D arrays it came out HALF (or less): int Z[4][4] gave
+            # 64//8 = 8 words for 16 scalars, and the next global was placed 8
+            # words early — Z[2..3][*] stores landed on top of it (demo d3, a 4x4
+            # matmul silently overwriting results[], 2026-07-20). Initialized
+            # globals were masked by _alloc_global's len(init_vals) path; locals
+            # and uninitialized globals were not. Restate total in stride units so
+            # total//esz is the scalar count for every element width.
+            n_scalars = 1
+            for d in dims:
+                n_scalars *= d
+            total = n_scalars * col_stride
 
         # For struct vars use esz=8 (each slot 8-byte); total already = struct_dmem from registry.
         if is_struct_var:
@@ -1049,12 +1083,14 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
 
         self._record_ptr(node.name, node.type)   # track pointer variables
         is_packed = _is_packed_array_decl(node.type)  # opt-in only; False for 2D/struct/ptr
+        is_arr_decl = isinstance(node.type, A.ArrayDecl) and not is_struct_var
         # A `static` local persists across calls -> allocate it as a hidden
         # GLOBAL (initialized once in data.map), but bind the LOCAL name to that
         # global so references inside the function resolve to it.
         if self._func_name is not None and 'static' in (node.storage or []):
             gname = f"__static_{self._func_name}_{node.name}"
-            gd = self._alloc_global(gname, total, esz, init_vals, packed=is_packed)
+            gd = self._alloc_global(gname, total, esz, init_vals, packed=is_packed,
+                                    is_array=is_arr_decl)
             self._define(node.name, 'global', gd)      # local name -> the global cell
             if gname in self._global_array_elem:        # carry array metadata over
                 self._global_array_elem[node.name] = self._global_array_elem[gname]
@@ -1063,9 +1099,11 @@ class IRGenerator(pycparser.c_ast.NodeVisitor):
                 pass  # (struct arrays already keyed by node.name)
             return
         if self._func_name is None:
-            self._alloc_global(node.name, total, esz, init_vals, packed=is_packed)
+            self._alloc_global(node.name, total, esz, init_vals, packed=is_packed,
+                               is_array=is_arr_decl)
         else:
-            fp_off = self._alloc_local(node.name, total, esz, packed=is_packed)
+            fp_off = self._alloc_local(node.name, total, esz, packed=is_packed,
+                                       is_array=is_arr_decl)
             if is_struct_var:
                 self._array_elem.pop(node.name, None)  # struct is not an array
             if node.init:

@@ -73,12 +73,22 @@ def _build_addr_temp_uses(instrs):
     return uses
 
 
-def _promote_one(instrs, s, e, promoted_offsets, fa, fb):
+def _promote_one(instrs, s, e, promoted_offsets, fa, fb, fkey):
     """fa..fb (inclusive) is the enclosing FUNCTION slice: temp names restart
     per function, so the addr_off / escape analyses below must never scan
     outside it (a later function's IRLoadAddr with the same temp name would
     override this one's and resolve a load/store to the wrong slot — same
-    cross-function name-collision class as licm's def_map bug, 2026-07-18)."""
+    cross-function name-collision class as licm's def_map bug, 2026-07-18).
+
+    fkey is a STABLE per-function identity (the function's name) used to key
+    promoted_offsets. It must NOT be fa: fa is a raw instruction index that
+    SHIFTS every time an earlier function's loop is promoted (each promotion
+    inserts preheader/write-back instructions), so keying by (fa, off) lets an
+    offset already promoted by an inner loop escape the dedup guard once fa has
+    moved -- the enclosing loop then re-promotes the same slot, double-wrapping
+    a loop-carried accumulator and corrupting it. Found via the cONNXr MNIST
+    port: nn_maxpool's `cur = max(...)` reduction silently stuck at -FLT_MAX,
+    but only when the loop-heavy nn_conv2d was promoted just before it (2026-07-19)."""
     header = instrs[s]
     if type(header).__name__ != 'IRLabel':
         return instrs
@@ -148,9 +158,10 @@ def _promote_one(instrs, s, e, promoted_offsets, fa, fb):
     # re-promoting in the enclosing loop would stop maintaining that memory.
     promote = {}
     for off, d in info.items():
-        # promoted_offsets is keyed (func_start, off): raw offsets collide
-        # across functions (every function has its own -16 slot).
-        if off in escaped_offsets or (fa, off) in promoted_offsets:
+        # promoted_offsets is keyed (func_name, off): raw offsets collide
+        # across functions (every function has its own -16 slot), and the
+        # function name is stable while fa (an index) is not -- see docstring.
+        if off in escaped_offsets or (fkey, off) in promoted_offsets:
             continue
         if not d['loads'] or not d['stores']:
             continue
@@ -159,7 +170,7 @@ def _promote_one(instrs, s, e, promoted_offsets, fa, fb):
         promote[off] = d
     if not promote:
         return instrs
-    promoted_offsets.update((fa, o) for o in promote.keys())
+    promoted_offsets.update((fkey, o) for o in promote.keys())
 
     # Indices of the IRLoadAddr instructions that feed a promoted load/store and
     # so become dead, plus the load/store indices to rewrite into moves.
@@ -258,7 +269,12 @@ def promote_loop_counters(instrs):
         progressed = False
         for (s, e) in _find_loops(instrs):
             fa, fb = _enclosing_func(bounds, s, e, len(instrs))
-            res = _promote_one(instrs, s, e, promoted_offsets, fa, fb)
+            # Stable per-function key for promoted_offsets: the function's name,
+            # not fa (a mutable index). instrs[fa] is the IRFuncBegin for this
+            # slice; fall back to fa only if the marker is somehow absent.
+            fbegin = instrs[fa] if 0 <= fa < len(instrs) else None
+            fkey = getattr(fbegin, 'name', fa) if type(fbegin).__name__ == 'IRFuncBegin' else fa
+            res = _promote_one(instrs, s, e, promoted_offsets, fa, fb, fkey)
             if res is not instrs:
                 instrs = res
                 progressed = True
