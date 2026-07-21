@@ -34,8 +34,14 @@ loops from being pessimized by preheader setup.
 
 import os
 from ir import *
-from licm import (_find_loops, _jump_targets, _src_names, _dest_names,
-                  _func_bounds, _enclosing_func)
+# Shared analysis framework (compiler/analysis) + IR utilities (ir_utils),
+# replacing IVSR's former private single-def map. Loop detection (_find_loops)
+# still lives in licm until the CFG/loop-info milestone.
+from licm import _find_loops
+from ir_utils import (dest_names as _dest_names, src_names as _src_names,
+                      jump_targets as _jump_targets, func_slices as _func_bounds,
+                      enclosing_slice as _enclosing_func)
+from analysis import DefUse
 
 _DBG = bool(os.environ.get('APARA_IVSR_DEBUG'))
 def _dbg(*a):
@@ -47,19 +53,6 @@ def _dbg(*a):
 
 def _is_zero(off):
     return isinstance(off, Const) and off.value == 0
-
-
-def _single_def_map(instrs, fa, fb):
-    """name -> unique defining index within [fa,fb]; names defined more than once
-    are recorded in multi_def and never returned (no single reaching def)."""
-    def_map, multi = {}, set()
-    for k in range(fa, fb + 1):
-        for d in _dest_names(instrs[k]):
-            if d in def_map or d in multi:
-                multi.add(d); def_map.pop(d, None)
-            else:
-                def_map[d] = k
-    return def_map, multi
 
 
 _iv_n = [0]
@@ -562,8 +555,12 @@ def induction_strength_reduce(instrs):
         bounds = _func_bounds(instrs)
         for (s, e) in _find_loops(instrs):
             fa, fb = _enclosing_func(bounds, s, e, len(instrs))
-            def_map, multi = _single_def_map(instrs, fa, fb)
-            new = _process_loop(instrs, s, e, def_map, multi, fa, fb)
+            # Shared Def-Use analysis (compiler/analysis) replaces IVSR's former
+            # private single-def map. single_defs()/multi_names() reproduce the
+            # exact (def_map, multi) the old _single_def_map returned, so
+            # _process_loop is unchanged and output is byte-identical.
+            du = DefUse(instrs, fa, fb)
+            new = _process_loop(instrs, s, e, du.single_defs(), du.multi_names(), fa, fb)
             if new is not instrs:
                 instrs = new
                 progressed = True
