@@ -87,3 +87,36 @@ def enclosing_slice(slices, s, e, n):
         if a <= s and e <= b:
             return a, b
     return 0, n - 1
+
+
+# Instruction classes that TERMINATE a straight-line block (control leaves here).
+# Calls are included conservatively so any block-local pass never reasons across
+# a call. This is a partition only -- NOT a control-flow graph (no edges).
+_BLOCK_TERMINATORS = frozenset({
+    'IRJump', 'IRCondJump', 'IRReturn', 'IRHalt', 'IRCall', 'IRIndirectCall',
+})
+
+
+def basic_blocks(instrs, lo, hi):
+    """Partition instrs[lo..hi] into maximal straight-line basic blocks,
+    returned as a list of inclusive (start, end) index ranges covering [lo, hi]
+    with no gaps or overlaps.
+
+    A new block begins at a label; a block ends after a terminator (jump /
+    branch / return / halt / call). This is a lightweight PARTITION with no
+    edges and no dominance -- deliberately not a CFG. It is enough for
+    block-local reasoning (e.g. copy propagation's Rule B) and is reusable by
+    future passes; a real CFG is a later milestone."""
+    blocks = []
+    start = lo
+    for i in range(lo, hi + 1):
+        c = type(instrs[i]).__name__
+        if c == 'IRLabel' and i > start:
+            blocks.append((start, i - 1))   # label opens a new block
+            start = i
+        if c in _BLOCK_TERMINATORS:
+            blocks.append((start, i))       # terminator closes this block
+            start = i + 1
+    if start <= hi:
+        blocks.append((start, hi))
+    return blocks

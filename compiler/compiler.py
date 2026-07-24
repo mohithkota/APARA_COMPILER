@@ -566,6 +566,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     # objects, so ir_gen.instructions stays pristine for verification below.
     from strength_reduce import strength_reduce
     from ivsr import induction_strength_reduce
+    from copyprop import copy_propagate
     _ir0   = list(ir_gen.instructions)
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
@@ -574,16 +575,20 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         if os.environ.get('APARA_NO_STRENGTH_REDUCE'):
             return x
         return strength_reduce(x)[0]
+    # Forward copy propagation runs LAST, after loop_reg -- it consumes the
+    # copies that loop_reg (and IVSR) introduce. It rewrites uses only and self-
+    # disables under APARA_NO_COPYPROP. Dead copies are left for a future DCE.
+    _cp = copy_propagate
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
     # spills under LICM (extended invariant live ranges) can still keep IVSR.
     _tiers = [
-        ("IVSR+LICM+loop-reg", lambda: promote_loop_counters(hoist_loop_invariants(_sr(_ivsr(list(_ir0)))))),
-        ("IVSR+loop-reg",      lambda: promote_loop_counters(_sr(_ivsr(list(_ir0))))),
-        ("IVSR only",          lambda: _sr(_ivsr(list(_ir0)))),
-        ("LICM+loop-reg",      lambda: promote_loop_counters(hoist_loop_invariants(list(_base)))),
-        ("LICM only",          lambda: hoist_loop_invariants(list(_base))),
-        ("loop-reg only",      lambda: promote_loop_counters(list(_base))),
+        ("IVSR+LICM+loop-reg", lambda: _cp(promote_loop_counters(hoist_loop_invariants(_sr(_ivsr(list(_ir0))))))),
+        ("IVSR+loop-reg",      lambda: _cp(promote_loop_counters(_sr(_ivsr(list(_ir0)))))),
+        ("IVSR only",          lambda: _cp(_sr(_ivsr(list(_ir0))))),
+        ("LICM+loop-reg",      lambda: _cp(promote_loop_counters(hoist_loop_invariants(list(_base))))),
+        ("LICM only",          lambda: _cp(hoist_loop_invariants(list(_base)))),
+        ("loop-reg only",      lambda: _cp(promote_loop_counters(list(_base)))),
     ]
     # Debug/measurement knob: APARA_NO_LOOPOPT=1 forces the validated baseline
     # (no LICM, no loop-reg) so the two can be A/B compared on the simulator.
