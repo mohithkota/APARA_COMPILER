@@ -33,7 +33,10 @@ Bundle sizes must be power-of-2 (mcode_align handles null padding):
   1, 2, 4, 8 instructions per bundle
 """
 
+import os
 import re
+import sys
+from collections import defaultdict
 
 # ── Register dependency parser ─────────────────────────────────────────────────
 
@@ -315,6 +318,48 @@ def _parse_flat(mcode_text):
 
 # ── Greedy bundle packer ───────────────────────────────────────────────────────
 
+# Display order / full taxonomy for the split-reason instrumentation below.
+# WAR is listed for completeness but is NEVER a packer split reason: WAR is safe
+# inside a VLIW bundle (all operands are read before any write), so _pack_bundles
+# has no WAR branch and its count is always 0. WAR only constrains the *scheduler*
+# (_must_precede), not the packer.
+_SPLIT_REASONS = ['RAW', 'WAW', 'WAR', 'MemAlias', 'MemPhase', 'MemLane',
+                  'FUnit', 'Control', 'Call', 'Label', 'BundleFull', 'Other']
+
+
+def _report_bundle_stats(stats, gstats, blk_instrs, show_all=False):
+    """Print per-basic-block and global split-reason histograms to stderr.
+
+    Instrumentation only: called solely when APARA_BUNDLE_STATS is set, and it
+    reads already-collected counters -- it has no effect on the packed bundles.
+    """
+    def _hist(counter, title, extra=''):
+        total = sum(counter.values())
+        if total == 0:
+            return
+        print(f"\n{title}{extra}", file=sys.stderr)
+        for r in sorted(counter, key=lambda k: (-counter[k],
+                        _SPLIT_REASONS.index(k) if k in _SPLIT_REASONS else 99)):
+            print(f"  {r:<11}{counter[r]:>7}  {100.0 * counter[r] / total:5.1f}%",
+                  file=sys.stderr)
+
+    # Most-split blocks first: that is where bundle occupancy is being lost.
+    blocks = sorted(stats.items(), key=lambda kv: -sum(kv[1].values()))
+    if not show_all:
+        blocks = blocks[:15]
+    print("\n==== BUNDLE SPLIT REASONS (per basic block) ====", file=sys.stderr)
+    for key, counter in blocks:
+        splits = sum(counter.values())
+        instrs = blk_instrs.get(key, 0)
+        _hist(counter, f"Block {key}", f"   ({instrs} instrs, {splits} splits)")
+
+    print("\n==== BUNDLE SPLIT REASONS (global) ====", file=sys.stderr)
+    _hist(gstats, "GLOBAL", f"   ({sum(gstats.values())} total splits)")
+    print("\nlegend: RAW/WAW=register deps  MemAlias/MemPhase=memory deps  "
+          "MemLane/FUnit=hardware lanes  Control/Call/Label=structural boundaries",
+          file=sys.stderr)
+
+
 def _pack_bundles(flat):
     """
     Greedy forward pass: pack instructions into bundles of up to 8.
@@ -345,20 +390,46 @@ def _pack_bundles(flat):
     # this is hardcoded rather than imported.
     SP_REG = '$r27'
 
+    # ── Split-reason instrumentation (side-effect-free) ──────────────────────
+    # For every instruction rejected from the current bundle, record the ONE
+    # primary reason. The split decision is an if/elif cascade, so exactly one
+    # branch fires per rejection -> the categories are mutually exclusive by
+    # construction and cannot double-count. Counters are keyed by basic block
+    # (a labelled instruction, or a fall-through after a control transfer,
+    # starts a new block). None of this affects `bundles`; it only prints when
+    # APARA_BUNDLE_STATS is set.
+    stats      = defaultdict(lambda: defaultdict(int))   # block_key -> reason -> count
+    gstats     = defaultdict(int)                        # global   reason -> count
+    blk_instrs = defaultdict(int)                        # block_key -> instrs seen
+    blk_id     = 0
+    blk_key    = '0000:entry'
+    prev_ctrl  = False
+
     for instr in flat:
+        # Basic-block tracking for the per-block histogram.
+        if instr['labels']:
+            blk_id += 1
+            blk_key = f"{blk_id:04d}:{instr['labels'][0]}"
+        elif prev_ctrl:
+            blk_id += 1
+            blk_key = f"{blk_id:04d}:<fallthrough>"
+        prev_ctrl = instr['is_ctrl']
+        blk_instrs[blk_key] += 1
+
         is_mem  = instr['mem_access'] is not None
         is_call = instr['text'].startswith('$call')
         is_ls   = instr['text'].startswith(('$ld', '$st'))
         is_ds   = _is_div_sqrt(instr['text'])
-        split = False
+        split  = False
+        reason = 'Other'
         if c_instrs:
-            if instr['labels']:                         split = True  # label → new bundle
-            elif c_ctrl:                                split = True  # ctrl ends bundle
-            elif instr['reads']  & c_writes:           split = True  # RAW hazard
-            elif instr['writes'] & c_writes:           split = True  # WAW hazard
+            if instr['labels']:                         split = True; reason = 'Label'    # label → new bundle
+            elif c_ctrl:                                split = True; reason = 'Control'  # ctrl ends bundle
+            elif instr['reads']  & c_writes:           split = True; reason = 'RAW'      # RAW hazard
+            elif instr['writes'] & c_writes:           split = True; reason = 'WAW'      # WAW hazard
             elif (instr['mem_access'] is not None
                   and _mem_may_alias(instr['mem_access'], c_mem_writes)):
-                                                        split = True  # memory RAW/WAW hazard
+                                                        split = True; reason = 'MemAlias'  # memory RAW/WAW hazard
             # Phase hazard: the aligner places $ld/$st in LATER slots than ALU/$set
             # instructions within a bundle, regardless of textual order — confirmed
             # 2026-06-17 by comparing unaligned vs aligned mcode (e.g. every function
@@ -368,7 +439,7 @@ def _pack_bundles(flat):
             # So a non-memory instruction writing a register that an already-bundled
             # memory instruction reads is unsafe — the memory read will see the new
             # (post-ALU) value, not the pre-bundle one the compiler intended.
-            elif not is_mem and (instr['writes'] & c_mem_reads): split = True
+            elif not is_mem and (instr['writes'] & c_mem_reads): split = True; reason = 'MemPhase'
             # Conservative fix (2026-06-17): never bundle $call with an instruction
             # that modifies SP. The exact phase interaction between an SP-modifying
             # ALU instruction and a co-bundled $call is unconfirmed (breaks even the
@@ -376,7 +447,7 @@ def _pack_bundles(flat):
             # — rather than guess at the precise mechanism, force them into separate
             # bundles. This pattern only occurs near call sites, so the cost is a few
             # extra instruction slots, not a systemic bundling regression.
-            elif is_call and SP_REG in c_writes:        split = True
+            elif is_call and SP_REG in c_writes:        split = True; reason = 'Call'
             # Hardware lane limits (McodeProgram::alignFullBundleToLanes):
             # a full bundle has 4 load/store lanes and 1 divide/sqrt lane.
             # Exceeding them makes mcode_align FAIL its lane placement — it
@@ -384,11 +455,13 @@ def _pack_bundles(flat):
             # lane 0, and the sim's return-address math then jumps into the
             # middle of a bundle (fuzz seed 68, 2026-07-18: five independent
             # caller-save stores packed with a $call).
-            elif is_ls and c_ls >= 4:                  split = True  # ld/st lanes full
-            elif is_ds and c_divsqrt >= 1:             split = True  # div/sqrt lane full
-            elif len(c_instrs) >= 8:                   split = True  # bundle full
+            elif is_ls and c_ls >= 4:                  split = True; reason = 'MemLane'    # ld/st lanes full
+            elif is_ds and c_divsqrt >= 1:             split = True; reason = 'FUnit'      # div/sqrt lane full
+            elif len(c_instrs) >= 8:                   split = True; reason = 'BundleFull'  # bundle full
 
         if split:
+            stats[blk_key][reason] += 1
+            gstats[reason] += 1
             flush(); reset()
 
         c_labels.extend(instr['labels'])
@@ -405,6 +478,10 @@ def _pack_bundles(flat):
             c_divsqrt += 1
 
     flush()
+
+    _stats_env = os.environ.get('APARA_BUNDLE_STATS')
+    if _stats_env:
+        _report_bundle_stats(stats, gstats, blk_instrs, show_all=(_stats_env == 'all'))
     return bundles
 
 
@@ -456,22 +533,49 @@ def _emit_bundles(header, bundles):
 
 _SP_REG = '$r27'
 
+def _mem_pair_conflict(a, b):
+    """True if memory accesses a and b may conflict and so must stay ordered.
+
+    Order matters only when at least one access is a STORE and it may alias the
+    other access's address. Aliasing uses the exact same disjointness proof the
+    bundle packer trusts (_mem_may_alias): two accesses are provably disjoint
+    only when they share the same base register and have different CONSTANT
+    offsets. Everything else (different base registers, register offsets, same
+    address) is treated as a possible conflict.
+
+    Two loads never conflict (no store involved) -> free to reorder, as before.
+
+    Soundness of dropping the order for a provably-disjoint pair: the proof
+    relies on the shared base register holding the same value at both accesses.
+    If some instruction between them redefines that base register, the RAW/WAR/
+    WAW register checks in _must_precede already force an ordering edge through
+    that writer, so the pair cannot be reordered regardless. And _pack_bundles
+    re-applies _mem_may_alias against the bundle's stores as the final gate.
+    """
+    if a['mem_access'] is None or b['mem_access'] is None:
+        return False
+    if a['mem_write'] is not None and _mem_may_alias(b['mem_access'], (a['mem_write'],)):
+        return True
+    if b['mem_write'] is not None and _mem_may_alias(a['mem_access'], (b['mem_write'],)):
+        return True
+    return False
+
+
 def _must_precede(a, b):
     """True if instruction a (earlier in program order) MUST stay before b for
     the reordering to be semantically identical. Covers all real dependencies:
       RAW  a writes / b reads
       WAW  a writes / b writes
       WAR  a reads  / b writes   (anti-dependence -- needed after reg reuse)
-      memory ordering (a store cannot cross another memory op at all)
+      memory ordering (only when the accesses MAY alias -- see _mem_pair_conflict;
+        provably-disjoint accesses are free to reorder)
       call / control-transfer act as full barriers.
     Conservative by design: extra edges only cost optimization, never correctness.
     """
     if a['writes'] & b['reads']:   return True   # RAW
     if a['writes'] & b['writes']:  return True   # WAW
     if a['reads']  & b['writes']:  return True   # WAR
-    if a['mem_access'] is not None and b['mem_access'] is not None \
-       and (a['mem_write'] is not None or b['mem_write'] is not None):
-        return True                              # store ordering
+    if _mem_pair_conflict(a, b):                 return True   # memory conflict
     if a['is_ctrl'] or b['is_ctrl']:             return True
     if a['text'].startswith('$call') or b['text'].startswith('$call'):
         return True
