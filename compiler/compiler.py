@@ -570,6 +570,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     from coalesce import copy_coalesce
     from dce import dead_code_eliminate
     from sccp import sparse_conditional_constant_propagation
+    from gvn import global_value_numbering
     _ir0   = list(ir_gen.instructions)
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
@@ -579,14 +580,17 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             return x
         return strength_reduce(x)[0]
     # Cleanup / scalar-optimization stage runs LAST, after loop_reg:
-    #   copy propagation (rewrite uses) -> copy coalescing (rewrite defs) ->
-    #   DCE -> SCCP (constant propagation + branch folding + unreachable-block
-    #   removal) -> DCE again (SCCP exposes newly dead definitions).
-    # Each self-disables under its knob (APARA_NO_COPYPROP / _COALESCE / _DCE /
-    # _SCCP).
+    #   copy prop -> coalesce -> DCE -> SCCP -> DCE -> GVN -> (copy prop ->
+    #   coalesce -> DCE) to clean up the copies GVN introduces for redundant
+    #   expressions. Each pass self-disables under its knob (APARA_NO_COPYPROP /
+    #   _COALESCE / _DCE / _SCCP / _GVN).
+    def _clean(x):
+        return dead_code_eliminate(copy_coalesce(copy_propagate(x)))
     def _cp(x):
-        x = dead_code_eliminate(copy_coalesce(copy_propagate(x)))
+        x = _clean(x)
         x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
+        x = global_value_numbering(x)
+        x = _clean(x)
         return x
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
