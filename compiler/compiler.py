@@ -571,6 +571,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     from dce import dead_code_eliminate
     from sccp import sparse_conditional_constant_propagation
     from gvn import global_value_numbering
+    from mem2reg import mem2reg
     _ir0   = list(ir_gen.instructions)
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
@@ -590,7 +591,14 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         x = _clean(x)
         x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
         x = global_value_numbering(x)
-        x = _clean(x)
+        x = mem2reg(x)                     # promote local scalars to temps
+        # Measurement knob only (default OFF): rerun SCCP+GVN after mem2reg to
+        # quantify how much extra optimization the register-resident form
+        # unlocks. Not part of the committed pipeline.
+        if os.environ.get('APARA_MEM2REG_RERUN'):
+            x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
+            x = global_value_numbering(x)
+        x = _clean(x)                      # copy-prop / coalesce / DCE clean the moves
         return x
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
