@@ -568,6 +568,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     from ivsr import induction_strength_reduce
     from copyprop import copy_propagate
     from coalesce import copy_coalesce
+    from dce import dead_code_eliminate
     _ir0   = list(ir_gen.instructions)
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
@@ -577,12 +578,13 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             return x
         return strength_reduce(x)[0]
     # Copy cleanup runs LAST, after loop_reg -- it consumes the copies that
-    # loop_reg (and IVSR) introduce: forward copy propagation (rewrites uses)
-    # then copy coalescing (rewrites definitions + removes the coalesced copy).
-    # Each self-disables under its knob (APARA_NO_COPYPROP / APARA_NO_COALESCE).
-    # Remaining dead copies are left for a future general DCE (Milestone 3).
+    # loop_reg (and IVSR) introduce: forward copy propagation (rewrites uses),
+    # then copy coalescing (rewrites definitions + removes the coalesced copy),
+    # then global dead-code elimination (removes the dead copies propagation
+    # bypassed and any dead temporaries coalescing exposed). Each self-disables
+    # under its knob (APARA_NO_COPYPROP / APARA_NO_COALESCE / APARA_NO_DCE).
     def _cp(x):
-        return copy_coalesce(copy_propagate(x))
+        return dead_code_eliminate(copy_coalesce(copy_propagate(x)))
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
     # spills under LICM (extended invariant live ranges) can still keep IVSR.
