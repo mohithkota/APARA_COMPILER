@@ -569,6 +569,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     from copyprop import copy_propagate
     from coalesce import copy_coalesce
     from dce import dead_code_eliminate
+    from sccp import sparse_conditional_constant_propagation
     _ir0   = list(ir_gen.instructions)
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
@@ -577,14 +578,16 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         if os.environ.get('APARA_NO_STRENGTH_REDUCE'):
             return x
         return strength_reduce(x)[0]
-    # Copy cleanup runs LAST, after loop_reg -- it consumes the copies that
-    # loop_reg (and IVSR) introduce: forward copy propagation (rewrites uses),
-    # then copy coalescing (rewrites definitions + removes the coalesced copy),
-    # then global dead-code elimination (removes the dead copies propagation
-    # bypassed and any dead temporaries coalescing exposed). Each self-disables
-    # under its knob (APARA_NO_COPYPROP / APARA_NO_COALESCE / APARA_NO_DCE).
+    # Cleanup / scalar-optimization stage runs LAST, after loop_reg:
+    #   copy propagation (rewrite uses) -> copy coalescing (rewrite defs) ->
+    #   DCE -> SCCP (constant propagation + branch folding + unreachable-block
+    #   removal) -> DCE again (SCCP exposes newly dead definitions).
+    # Each self-disables under its knob (APARA_NO_COPYPROP / _COALESCE / _DCE /
+    # _SCCP).
     def _cp(x):
-        return dead_code_eliminate(copy_coalesce(copy_propagate(x)))
+        x = dead_code_eliminate(copy_coalesce(copy_propagate(x)))
+        x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
+        return x
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
     # spills under LICM (extended invariant live ranges) can still keep IVSR.
