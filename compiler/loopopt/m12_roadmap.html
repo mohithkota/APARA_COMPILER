@@ -1,0 +1,342 @@
+<title>APARA Compiler — M12 Research Roadmap</title>
+<style>
+:root{
+  --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5; --border:#dde1e7;
+  --ink:#12151a; --ink-2:#4a5260; --ink-3:#79828f;
+  --accent:#2a78d6; --accent-soft:#e6f0fb; --good:#0f8a5f; --warn:#c98500; --hot:#eb6834;
+  --large:#1baf7a; --moderate:#eda100; --small:#79828f;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1216; --surface:#171b21; --surface-2:#1d222a; --border:#2a313b;
+  --ink:#eef1f5; --ink-2:#b3bcc8; --ink-3:#7f8996;
+  --accent:#3987e5; --accent-soft:#16283f; --good:#3fbb86; --warn:#c98500; --hot:#d95926;
+  --large:#199e70; --moderate:#c98500; --small:#7f8996;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --surface:#171b21; --surface-2:#1d222a; --border:#2a313b;
+  --ink:#eef1f5; --ink-2:#b3bcc8; --ink-3:#7f8996;
+  --accent:#3987e5; --accent-soft:#16283f; --good:#3fbb86; --warn:#c98500; --hot:#d95926;
+  --large:#199e70; --moderate:#c98500; --small:#7f8996;
+}
+:root[data-theme="light"]{
+  --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5; --border:#dde1e7;
+  --ink:#12151a; --ink-2:#4a5260; --ink-3:#79828f; --accent:#2a78d6; --accent-soft:#e6f0fb;
+  --good:#0f8a5f; --hot:#eb6834; --large:#1baf7a; --moderate:#eda100; --small:#79828f;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:48px 24px 80px}
+header.top{border-bottom:1px solid var(--border);padding-bottom:24px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 10px}
+h1{font-size:34px;line-height:1.12;margin:0 0 10px;letter-spacing:-.02em;text-wrap:balance}
+.lede{color:var(--ink-2);max-width:70ch;font-size:16px;margin:0}
+.thesis{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--accent);
+  border-radius:12px;padding:18px 22px;margin-top:22px;font-size:16px}
+.thesis b{color:var(--ink)}
+section{margin-top:46px}
+h2{font-size:13px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);
+  margin:0 0 4px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:20px;height:2px;background:var(--accent);display:inline-block}
+.sec-title{font-size:22px;letter-spacing:-.01em;margin:2px 0 14px;text-wrap:balance}
+p.note{color:var(--ink-2);max-width:72ch;font-size:14.5px}
+.chain{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:760px){.chain{grid-template-columns:1fr}}
+.bcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;position:relative;overflow:hidden}
+.bcard .share{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-.02em}
+.bcard .btag{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3)}
+.bcard h3{margin:10px 0 6px;font-size:16px}
+.bcard p{margin:0 0 8px;font-size:13.5px;color:var(--ink-2)}
+.bcard .fix{font-size:13px;font-family:var(--mono);color:var(--accent);border-top:1px solid var(--border);padding-top:8px;margin-top:4px}
+.bcard.dep{border-top:3px solid var(--accent)} .bcard.mem{border-top:3px solid var(--hot)} .bcard.ctl{border-top:3px solid var(--large)}
+.insight{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:22px 24px;margin-top:16px}
+.insight .two{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:14px}
+@media(max-width:760px){.insight .two{grid-template-columns:1fr}}
+.insight h4{margin:0 0 6px;font-size:14px;font-family:var(--mono);letter-spacing:.04em}
+.insight ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-2)}
+.insight li{margin:4px 0}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--border);vertical-align:top}
+thead th{color:var(--ink-3);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono)}
+tbody td:first-child{font-weight:600}
+.wrap-tbl{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px 16px 12px;overflow-x:auto}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-family:var(--mono);font-size:11.5px;font-weight:600;white-space:nowrap}
+.c-large{background:color-mix(in srgb,var(--large) 18%,transparent);color:var(--large)}
+.c-mod{background:color-mix(in srgb,var(--moderate) 20%,transparent);color:var(--moderate)}
+.c-small{background:color-mix(in srgb,var(--small) 20%,transparent);color:var(--small)}
+.c-lo{color:var(--good)} .c-mid{color:var(--moderate)} .c-hi{color:var(--hot)}
+ol.road{list-style:none;counter-reset:r;padding:0;margin:10px 0 0}
+ol.road li{counter-increment:r;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:18px 20px 18px 62px;position:relative;margin-bottom:14px}
+ol.road li::before{content:"R" counter(r);position:absolute;left:14px;top:18px;width:36px;height:28px;border-radius:8px;
+  background:var(--accent-soft);color:var(--accent);font-family:var(--mono);font-weight:600;display:flex;align-items:center;justify-content:center;font-size:13px}
+ol.road h3{margin:0 0 4px;font-size:17px}
+ol.road .meta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin-bottom:8px}
+ol.road dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:13.5px}
+ol.road dt{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em;padding-top:2px}
+ol.road dd{margin:0;color:var(--ink-2)}
+.podium{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:8px}
+@media(max-width:760px){.podium{grid-template-columns:1fr}}
+.pcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px}
+.pcard .rank{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.pcard h3{margin:8px 0 8px;font-size:18px;text-wrap:balance}
+.pcard p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.pcard.one{border-top:3px solid var(--accent)} .pcard.two{border-top:3px solid var(--hot)} .pcard.three{border-top:3px solid var(--large)}
+.risk{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px}
+@media(max-width:760px){.risk{grid-template-columns:1fr}}
+.rk{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.rk h4{margin:0 0 4px;font-size:14px}
+.rk p{margin:0;font-size:13px;color:var(--ink-2)}
+.rk .sev{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;float:right}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);color:var(--ink-3);font-size:12.5px;font-family:var(--mono)}
+.vision{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 24px;font-size:15px;color:var(--ink-2)}
+.vision b{color:var(--ink)}
+</style>
+<div class="wrap">
+<header class="top">
+  <p class="eyebrow">Milestone M12 · Research Design (no implementation)</p>
+  <h1>What to build next — a measured roadmap to higher IPB</h1>
+  <p class="lede">The M0–M11 framework is complete, integrated, and evaluated. M11 showed the compiler
+  reaches only ~1.8 instructions per bundle on an 8-lane machine — and pinpointed exactly why. This is
+  the evidence-driven plan for the next phase: which techniques attack the measured bottlenecks, which
+  fit the existing LoopTransform framework, and the order to build them in.</p>
+  <div class="thesis">
+    <b>Thesis.</b> The limiter is <b>not the hardware and not the scheduler</b> — it is a lack of
+    <b>independent work</b> inside each scheduling window. ILP-saturation is ~0% and register pressure
+    peaks at 5 of 28: the bundler almost never runs out of lanes, it runs out of things to put in them.
+    The winning strategy is therefore to <b>expose parallelism at the IR level and let the existing
+    greedy bundler pack it</b> — which is exactly what the LoopTransform framework was built to do.
+  </div>
+</header>
+
+<section>
+  <h2>1 · Bottleneck → root cause → required technique</h2>
+  <div class="sec-title">Three causes account for &gt;99% of every lost bundle slot</div>
+  <div class="chain">
+    <div class="bcard dep">
+      <div class="btag">largest</div>
+      <div class="share" style="color:var(--accent)">58%</div>
+      <h3>True data / recurrence dependencies</h3>
+      <p><b>Why:</b> dependent instructions in one iteration cannot co-issue. Independent work exists only
+      in <i>other</i> iterations — invisible to a within-block packer.</p>
+      <p><b>Why we can't fix it now:</b> no pass overlaps iterations; the bundler never crosses the back-edge.</p>
+      <div class="fix">→ software pipelining · unrolling</div>
+    </div>
+    <div class="bcard mem">
+      <div class="btag">second</div>
+      <div class="share" style="color:var(--hot)">21%</div>
+      <h3>Memory dependencies</h3>
+      <p><b>Why:</b> the bundler must assume two memory ops may alias, so it serializes them (MemAlias/MemPhase).</p>
+      <p><b>Why we can't fix it now:</b> M2 has alias facts, but the text-level bundler can't consult them;
+      its disambiguation is conservative.</p>
+      <div class="fix">→ memory disambiguation · dependence graph</div>
+    </div>
+    <div class="bcard ctl">
+      <div class="btag">third</div>
+      <div class="share" style="color:var(--large)">20%</div>
+      <h3>Control-flow boundaries</h3>
+      <p><b>Why:</b> a branch, call or label ends a bundle. The scheduling window is one basic block.</p>
+      <p><b>Why we can't fix it now:</b> the bundler is basic-block-local; nothing enlarges the region or
+      removes small branches.</p>
+      <div class="fix">→ if-conversion · global scheduling</div>
+    </div>
+  </div>
+  <p class="note">Hardware-lane limits (0.6%) and ILP-saturation (0.0%) are negligible — decisive evidence
+  that the machine has spare width and the problem is upstream of the scheduler.</p>
+</section>
+
+<section>
+  <h2>2 · Framework readiness — the strategic split</h2>
+  <div class="sec-title">Restructure in the IR (native); schedule in the bundler (harder)</div>
+  <div class="insight">
+    <p class="note" style="margin-top:0">The LoopTransform framework is an <b>IR-level, loop-scoped,
+    transactional rewrite</b> engine with verification and rollback. Instruction <i>placement</i> happens
+    later, in the greedy text-level bundler. That divides every candidate cleanly:</p>
+    <div class="two">
+      <div>
+        <h4 style="color:var(--good)">Class A — framework-native</h4>
+        <ul>
+          <li>Expose ILP by rewriting loop IR; the existing bundler then packs the newly-independent work.</li>
+          <li>Unrolling, software pipelining (emit prologue/kernel/epilogue as IR), if-conversion,
+          unswitching, fusion/fission, register promotion, vectorization.</li>
+          <li>Uses M0–M4 analyses, M7 legality, MutationTransaction (splice / move / replace_span),
+          verification + rollback — <b>no new engine required</b>.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="color:var(--hot)">Class B — scheduler-level</h4>
+        <ul>
+          <li>Control actual placement or cross block boundaries.</li>
+          <li>Global / trace / superblock scheduling, true modulo reservation scheduling, predicate lane
+          assignment.</li>
+          <li>Needs a new scheduler or bundler surgery — <b>largest architectural risk</b>.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note" style="margin-bottom:0"><b>Key design choice:</b> most of software pipelining's benefit is
+    reachable in Class A — emit an already-interleaved kernel as IR and let the greedy bundler pack it, using
+    the MII that <b>M3 already computes</b>. This avoids building a Class-B scheduler up front.</p>
+  </div>
+</section>
+
+<section>
+  <h2>3 · Optimization survey &amp; priority matrix</h2>
+  <div class="sec-title">Every candidate, scored on M11 evidence</div>
+  <div class="wrap-tbl">
+  <table>
+    <thead><tr><th>Technique</th><th>Attacks</th><th>IPB benefit</th><th>Effort</th><th>Framework fit</th><th>Reuses</th></tr></thead>
+    <tbody>
+      <tr><td>Loop unrolling</td><td>deps + control</td><td><span class="chip c-large">large</span></td><td class="c-lo">low</td><td>Class A ✓✓</td><td>M1, M3, M7</td></tr>
+      <tr><td>Software pipelining</td><td>true deps (58%)</td><td><span class="chip c-large">large</span></td><td class="c-hi">high</td><td>Class A ✓</td><td>M1, M2, M3(MII)</td></tr>
+      <tr><td>(Swing) modulo scheduling</td><td>true deps</td><td><span class="chip c-large">large</span></td><td class="c-hi">high</td><td>engine for SWP</td><td>M3 dep/MII</td></tr>
+      <tr><td>Memory disambiguation</td><td>memory (21%)</td><td><span class="chip c-mod">moderate</span></td><td class="c-mid">moderate</td><td>extends M2</td><td>M1, M2</td></tr>
+      <tr><td>If-conversion / predication</td><td>control (20%)</td><td><span class="chip c-mod">moderate</span></td><td class="c-mid">moderate</td><td>Class A ✓ ($cmov)</td><td>M2, M3, M7</td></tr>
+      <tr><td>Global / superblock scheduling</td><td>control (20%)</td><td><span class="chip c-mod">moderate</span></td><td class="c-hi">high</td><td>Class B</td><td>M3 profile</td></tr>
+      <tr><td>Speculative code motion</td><td>control + deps</td><td><span class="chip c-mod">moderate</span></td><td class="c-mid">moderate</td><td>Class A/B (fault-free VM!)</td><td>M2</td></tr>
+      <tr><td>Vectorization</td><td>deps (data-parallel)</td><td><span class="chip c-large">large*</span></td><td class="c-hi">high</td><td>Class A ✓ ($v/$dot ISA)</td><td>M1, M2</td></tr>
+      <tr><td>Register promotion</td><td>memory</td><td><span class="chip c-small">small</span></td><td class="c-mid">moderate</td><td>Class A</td><td>M1, M2</td></tr>
+      <tr><td>Loop unswitching</td><td>control</td><td><span class="chip c-small">small</span></td><td class="c-lo">low</td><td>Class A ✓</td><td>M2, M7</td></tr>
+      <tr><td>Loop fusion / fission</td><td>deps (enabler)</td><td><span class="chip c-small">small</span></td><td class="c-mid">moderate</td><td>Class A</td><td>M2</td></tr>
+      <tr><td>Better local scheduling</td><td>—</td><td><span class="chip c-small">small</span></td><td class="c-lo">low</td><td>bundler</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">*Vectorization is large where it applies (a <code>$dot</code>/<code>$vreduce</code> replaces a
+  whole scalar loop) but applicability is narrow (stride-1, data-parallel). <b>Better local scheduling ranks
+  last on purpose:</b> ILP-saturation is 0% — there is no un-packed ILP for a smarter local heuristic to find.
+  Only techniques that <i>create</i> independent work (unroll, pipeline, vectorize) or <i>enlarge the window</i>
+  (if-conversion, global scheduling) can move the needle.</p>
+</section>
+
+<section>
+  <h2>4 · Proposed research milestones</h2>
+  <div class="sec-title">R1–R6, sequenced by dependency and de-risking</div>
+  <ol class="road">
+    <li>
+      <h3>Loop Unrolling</h3>
+      <div class="meta">Class A · effort LOW · expected IPB: large on hot loops</div>
+      <dl>
+        <dt>Objective</dt><dd>Full/partial unroll of counted loops (with a remainder loop) to expose several independent iteration bodies to the bundler and cut back-edge/control overhead.</dd>
+        <dt>Dependencies</dt><dd>M1 (trip counts, IV rewrite), M3 (pick factor by body size / register headroom), M7 legality, MutationTransaction.</dd>
+        <dt>Deliverables</dt><dd><code>LoopUnroll(LoopTransform)</code>; factor-selection heuristic; remainder-loop synthesis.</dd>
+        <dt>Validation</dt><dd>Differential golden test vs gcc on the corpus (see cross-cutting harness); framework verifier + rollback; re-run M11 to measure IPB/occupancy delta.</dd>
+        <dt>Success</dt><dd>Measurable rise in mean lanes/bundle and drop in single-lane bundles on loop-bearing programs, zero correctness regressions.</dd>
+      </dl>
+    </li>
+    <li>
+      <h3>Dependence Graph &amp; Memory Disambiguation</h3>
+      <div class="meta">analysis milestone · effort MODERATE · unblocks 21% + enables R4</div>
+      <dl>
+        <dt>Objective</dt><dd>A reusable data-dependence graph (register + memory, with distances and latencies) and a strengthened alias oracle that proves independence for IV-indexed and distinct-base accesses.</dd>
+        <dt>Dependencies</dt><dd>M1 (IV-based address characterization), M2 (extend MemEffects/AliasSummary), M3 (already builds recurrence/critical-path structure — reuse).</dd>
+        <dt>Deliverables</dt><dd>DDG analysis in the M-analysis idiom (annotate descriptors); disambiguation results plumbed to the scheduler/bundler; cross-check that it never claims false independence.</dd>
+        <dt>Validation</dt><dd>Conservative-soundness audit (never fewer edges than the safe baseline); precision report vs the current bundler alias check.</dd>
+        <dt>Success</dt><dd>Provably-sound DDG available to later passes; measured reduction in MemAlias-forced splits where aliasing is disproved.</dd>
+      </dl>
+    </li>
+    <li>
+      <h3>If-Conversion / Predication</h3>
+      <div class="meta">Class A · effort MODERATE · attacks 20% control · enables R4</div>
+      <dl>
+        <dt>Objective</dt><dd>Convert small in-loop if-then(-else) into branch-free <code>$cmov</code> straight-line code, removing control boundaries and making such loops pipelineable.</dd>
+        <dt>Dependencies</dt><dd>M2 (safety: no un-speculatable stores/calls — eased by the fault-free VM), M3 (profitability), M7, existing <code>$cmov</code> lowering.</dd>
+        <dt>Deliverables</dt><dd><code>IfConvert(LoopTransform)</code>; profitability gate; interaction with R1/R4.</dd>
+        <dt>Validation</dt><dd>Golden differential test; verifier; A/B IPB on control-heavy loops.</dd>
+        <dt>Success</dt><dd>Fewer control/label splits on eligible loops; no regression where if-conversion is unprofitable (gated off).</dd>
+      </dl>
+    </li>
+    <li>
+      <h3>Software Pipelining via Swing Modulo Scheduling</h3>
+      <div class="meta">Class A (IR-emitted kernel) · effort HIGH · the flagship attack on 58%</div>
+      <dl>
+        <dt>Objective</dt><dd>Overlap iterations at the Minimum Initiation Interval M3 already computes: emit prologue / steady-state kernel / epilogue as IR so the greedy bundler packs the independent cross-iteration work.</dd>
+        <dt>Dependencies</dt><dd>R1 (unroll/kernel infrastructure), R2 (DDG + latencies), R3 (for loops with control), M3 (res_mii/rec_mii/mii/est_ipb as the schedule target and ceiling).</dd>
+        <dt>Deliverables</dt><dd>Swing modulo scheduler; modulo reservation table honouring the 4 ld/st + 1 div/sqrt lane limits; kernel register handling; <code>SoftwarePipeline(LoopTransform)</code>.</dd>
+        <dt>Validation</dt><dd>Golden differential + simulation on pipelined kernels; per-loop achieved-IPB vs M3's est_ipb ceiling; tiered fallback to the unpipelined loop on spill/verify failure.</dd>
+        <dt>Success</dt><dd>Loop IPB approaching est_ipb on resource-bound loops; recurrence-bound loops correctly capped at rec_mii; zero correctness regressions.</dd>
+      </dl>
+    </li>
+    <li>
+      <h3>Global / Superblock Scheduling</h3>
+      <div class="meta">Class B · effort HIGH · crosses the 20% control boundaries</div>
+      <dl>
+        <dt>Objective</dt><dd>Form single-entry regions along hot paths and schedule across block boundaries (with compensation code), reaching the control-flow-bound code that R3 can't predicate.</dd>
+        <dt>Dependencies</dt><dd>R2 (DDG), M3 (edge/loop profile for region formation), the fault-free VM (cheap speculation).</dd>
+        <dt>Deliverables</dt><dd>Superblock formation; a region scheduler feeding the bundler; compensation-code insertion.</dd>
+        <dt>Validation</dt><dd>Golden differential; verifier extended for multi-exit regions; IPB on control-heavy, non-loop code.</dd>
+        <dt>Success</dt><dd>Higher occupancy in straight-line-poor code without correctness loss.</dd>
+      </dl>
+    </li>
+    <li>
+      <h3>Vectorization (APARA vector ISA)</h3>
+      <div class="meta">Class A · effort HIGH · research-novel, narrow but deep</div>
+      <dl>
+        <dt>Objective</dt><dd>Map stride-1 data-parallel loops onto the native <code>$v</code>/<code>$dot</code>/<code>$vreduce</code> vector ops (<code>vu8_t</code>), collapsing whole scalar loops into a few instructions.</dd>
+        <dt>Dependencies</dt><dd>R2 (no loop-carried deps proof), M1 (stride), alignment analysis (new), the existing vector ISA.</dd>
+        <dt>Deliverables</dt><dd><code>Vectorize(LoopTransform)</code>; alignment/remainder handling; cost model.</dd>
+        <dt>Validation</dt><dd>Golden differential; the existing vector-intrinsic tests as regression anchors.</dd>
+        <dt>Success</dt><dd>Data-parallel kernels lowered to vector form with large instruction-count reduction, correctness preserved.</dd>
+      </dl>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <h2>5 · Expected improvement (qualitative — no invented numbers)</h2>
+  <div class="sec-title">Sized by which measured bottleneck each moves</div>
+  <div class="wrap-tbl">
+  <table>
+    <thead><tr><th>Size</th><th>Techniques</th><th>Why (from M11)</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip c-large">large</span></td><td>Software pipelining; loop unrolling (hot loops); vectorization (where applicable)</td><td>They create independent work against the dominant 58% dependency bottleneck; M3's est_ipb shows real headroom between current ~1.8 IPB and per-loop ceilings.</td></tr>
+      <tr><td><span class="chip c-mod">moderate</span></td><td>Memory disambiguation; if-conversion; global scheduling; speculative motion</td><td>Each targets a real but smaller slice (21% memory, 20% control) and only the disproved-alias / small-branch / hot-path fraction of it.</td></tr>
+      <tr><td><span class="chip c-small">small</span></td><td>Better local scheduling; unswitching; fusion/fission; register promotion</td><td>0% ILP-saturation leaves no local headroom; the rest are narrow in this corpus or already partly covered by loop_reg.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>6 · Risks</h2>
+  <div class="sec-title">What could go wrong, and where</div>
+  <div class="risk">
+    <div class="rk"><span class="sev c-hi">high</span><h4>Correctness of new semantics</h4><p>Unlike M6–M10, new optimizations have <b>no legacy byte-diff oracle</b>, and the M5 verifier checks loop <i>structure</i>, not data-flow equivalence. A dedicated differential-correctness harness (gcc golden + simulation) is a prerequisite, not an afterthought.</p></div>
+    <div class="rk"><span class="sev c-hi">high</span><h4>Scheduler complexity</h4><p>Modulo scheduling is the hardest classical algorithm; a wrong kernel/prologue/epilogue silently miscompiles. Mitigate with the IR-emitted-kernel design and tiered fallback.</p></div>
+    <div class="rk"><span class="sev c-mid">med</span><h4>Register pressure</h4><p>Unrolling and pipelining lengthen live ranges. Headroom is real today (peak 5/28), but deep kernels can spill; the existing tiered-fallback codegen contains the blast radius.</p></div>
+    <div class="rk"><span class="sev c-mid">med</span><h4>Compile-time growth</h4><p>The framework rebuilds analyses after every transform; modulo scheduling is expensive. Large programs already reach tens of ms — watch for super-linear growth and cache analyses across a transform's attempts.</p></div>
+    <div class="rk"><span class="sev c-mid">med</span><h4>Pass interaction</h4><p>unroll × if-convert × pipeline ordering matters; the tiered pipeline mitigates but tier count grows combinatorially.</p></div>
+    <div class="rk"><span class="sev c-mid">med</span><h4>Analysis-to-bundler plumbing</h4><p>The bundler is text-level; IR-derived alias/schedule facts must reach it. Prefer the "emit already-scheduled IR" path to avoid deep bundler surgery.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>7 · If I had another year — first, second, third</h2>
+  <div class="sec-title">The three-move plan, each justified by M11</div>
+  <div class="podium">
+    <div class="pcard one"><div class="rank">First</div><h3>Loop Unrolling</h3><p>Lowest effort, highest framework fit, and it directly converts the 57%-single-lane reality into multi-lane bundles by handing the greedy bundler independent iteration bodies. Register headroom (5/28) means we can afford it. It is the substrate every later pass builds on, so it de-risks the whole roadmap.</p></div>
+    <div class="pcard two"><div class="rank">Second</div><h3>Dependence Graph + Memory Disambiguation</h3><p>The 21% memory bottleneck is real, but more importantly a sound DDG is the <b>required foundation</b> for any reordering or pipelining. Building it second means the flagship pass lands on solid ground instead of conservative guesses.</p></div>
+    <div class="pcard three"><div class="rank">Third</div><h3>Software Pipelining (Swing Modulo Scheduling)</h3><p>The direct attack on the dominant 58% true-dependency bottleneck and the single largest IPB lever. M3 already computes the MII target and ceiling; unrolling (first) and the DDG (second) make it tractable. Highest payoff, correctly sequenced last of the three.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>8 · Long-term compiler vision</h2>
+  <div class="sec-title">From a greedy packer to a dependence-driven pipelining VLIW compiler</div>
+  <div class="vision">
+    Today the compiler is a <b>local greedy bundler fed by loop restructuring</b>. The endgame is a
+    <b>dependence-driven, software-pipelining VLIW compiler</b>: IR-level transforms (unroll, if-convert,
+    pipeline, vectorize) expose iteration- and region-level parallelism; a modulo scheduler places it at the
+    Minimum Initiation Interval; the <b>fault-free VM</b> is exploited for cheap speculation; and every
+    transform rides the M5 transactional framework with a <b>differential-correctness net</b> catching what
+    the structural verifier cannot. The measurable north star is already defined by M3: drive each loop's IPB
+    from today's ~1.8 toward the est_ipb ceilings the profiler computes — closing the gap the M11 evaluation
+    made visible.
+  </div>
+</section>
+
+<footer>
+  APARA C Compiler · Research Design M12 · grounded in the M11 evaluation · design only, nothing implemented ·
+  companion to the M11 evaluation report.
+</footer>
+</div>

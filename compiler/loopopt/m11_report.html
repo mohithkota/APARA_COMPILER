@@ -1,0 +1,379 @@
+<title>APARA Loop-Opt Framework — M11 Evaluation</title>
+<style>
+    :root{
+      --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5; --border:#dde1e7;
+      --ink:#12151a; --ink-2:#4a5260; --ink-3:#79828f;
+      --accent:#2a78d6; --accent-soft:#e6f0fb; --good:#0f8a5f; --warn:#c98500;
+      --grid:#e5e8ee; --bar:#2a78d6;
+      --series-ivsr:#2a78d6; --series-licm:#1baf7a; --series-rot:#eda100;
+      --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a; --cat-4:#eda100; --cat-5:#e87ba4; --cat-6:#79828f;
+      --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+      --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    }
+    @media (prefers-color-scheme:dark){:root{
+      --bg:#0f1216; --surface:#171b21; --surface-2:#1d222a; --border:#2a313b;
+      --ink:#eef1f5; --ink-2:#b3bcc8; --ink-3:#7f8996;
+      --accent:#3987e5; --accent-soft:#16283f; --good:#3fbb86; --warn:#c98500;
+      --grid:#232a33; --bar:#3987e5;
+      --series-ivsr:#3987e5; --series-licm:#199e70; --series-rot:#c98500;
+      --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500; --cat-5:#d55181; --cat-6:#7f8996;
+    }}
+    :root[data-theme="dark"]{
+      --bg:#0f1216; --surface:#171b21; --surface-2:#1d222a; --border:#2a313b;
+      --ink:#eef1f5; --ink-2:#b3bcc8; --ink-3:#7f8996;
+      --accent:#3987e5; --accent-soft:#16283f; --good:#3fbb86; --warn:#c98500;
+      --grid:#232a33; --bar:#3987e5;
+      --series-ivsr:#3987e5; --series-licm:#199e70; --series-rot:#c98500;
+      --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500; --cat-5:#d55181; --cat-6:#7f8996;
+    }
+    :root[data-theme="light"]{
+      --bg:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5; --border:#dde1e7;
+      --ink:#12151a; --ink-2:#4a5260; --ink-3:#79828f; --accent:#2a78d6;
+      --grid:#e5e8ee; --bar:#2a78d6;
+      --series-ivsr:#2a78d6; --series-licm:#1baf7a; --series-rot:#eda100;
+      --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a; --cat-4:#eda100; --cat-5:#e87ba4; --cat-6:#79828f;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+      line-height:1.55;-webkit-font-smoothing:antialiased}
+    .wrap{max-width:960px;margin:0 auto;padding:48px 24px 80px}
+    header.top{border-bottom:1px solid var(--border);padding-bottom:24px;margin-bottom:8px}
+    .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+      color:var(--accent);margin:0 0 10px}
+    h1{font-size:34px;line-height:1.12;margin:0 0 10px;letter-spacing:-.02em;text-wrap:balance}
+    .lede{color:var(--ink-2);max-width:66ch;font-size:16px;margin:0}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:30px 0 8px}
+    .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+    .kpi-v{font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.02em;
+      font-variant-numeric:tabular-nums}
+    .kpi-l{font-size:13px;color:var(--ink-2);margin-top:3px}
+    .kpi-s{font-size:12px;color:var(--ink-3);margin-top:4px;font-family:var(--mono)}
+    section{margin-top:44px}
+    h2{font-size:13px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;
+      color:var(--ink-2);margin:0 0 4px;display:flex;align-items:center;gap:10px}
+    h2::before{content:"";width:20px;height:2px;background:var(--accent);display:inline-block}
+    .sec-title{font-size:22px;letter-spacing:-.01em;margin:2px 0 14px;text-wrap:balance}
+    p.note{color:var(--ink-2);max-width:70ch;font-size:14.5px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:22px 22px 18px;margin-top:14px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+    .fig-cap{font-size:13px;color:var(--ink-3);margin:2px 0 12px;font-family:var(--mono)}
+    svg.chart{width:100%;height:auto;display:block;overflow:visible}
+    .grid{stroke:var(--grid);stroke-width:1}
+    .grid.axis{stroke:var(--ink-3);stroke-width:1.2}
+    .bar{fill:var(--bar)}
+    .cat-1{fill:var(--cat-1)}.cat-2{fill:var(--cat-2)}.cat-3{fill:var(--cat-3)}
+    .cat-4{fill:var(--cat-4)}.cat-5{fill:var(--cat-5)}.cat-6{fill:var(--cat-6)}
+    .vlab{fill:var(--ink-2);font-family:var(--mono);font-size:11px;font-variant-numeric:tabular-nums}
+    .xlab{fill:var(--ink-3);font-family:var(--mono);font-size:11px}
+    rect:hover{opacity:.82}
+    table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+    th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--border);
+      font-variant-numeric:tabular-nums;font-family:var(--mono)}
+    th:first-child,td:first-child{text-align:left}
+    thead th{color:var(--ink-3);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+    tbody th{font-weight:500;color:var(--ink);font-family:var(--sans)}
+    .legend{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 2px;font-size:12.5px;color:var(--ink-2);font-family:var(--mono)}
+    .legend span{display:inline-flex;align-items:center;gap:6px}
+    .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+    .banner{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);
+      border-left:4px solid var(--good);border-radius:12px;padding:16px 20px}
+    .banner .big{font-family:var(--mono);font-size:22px;color:var(--good);font-weight:600}
+    ol.fw{list-style:none;counter-reset:fw;padding:0;margin:8px 0 0}
+    ol.fw li{counter-increment:fw;background:var(--surface);border:1px solid var(--border);
+      border-radius:12px;padding:16px 18px 16px 58px;position:relative;margin-bottom:12px}
+    ol.fw li::before{content:counter(fw);position:absolute;left:16px;top:16px;width:28px;height:28px;
+      border-radius:8px;background:var(--accent-soft);color:var(--accent);font-family:var(--mono);
+      font-weight:600;display:flex;align-items:center;justify-content:center;font-size:14px}
+    ol.fw h4{margin:0 0 4px;font-size:16px}
+    ol.fw p{margin:0;color:var(--ink-2);font-size:14px}
+    footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--border);
+      color:var(--ink-3);font-size:12.5px;font-family:var(--mono)}
+    .pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--accent-soft);
+      color:var(--accent);font-family:var(--mono);font-size:12px;margin-left:6px}
+    </style>
+<div class="wrap">
+<header class="top">
+  <p class="eyebrow">Milestone M11 · Quantitative Evaluation</p>
+  <h1>The APARA loop-optimization framework, measured</h1>
+  <p class="lede">A static evaluation of the production compiler across 124 benchmark
+  programs on the 8-lane APARA VLIW target — how densely it packs bundles, what each
+  loop pass contributes, what limits Instructions-Per-Bundle, and where the next
+  optimization effort pays off. The framework is measured, not modified.</p>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-v">1.81</div><div class="kpi-l">Mean IPB</div><div class=kpi-s>median 1.75 · of 8 lanes</div></div>
+    <div class="kpi"><div class="kpi-v">22%</div><div class="kpi-l">Lane occupancy</div><div class=kpi-s>1.79 of 8 lanes avg</div></div>
+    <div class="kpi"><div class="kpi-v">124</div><div class="kpi-l">Programs</div><div class=kpi-s>whole corpus</div></div>
+    <div class="kpi"><div class="kpi-v">0 / 0</div><div class="kpi-l">Verifier / rollback</div><div class=kpi-s>across all transforms</div></div>
+    <div class="kpi"><div class="kpi-v">0</div><div class="kpi-l">IR mismatches</div><div class=kpi-s>framework = legacy</div></div>
+  </div>
+</header>
+
+<section>
+  <h2>Headline</h2>
+  <div class="sec-title">The machine is wide; the code is narrow.</div>
+  <p class="note">On an 8-lane VLIW the corpus averages <b>1.81</b> instructions
+  per bundle — about <b>22% lane occupancy</b>. 57%
+  of all bundles use a single lane. The limiter is not the hardware and not the bundler:
+  it is <b>dependency structure</b>. 58% of every
+  lost bundle slot is a true data / recurrence dependency, another
+  21% is a memory dependency, and
+  20% is a control-flow boundary —
+  while hardware-lane and ILP-saturation limits together account for under 1%.</p>
+</section>
+
+<section>
+  <h2>Corpus-wide statistics</h2>
+  <div class="sec-title">Distribution across 124 programs</div>
+  <div class="card" style="overflow-x:auto">
+  <table><thead><tr><th>Metric</th><th>min</th><th>max</th><th>avg</th><th>median</th><th>stdev</th></tr></thead>
+  <tbody>
+  <tr><th>Instructions per bundle</th><td>1.39</td><td>2.73</td><td>1.81</td><td>1.75</td><td>0.29</td></tr>
+  <tr><th>Bundles</th><td>10</td><td>342</td><td>59</td><td>38</td><td>53</td></tr>
+  <tr><th>Static instructions</th><td>20</td><td>537</td><td>105</td><td>69</td><td>94</td></tr>
+  <tr><th>Load / store instrs</th><td>3</td><td>155</td><td>28</td><td>18</td><td>31</td></tr>
+  <tr><th>Bundle occupancy (lanes)</th><td>1.00</td><td>8.00</td><td>1.79</td><td>1.00</td><td>1.37</td></tr>
+  <tr><th>Compile time (ms)</th><td>0.32</td><td>72.89</td><td>4.04</td><td>1.32</td><td>8.70</td></tr>
+  </tbody></table>
+  </div>
+</section>
+
+<section>
+  <h2>IPB &amp; occupancy</h2>
+  <div class="sec-title">Most bundles are nearly empty</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="fig-cap">IPB distribution — programs per IPB band</div>
+      <svg viewBox="0 0 640 200" role="img" class="chart" preserveAspectRatio="xMidYMid meet">
+<line x1="8" y1="130.0" x2="632" y2="130.0" class="grid"/>
+<line x1="8" y1="94.0" x2="632" y2="94.0" class="grid"/>
+<line x1="8" y1="58.0" x2="632" y2="58.0" class="grid"/>
+<line x1="8" y1="22.0" x2="632" y2="22.0" class="grid"/>
+<rect x="8.0" y="162.5" width="95.7" height="3.5" rx="3" class="bar"><title>1.0: 1 progs</title></rect>
+<text x="55.8" y="157.5" class="vlab" text-anchor="middle">1</text>
+<text x="55.8" y="182.0" class="xlab" text-anchor="middle">1.0</text>
+<rect x="113.7" y="64.1" width="95.7" height="101.9" rx="3" class="bar"><title>1.4: 29 progs</title></rect>
+<text x="161.5" y="59.1" class="vlab" text-anchor="middle">29</text>
+<text x="161.5" y="182.0" class="xlab" text-anchor="middle">1.4</text>
+<rect x="219.3" y="22.0" width="95.7" height="144.0" rx="3" class="bar"><title>1.6: 41 progs</title></rect>
+<text x="267.2" y="17.0" class="vlab" text-anchor="middle">41</text>
+<text x="267.2" y="182.0" class="xlab" text-anchor="middle">1.6</text>
+<rect x="325.0" y="71.2" width="95.7" height="94.8" rx="3" class="bar"><title>1.8: 27 progs</title></rect>
+<text x="372.8" y="66.2" class="vlab" text-anchor="middle">27</text>
+<text x="372.8" y="182.0" class="xlab" text-anchor="middle">1.8</text>
+<rect x="430.7" y="99.3" width="95.7" height="66.7" rx="3" class="bar"><title>2.0: 19 progs</title></rect>
+<text x="478.5" y="94.3" class="vlab" text-anchor="middle">19</text>
+<text x="478.5" y="182.0" class="xlab" text-anchor="middle">2.0</text>
+<rect x="536.3" y="141.4" width="95.7" height="24.6" rx="3" class="bar"><title>2.4: 7 progs</title></rect>
+<text x="584.2" y="136.4" class="vlab" text-anchor="middle">7</text>
+<text x="584.2" y="182.0" class="xlab" text-anchor="middle">2.4</text>
+</svg>
+    </div>
+    <div class="card">
+      <div class="fig-cap">Bundle occupancy — bundles by lanes used (max 8)</div>
+      <svg viewBox="0 0 640 200" role="img" class="chart" preserveAspectRatio="xMidYMid meet">
+<line x1="8" y1="130.0" x2="632" y2="130.0" class="grid"/>
+<line x1="8" y1="94.0" x2="632" y2="94.0" class="grid"/>
+<line x1="8" y1="58.0" x2="632" y2="58.0" class="grid"/>
+<line x1="8" y1="22.0" x2="632" y2="22.0" class="grid"/>
+<rect x="8.0" y="22.0" width="69.2" height="144.0" rx="3" class="bar"><title>1: 4174</title></rect>
+<text x="42.6" y="17.0" class="vlab" text-anchor="middle">4174</text>
+<text x="42.6" y="182.0" class="xlab" text-anchor="middle">1</text>
+<rect x="87.2" y="93.7" width="69.2" height="72.3" rx="3" class="bar"><title>2: 2095</title></rect>
+<text x="121.9" y="88.7" class="vlab" text-anchor="middle">2095</text>
+<text x="121.9" y="182.0" class="xlab" text-anchor="middle">2</text>
+<rect x="166.5" y="151.6" width="69.2" height="14.4" rx="3" class="bar"><title>3: 417</title></rect>
+<text x="201.1" y="146.6" class="vlab" text-anchor="middle">417</text>
+<text x="201.1" y="182.0" class="xlab" text-anchor="middle">3</text>
+<rect x="245.8" y="158.2" width="69.2" height="7.8" rx="3" class="bar"><title>4: 225</title></rect>
+<text x="280.4" y="153.2" class="vlab" text-anchor="middle">225</text>
+<text x="280.4" y="182.0" class="xlab" text-anchor="middle">4</text>
+<rect x="325.0" y="161.3" width="69.2" height="4.7" rx="3" class="bar"><title>5: 136</title></rect>
+<text x="359.6" y="156.3" class="vlab" text-anchor="middle">136</text>
+<text x="359.6" y="182.0" class="xlab" text-anchor="middle">5</text>
+<rect x="404.2" y="163.6" width="69.2" height="2.4" rx="3" class="bar"><title>6: 69</title></rect>
+<text x="438.9" y="158.6" class="vlab" text-anchor="middle">69</text>
+<text x="438.9" y="182.0" class="xlab" text-anchor="middle">6</text>
+<rect x="483.5" y="164.2" width="69.2" height="1.8" rx="3" class="bar"><title>7: 52</title></rect>
+<text x="518.1" y="159.2" class="vlab" text-anchor="middle">52</text>
+<text x="518.1" y="182.0" class="xlab" text-anchor="middle">7</text>
+<rect x="562.8" y="161.3" width="69.2" height="4.7" rx="3" class="bar"><title>8: 137</title></rect>
+<text x="597.4" y="156.3" class="vlab" text-anchor="middle">137</text>
+<text x="597.4" y="182.0" class="xlab" text-anchor="middle">8</text>
+</svg>
+    </div>
+  </div>
+  <p class="note">The occupancy histogram is the core finding: the mass sits at 1–2 lanes.
+  The tail at 8 lanes is the small set of memory-bound inner loops the bundler can fill
+  (load/store-heavy kernels), not typical code.</p>
+</section>
+
+<section>
+  <h2>Pass contribution</h2>
+  <div class="sec-title">What each loop pass buys, in isolation</div>
+  <p class="note">Ablation on each program's strength-reduced baseline through the identical
+  cleanup stage, so the numbers isolate one pass. Positive = reduction (static, bundles) or
+  gain (IPB). Averaged over the programs each pass actually changes.</p>
+  <div class="legend"><span><i class="sw" style="background:var(--series-ivsr)"></i>IVSR</span><span><i class="sw" style="background:var(--series-licm)"></i>LICM</span><span><i class="sw" style="background:var(--series-rot)"></i>Rotation</span></div>
+  <div class="card">
+    <div class="fig-cap">Mean effect vs baseline (%) — grouped by metric</div>
+    <svg viewBox="0 0 640 230" role="img" class="chart" preserveAspectRatio="xMidYMid meet">
+<line x1="30" y1="141.1" x2="632" y2="141.1" class="grid axis"/>
+<rect x="30.0" y="25.6" width="58.4" height="115.5" rx="3" style="fill:var(--series-ivsr)"><title>IVSR — Δ static: +38.0%</title></rect>
+<text x="59.2" y="21.6" class="vlab" text-anchor="middle">+38</text>
+<rect x="92.4" y="38.7" width="58.4" height="102.4" rx="3" style="fill:var(--series-licm)"><title>LICM — Δ static: +33.7%</title></rect>
+<text x="121.7" y="34.7" class="vlab" text-anchor="middle">+34</text>
+<rect x="154.9" y="141.1" width="58.4" height="38.9" rx="3" style="fill:var(--series-rot)"><title>Rotation — Δ static: -12.8%</title></rect>
+<text x="184.1" y="192.0" class="vlab" text-anchor="middle">-13</text>
+<text x="121.7" y="208.0" class="xlab" text-anchor="middle">Δ static</text>
+<rect x="239.3" y="20.0" width="58.4" height="121.1" rx="3" style="fill:var(--series-ivsr)"><title>IVSR — Δ bundles: +39.9%</title></rect>
+<text x="268.6" y="16.0" class="vlab" text-anchor="middle">+40</text>
+<rect x="301.8" y="31.2" width="58.4" height="109.9" rx="3" style="fill:var(--series-licm)"><title>LICM — Δ bundles: +36.2%</title></rect>
+<text x="331.0" y="27.2" class="vlab" text-anchor="middle">+36</text>
+<rect x="364.2" y="141.1" width="58.4" height="48.9" rx="3" style="fill:var(--series-rot)"><title>Rotation — Δ bundles: -16.1%</title></rect>
+<text x="393.4" y="202.0" class="vlab" text-anchor="middle">-16</text>
+<text x="331.0" y="208.0" class="xlab" text-anchor="middle">Δ bundles</text>
+<rect x="448.7" y="129.6" width="58.4" height="11.5" rx="3" style="fill:var(--series-ivsr)"><title>IVSR — Δ IPB: +3.8%</title></rect>
+<text x="477.9" y="125.6" class="vlab" text-anchor="middle">+4</text>
+<rect x="511.1" y="128.0" width="58.4" height="13.2" rx="3" style="fill:var(--series-licm)"><title>LICM — Δ IPB: +4.3%</title></rect>
+<text x="540.3" y="124.0" class="vlab" text-anchor="middle">+4</text>
+<rect x="573.6" y="141.1" width="58.4" height="8.2" rx="3" style="fill:var(--series-rot)"><title>Rotation — Δ IPB: -2.7%</title></rect>
+<text x="602.8" y="161.3" class="vlab" text-anchor="middle">-3</text>
+<text x="540.3" y="208.0" class="xlab" text-anchor="middle">Δ IPB</text>
+</svg>
+  </div>
+  <div class="card" style="overflow-x:auto">
+  <table><thead><tr><th>Pass</th><th>progs</th><th>Δ static %</th><th>Δ bundles %</th><th>Δ IPB %</th></tr></thead>
+  <tbody><tr><th>ROTATION</th><td>39</td><td>-12.8</td><td>-16.1</td><td>-2.7</td></tr><tr><th>LICM</th><td>44</td><td>+33.7</td><td>+36.2</td><td>+4.3</td></tr><tr><th>IVSR</th><td>39</td><td>+38.0</td><td>+39.9</td><td>+3.8</td></tr><tr><th>Final (loop progs)</th><td>44</td><td>+2.9</td><td>+7.2</td><td>+4.8</td></tr></tbody></table>
+  </div>
+  <p class="note"><b>IVSR</b> and <b>LICM</b> each cut static size and bundle count by roughly a
+  third on the loops they touch, for a few-percent IPB gain. <b>Rotation</b> is an <i>enabling</i>
+  transform (it adds a guard/latch, so standalone static size rises) and is not part of the
+  production pipeline. The production <b>final</b> pipeline realizes the combined effect on the
+  44 loop-bearing programs; static reduction is modest because loop-register
+  promotion and preheaders trade one-time setup for per-iteration savings that a static count
+  cannot see.</p>
+</section>
+
+<section>
+  <h2>Bottleneck analysis</h2>
+  <div class="sec-title">Why bundles split — ground truth from the bundler</div>
+  <p class="note">Every time the bundler rejects an instruction from the current bundle it
+  records the single primary reason. Aggregated over the corpus and mapped to categories,
+  this is the exact distribution of what prevents higher lane utilization. Dominant category
+  for <b>all 124</b> programs individually: true-data-deps.</p>
+  <div class="card">
+    <div class="fig-cap">Share of all bundle-split events, by cause (7181 splits)</div>
+    <svg viewBox="0 0 640 206" role="img" class="chart" preserveAspectRatio="xMidYMid meet">
+<text x="140" y="22.8" class="xlab" text-anchor="end">true-data-deps</text>
+<rect x="150" y="3.0" width="430.0" height="30" rx="3" class="cat-1"><title>true-data-deps: 4185 splits (58.3%)</title></rect>
+<text x="588.0" y="22.8" class="vlab">58.3%</text>
+<text x="140" y="62.8" class="xlab" text-anchor="end">memory/aliasing</text>
+<rect x="150" y="43.0" width="154.9" height="30" rx="3" class="cat-2"><title>memory/aliasing: 1508 splits (21.0%)</title></rect>
+<text x="312.9" y="62.8" class="vlab">21.0%</text>
+<text x="140" y="102.8" class="xlab" text-anchor="end">branch/control-flow</text>
+<rect x="150" y="83.0" width="148.7" height="30" rx="3" class="cat-3"><title>branch/control-flow: 1447 splits (20.2%)</title></rect>
+<text x="306.7" y="102.8" class="vlab">20.2%</text>
+<text x="140" y="142.8" class="xlab" text-anchor="end">hw-resource</text>
+<rect x="150" y="123.0" width="4.1" height="30" rx="3" class="cat-4"><title>hw-resource: 40 splits (0.6%)</title></rect>
+<text x="162.1" y="142.8" class="vlab">0.6%</text>
+<text x="140" y="182.8" class="xlab" text-anchor="end">ilp-saturation</text>
+<rect x="150" y="163.0" width="2.0" height="30" rx="3" class="cat-5"><title>ilp-saturation: 1 splits (0.0%)</title></rect>
+<text x="160.0" y="182.8" class="vlab">0.0%</text>
+</svg>
+  </div>
+</section>
+
+<section>
+  <h2>Framework overhead</h2>
+  <div class="sec-title">Transaction, verification &amp; rollback cost</div>
+  <div class="card" style="overflow-x:auto">
+  <table><thead><tr><th>Measure</th><th>Framework</th><th>Legacy</th><th>Ratio</th></tr></thead>
+  <tbody>
+    <tr><th>IVSR total wall time</th><td>31.6 ms</td><td>11.1 ms</td><td>2.85×</td></tr>
+    <tr><th>LICM total wall time</th><td>127.0 ms</td><td>22.1 ms</td><td>5.74×</td></tr>
+    <tr><th>IVSR per program (avg)</th><td>0.255 ms</td><td>0.090 ms</td><td>—</td></tr>
+    <tr><th>Transform attempts / commits</th><td>65 / 46</td><td>—</td><td>—</td></tr>
+    <tr><th>Rollbacks / verifier failures</th><td>0 / 0</td><td>—</td><td>—</td></tr>
+  </tbody></table>
+  </div>
+  <p class="note">The framework carries a constant-factor overhead (discovery, per-transform
+  verification and the transaction snapshot) — but in <i>absolute</i> terms it costs a fraction
+  of a millisecond to ~1 ms per program, against a mean compile time of 4.0 ms and a
+  total loop-opt budget of 159 ms across the whole corpus. Zero rollbacks and zero
+  verifier failures fired: the safety net is present at negligible cost and never had to catch
+  anything, because the migrated passes are byte-identical to the specifications.</p>
+</section>
+
+<section>
+  <h2>Correctness</h2>
+  <div class="sec-title">The integrated pipeline is identical to the legacy one</div>
+  <div class="banner">
+    <div class="big">124 / 124</div>
+    <div>Every program's per-tier IR, generated code, and selected tier match the legacy
+    pipeline byte-for-byte — <b>0</b> IR mismatches, <b>0</b> code mismatches, <b>0</b> verifier
+    failures, <b>0</b> rollbacks, <b>0</b> pipeline failures. <span class="pill">pipeline_crosscheck: PASS</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Scalability</h2>
+  <div class="sec-title">Compile time by program size</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="fig-cap">Mean compile time (ms) by size bucket</div>
+      <svg viewBox="0 0 640 200" role="img" class="chart" preserveAspectRatio="xMidYMid meet">
+<line x1="8" y1="130.0" x2="632" y2="130.0" class="grid"/>
+<line x1="8" y1="94.0" x2="632" y2="94.0" class="grid"/>
+<line x1="8" y1="58.0" x2="632" y2="58.0" class="grid"/>
+<line x1="8" y1="22.0" x2="632" y2="22.0" class="grid"/>
+<rect x="8.0" y="158.6" width="201.3" height="7.4" rx="3" class="bar"><title>Small: 0.8 ms</title></rect>
+<text x="108.7" y="153.6" class="vlab" text-anchor="middle">0.8</text>
+<text x="108.7" y="182.0" class="xlab" text-anchor="middle">Small</text>
+<rect x="219.3" y="139.0" width="201.3" height="27.0" rx="3" class="bar"><title>Medium: 2.9 ms</title></rect>
+<text x="320.0" y="134.0" class="vlab" text-anchor="middle">2.9</text>
+<text x="320.0" y="182.0" class="xlab" text-anchor="middle">Medium</text>
+<rect x="430.7" y="22.0" width="201.3" height="144.0" rx="3" class="bar"><title>Large: 15.2 ms</title></rect>
+<text x="531.3" y="17.0" class="vlab" text-anchor="middle">15.2</text>
+<text x="531.3" y="182.0" class="xlab" text-anchor="middle">Large</text>
+</svg>
+    </div>
+    <div class="card" style="overflow-x:auto">
+    <table><thead><tr><th>Size</th><th>n</th><th>avg ms</th><th>max ms</th><th>avg IPB</th></tr></thead>
+    <tbody><tr><th>Small (&lt;50)</th><td>43</td><td>0.8</td><td>3.7</td><td>1.82</td></tr><tr><th>Medium (50–200)</th><td>62</td><td>2.9</td><td>15.6</td><td>1.79</td></tr><tr><th>Large (&gt;200)</th><td>19</td><td>15.2</td><td>72.9</td><td>1.90</td></tr></tbody></table>
+    </div>
+  </div>
+  <p class="note">Compile time grows with program size but stays modest — the largest programs
+  finish in tens of milliseconds. The cost is dominated by the repeated analysis rebuilds the
+  transaction framework performs after every transform; it is well within budget and shows no
+  super-linear blow-up on the corpus.</p>
+</section>
+
+<section>
+  <h2>Future work</h2>
+  <div class="sec-title">Ranked by measured bottleneck, not speculation</div>
+  <ol class="fw">
+    <li><h4>Software pipelining / modulo scheduling</h4><p>58% of bundle splits are true data / recurrence dependencies and mean occupancy is only 1.79/8 lanes. Overlapping iterations is the single lever that fills lanes across a loop-carried dependency the intra-block scheduler cannot cross.</p></li><li><h4>Stronger alias analysis / memory disambiguation</h4><p>21% of splits are memory dependencies (MemAlias/MemPhase). Proving loads/stores independent would let the bundler co-issue them and cut the second-largest split class.</p></li><li><h4>Global (cross-block) instruction scheduling</h4><p>20% of splits are structural (control/label boundaries). Trace / superblock scheduling would move independent work across those boundaries into under-filled bundles.</p></li><li><h4>Loop unrolling</h4><p>57% of bundles use a single lane. Unrolling exposes several independent iteration bodies at once, giving the scheduler the parallel work needed to widen those bundles.</p></li><li><h4>Aggressive / speculative LICM</h4><p>LICM is measured net-neutral here and ships opt-in — its extended live ranges add register pressure. It becomes worthwhile only paired with the register-allocation improvement below.</p></li><li><h4>Enhanced register allocation</h4><p>1 program(s) already fall back from the most-optimized tier under spilling. Lower pressure would both keep those on the top tier and unlock aggressive LICM.</p></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Methodology</h2>
+  <div class="sec-title">How these numbers were produced</div>
+  <p class="note">Every metric is computed on the machine code the frozen production compiler
+  emits — no pass, order, heuristic, schedule, bundling or codegen was changed. Static count and
+  bundle count come from the bundler's own scheduler/packer; the split-reason taxonomy
+  (RAW/WAW = register deps, MemAlias/MemPhase = memory deps, MemLane/FUnit = hardware lanes,
+  Control/Call/Label = structural, BundleFull = ILP saturation) is the bundler's built-in
+  instrumentation. Pass contribution is an ablation through the identical cleanup stage;
+  overhead is best-of-3 wall time of the framework passes against the legacy specifications;
+  correctness is the end-to-end pipeline cross-check. Dynamic (executed) instruction counts
+  would require simulation and are out of scope for this static evaluation. Corpus: 124 C
+  programs from testing/, new_isa_tests/, demo_prof/ and isa_coverage_tests/.</p>
+</section>
+
+<footer>
+  APARA C Compiler · Loop-Optimization Framework M0–M10 · Evaluation M11 · generated from
+  m11_results.json · figures auto-rendered, theme-aware · evaluation only, compiler unmodified.
+</footer>
+</div>
