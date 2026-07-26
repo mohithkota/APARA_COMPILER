@@ -565,15 +565,44 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     # reduction then mops up any residual pow2 mul/div/mod. Both build fresh IR
     # objects, so ir_gen.instructions stays pristine for verification below.
     from strength_reduce import strength_reduce
-    from ivsr import induction_strength_reduce
+    # M10: loop-opt passes now execute through the LoopTransform framework. These
+    # two names are DROP-IN framework adapters (loopopt.pipeline) with identical
+    # behaviour to the legacy ivsr.induction_strength_reduce / licm2.
+    # loop_invariant_code_motion (proven byte-identical by the M8/M9/M10
+    # cross-checks). The legacy modules are retained as specs/regression refs.
+    from loopopt.pipeline import induction_strength_reduce
     from copyprop import copy_propagate
     from coalesce import copy_coalesce
     from dce import dead_code_eliminate
     from sccp import sparse_conditional_constant_propagation
     from gvn import global_value_numbering
     from mem2reg import mem2reg
-    from licm2 import loop_invariant_code_motion
+    from loopopt.pipeline import loop_invariant_code_motion   # M10: framework LICM (see above)
     _ir0   = list(ir_gen.instructions)
+
+    # ── R4.1: automatic dot-product / sum-reduction vectorization ───────────────
+    # Runs FIRST (Loop Analysis -> Kernel Detection -> Vector Legality ->
+    # Profitability -> Vectorization), so the vectorized IR then flows through the
+    # existing scalar optimizer / scheduler / bundler / backend unchanged. Each
+    # kernel is committed only after the packed differential oracle proves it
+    # behaviour-identical and it compiles spill-free; otherwise that loop stays
+    # scalar. A function with no committed kernel is byte-identical to today, so
+    # scalar compilation is unchanged whenever vectorization is rejected.
+    # APARA_NO_VECTORIZE disables it; any error keeps the scalar IR.
+    if not os.environ.get('APARA_NO_VECTORIZE'):
+        try:
+            from dot_vectorizer import vectorize_module
+            _vec_ir, _vstats, _vreps = vectorize_module(_ir0, global_base=global_base)
+            if _vstats.vectorized:
+                _ir0 = _vec_ir
+                if verbose:
+                    print(f"[vectorize] {_vstats.vectorized} kernel(s) vectorized:")
+                    for _vr in _vreps:
+                        if _vr.committed:
+                            print("   ", repr(_vr))
+        except Exception:
+            pass                                # vectorization never breaks the build
+
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob
     def _ivsr(x):
         return x if _no_iv else induction_strength_reduce(x)
@@ -618,6 +647,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     if os.environ.get('APARA_NO_LOOPOPT'):
         _tiers = []
     body = None
+    _sel_ir = None
     for _name, _build in _tiers:
         try:
             _instrs = _build()
@@ -625,6 +655,7 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             _b   = cg.generate(_instrs, global_base=global_base)
             if not cg.spilled:
                 body = _b
+                _sel_ir = _instrs
                 if verbose:
                     print(f"[loop-opt] applied: {_name}")
                 break
@@ -637,8 +668,76 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         # Runs outside try/except so a genuine compile error still surfaces.
         cg   = CodeGen(global_base=global_base)
         body = cg.generate(_base, global_base=global_base)
+        _sel_ir = _base
         if verbose:
             print("[loop-opt] disabled for this program (pressure/spill)")
+
+    # ── R3.1: production software pipelining (oracle-gated, spill-safe) ──────────
+    # Wires the frozen R2.5->R2.8 pipeline into production. A loop is pipelined
+    # ONLY when the R3.0 oracle marks it profitable, R2.8 commits a validated
+    # pipeline, the clean-slot multi-seed differential confirms a definite 'match'
+    # against the original, AND the whole program still compiles with ZERO spills.
+    # Any failure keeps the proven `body` byte-for-byte (the whole block is guarded
+    # so an unexpected error can never change or break production output).
+    # APARA_NO_SWP=1 disables the pass.
+    _prod_ir = _sel_ir
+    if _sel_ir is not None and _tiers and not os.environ.get('APARA_NO_SWP'):
+        try:
+            from production_swp import apply_production_swp, format_profitability
+            _swp_ir, _swp_recs, _swp_sum = apply_production_swp(
+                _ir0, _sel_ir, global_base=global_base, verbose=False)
+            if _swp_sum.changed:
+                _cg2 = CodeGen(global_base=global_base)
+                _b2  = _cg2.generate(list(_swp_ir), global_base=global_base)
+                if not _cg2.spilled:            # zero-spill invariant re-checked
+                    body = _b2
+                    _prod_ir = _swp_ir
+                    if verbose:
+                        print("[swp]\n" + format_profitability(_swp_recs, _swp_sum))
+        except Exception:
+            pass                                # SWP never regresses the fallback
+
+    # ── R3.2: superblock / trace scheduling (enlarge scheduling regions) ────────
+    # Merges single-entry/single-exit straight-line block chains (e.g. a loop body
+    # and its IV-increment, split by a dead label) so the existing scheduler and
+    # bundler pack across them. Oracle-gated (scheduling headroom), and accepted
+    # only if the program still has ZERO spills AND the bundle count does not
+    # increase; otherwise the proven `body` is kept. The existing scheduler's own
+    # differential validation + rollback protect correctness. APARA_NO_SUPERBLOCK
+    # disables it. No speculation, no instruction duplication.
+    if _prod_ir is not None and _tiers and not os.environ.get('APARA_NO_SUPERBLOCK'):
+        try:
+            from trace_scheduler import (apply_superblock_scheduling,
+                                         format_superblock)
+            _sb_ir, _sb_sum = apply_superblock_scheduling(
+                _prod_ir, global_base=global_base, verbose=False)
+            if _sb_sum.accepted:
+                _cg3 = CodeGen(global_base=global_base)
+                _b3  = _cg3.generate(list(_sb_ir), global_base=global_base)
+                if not _cg3.spilled:
+                    body = _b3
+                    _prod_ir = _sb_ir
+                    if verbose:
+                        print("[superblock]\n" + format_superblock(_sb_sum))
+        except Exception:
+            pass                                # superblock never regresses either
+
+    # ── R4.0: vector-kernel capability report (ANALYSIS ONLY) ───────────────────
+    # Opt-in (APARA_VECTOR_REPORT), diagnostic only: reports which loops the vector
+    # infrastructure recognises as legal/profitable vectorizable kernels. It never
+    # inspects or changes `body`/`mcode` -- zero effect on generated code. Future
+    # milestones (R4.1+) will consume this same infrastructure to actually
+    # vectorize; R4.0 only builds and reports it.
+    if os.environ.get('APARA_VECTOR_REPORT') and verbose:
+        try:
+            from vector_profitability import analyze_profitability_module
+            _vk = [p for p in analyze_profitability_module(_ir0) if p.legality.legal]
+            if _vk:
+                print("[vector] legal vectorizable kernels (analysis only):")
+                for _p in _vk:
+                    print("   ", repr(_p))
+        except Exception:
+            pass
 
     header = ""
     if not no_startup:

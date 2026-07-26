@@ -41,7 +41,343 @@ battery). FP and the ❌ items are the remaining work.
 
 ---
 
-## 2026-07-19 — HANDOFF HARDENING: clone-and-use like gcc (Latest)
+## 2026-07-25 — LOOP-OPT FRAMEWORK M12: next-phase research design (Latest)
+
+DESIGN ONLY — nothing implemented; no existing code touched. Produced the
+evidence-driven research plan for the next project, grounded entirely in M11.
+Added `loopopt/m12_roadmap.html` (published Artifact); no .py/compiler change.
+
+CENTRAL THESIS: the limiter is lack of INDEPENDENT WORK in each scheduling window,
+not hardware/scheduler (ILP-saturation ~0%, reg peak 5/28). Win by EXPOSING
+parallelism at the IR level and letting the existing greedy bundler pack it —
+exactly what LoopTransform was built for. Framework split: Class A (IR
+restructuring: unroll, SWP-as-IR, if-convert, unswitch, fusion/fission,
+vectorize, reg-promote — framework-native, reuse M0–M4/M7 + MutationTransaction)
+vs Class B (scheduler-level: global/trace/superblock, true modulo reservation —
+needs new scheduler/bundler surgery, higher risk). Key move: emit an
+already-interleaved SWP kernel as IR (Class A) using the MII M3 ALREADY computes,
+avoiding a Class-B scheduler up front.
+
+BOTTLENECK→TECHNIQUE: 58% true deps → software pipelining + unrolling; 21% memory
+→ disambiguation + dependence graph; 20% control → if-conversion + global sched.
+Better LOCAL scheduling ranked LAST (0% ILP-sat = no local headroom; only
+work-creating or window-enlarging transforms help).
+
+ROADMAP R1 loop unrolling (LOW effort, large, enabler) · R2 dependence graph +
+memory disambiguation (foundational analysis) · R3 if-conversion/predication
+($cmov) · R4 software pipelining / swing modulo scheduling (flagship, HIGH) · R5
+global/superblock scheduling (Class B) · R6 vectorization ($v/$dot ISA). Each
+milestone has objective/deps/deliverables/validation/success in the Artifact.
+
+FIRST/SECOND/THIRD: unrolling → dependence-graph+disambiguation → software
+pipelining. TOP RISK: new opts have NO legacy byte-diff oracle and the M5
+verifier checks structure not data-flow — a differential-correctness harness
+(gcc golden + simulation) is a prerequisite. Full M0–M12 test suite green (12
+files, unchanged). M12 done — STOP; the framework project is complete.
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M11: quantitative evaluation
+
+EVALUATION ONLY — measures the frozen compiler, changes nothing (no pass/order/
+heuristic/schedule/bundling/codegen touched). Added `loopopt/m11_eval.py`
+(measurement harness), `loopopt/m11_report.py` (thesis-figure HTML generator),
+`loopopt/m11_results.json`, `loopopt/m11_report.html`. No existing file modified.
+
+Corpus: 124 C programs (44 loop-bearing, 79 loops). Metrics on the emitted machine
+code via the bundler's own scheduler/packer + built-in split-reason instrumentation.
+
+HEADLINE: mean IPB 1.81 (median 1.75, max 2.73) on the 8-lane VLIW ≈ 22% lane
+occupancy; 57% of bundles use ONE lane, 29% use two. The limiter is DEPENDENCY
+STRUCTURE, not hardware/bundler: of all bundle-split events 58.3% true-data/
+recurrence deps, 21.0% memory deps (MemAlias/MemPhase), 20.2% control-flow
+boundaries; hardware-lane 0.6% + ILP-saturation 0.0% ≈ nil. Max register-pressure
+peak 5 of 28 → pressure is NOT binding. Dominant per-program bottleneck = true-data-
+deps for all 124.
+
+PASS CONTRIBUTION (ablation through identical cleanup; avg over affected progs):
+IVSR −38% static / −40% bundles / +3.8% IPB (39 progs); LICM −34% / −36% / +4.3%
+(44); Rotation is an enabling transform (adds guard/latch → +size standalone, not
+in production). Production final over the 44 loop progs: +2.9% static, +7.2%
+bundles, +4.8% IPB (static understates it — loop-reg/preheaders trade one-time
+setup for per-iteration/dynamic savings a static count can't see).
+
+FRAMEWORK OVERHEAD: constant-factor (IVSR 2.8×, LICM 5.7× vs legacy) but ABSOLUTE
+negligible — sub-ms to ~1 ms/program vs mean compile 4.0 ms; 65 attempts, 46
+commits, 0 rollbacks, 0 verifier failures corpus-wide. CORRECTNESS: pipeline
+cross-check 124/124 IR+code+tier identical, 0/0/0. SCALING: small(<50) 0.8 ms avg,
+medium 3.0, large(>200) 15.8 (max 77) — no super-linear blow-up.
+
+FUTURE WORK (ranked by measured bottleneck, not speculation): 1 software
+pipelining / modulo scheduling (58% deps + 22% occupancy); 2 stronger alias
+analysis (21% mem deps); 3 global/cross-block scheduling (20% control); 4 loop
+unrolling (57% single-lane bundles); 5 aggressive/speculative LICM (only paired
+with #6); 6 enhanced register allocation (1 program spill-fell-back). Report +
+auto-generated figures published as an Artifact. Full M0–M11 suite green (12 test
+files). M11 done — do NOT begin M12.
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M10: production pipeline integration
+
+INTEGRATION milestone (no behaviour change): the migrated LoopTransform passes are
+now the CANONICAL production execution path. compiler.py's loop-opt stage
+previously called `ivsr.induction_strength_reduce` and `licm2.
+loop_invariant_code_motion` directly; it now imports both names from
+`loopopt.pipeline` (drop-in framework adapters). Every production loop
+transformation runs through LoopTransform + MutationTransaction + framework
+verification + rollback + shared analyses/legality/descriptors.
+
+Pass order UNCHANGED (IVSR → strength-reduce → LICM → loop-reg tiers, then the
+scalar-cleanup stage's opt-in LICM); no pass added/removed/reordered. The
+adapters preserve exact legacy contracts: non-mutating on the caller's list;
+`loop_invariant_code_motion` keeps licm2's APARA_LICM opt-in gate (default OFF =
+no-op; ON = framework LICM, byte-identical per M8). The fresh-temp counter
+`ivsr._iv_n` is NOT reset in the adapters (framework advances it identically to
+legacy, so tier-to-tier temp numbering is unchanged).
+
+OUT OF SCOPE (no framework migration yet, so unchanged legacy in the pipeline):
+`licm.hoist_loop_invariants` (the older ad-hoc load/address LICM, distinct from
+licm2) and `loop_reg.promote_loop_counters`. LoopRotation (M6) is a framework
+transform but was never in the production pipeline, so M10 does NOT insert it
+(that would be adding a pass). Legacy modules (ivsr.py, licm2.py, licm.py,
+loop_reg.py) retained untouched as specs/regression refs.
+
+Files added: `loopopt/pipeline.py` (drop-in adapters), `loopopt/pipeline_crosscheck.py`,
+`loopopt/_m10_test.py`. Modified: `compiler.py` (2 import lines only — legacy
+`from ivsr import ...` / `from licm2 import ...` → `from loopopt.pipeline import
+...`). No framework file changed (M0–M9 frozen; move()/replace_span() already in place).
+
+END-TO-END PIPELINE CROSS-CHECK (pipeline_crosscheck.py — reconstructs compiler.py's
+6-tier loop-opt pipeline parameterised by the IVSR/LICM impls, runs legacy vs
+framework per program, resets all three pass counters ivsr._iv_n/mem2reg._m2r_n/
+loop_reg._lr_n before each build so numbering is comparable): 124/124 programs,
+744 tiers — per-tier IR MATCH 124, generated-code MATCH 124, selected-tier MATCH
+124, 0 IR/code/tier mismatches, 0 framework verifier failures, 0 rollbacks. PASSES
+with the opt-in LICM gate BOTH OFF (default) and ON (APARA_LICM=1). Real end-to-end
+`python3 compiler.py <file>` compiles clean through the integrated path (mincall,
+d2_array_add: [OK], valid mcode). Full M0–M10 suite green (12 files); M8/M9
+cross-checks still 124/124. STOP after M10 — do not begin M11.
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M9: IVSR migrated onto the framework
+
+Second pass MIGRATION onto the M5 framework. `LoopIVSR(LoopTransform)` reproduces
+`ivsr.py` (Induction-Variable / pointer Strength Reduction) — maintain each
+IV-linear address in ONE register initialized in a preheader and stepped by
+`p += step`, replacing per-iteration multiply+offset+base-materialization —
+byte-for-byte, running through the framework. Architectural consolidation, NOT an
+optimization change: NO heuristic/profitability/legality changes, no new opt.
+ivsr.py stays as the SPECIFICATION and A/B baseline.
+
+REUSE over reimplementation (max fidelity, min risk): `ivsr._process_loop` is a
+PURE planner (reads IR, RETURNS a new list, never mutates in place), so LoopIVSR
+calls it DIRECTLY as its planner and routes the resulting region rewrite through
+the framework as one reversible `replace_span`. Nothing is duplicated — IV
+detection, invariance, decomposition, cloning, profitability AND the module-global
+fresh-temp numbering (`ivsr._iv_n`) are all the spec's own code, so identical by
+construction. `ivsr.dead_temp_elim` (whole-program cleanup, not a loop transform)
+reused verbatim as the post-pass. Shared DefUse supplies single-def/multi-name.
+
+The ONLY framework addition M9 needed: `MutationTransaction.replace_span(start,
+end, new)` — inclusive-range slice replacement (grow/shrink/rewrite in one edit);
+rollback is automatic via the saved order snapshot, same as splice(). (M8 added
+move(); M9 adds replace_span(); framework otherwise untouched.)
+
+Faithful control flow: `ivsr_module` mirrors `induction_strength_reduce` exactly —
+fixpoint (<=200 rounds), each round re-enumerate loops smallest-region-first,
+apply the FIRST that progresses, restart; then dead_temp_elim once. Enumeration
+comes from the SHARED M0 DESCRIPTORS (discover_function): each loop's region =
+(header-label index .. back-edge index), sorted by (size, e, s) — VERIFIED
+identical to `_find_loops`'s order across the whole corpus (44 loop files, 79
+regions, 0 multi-latch). This order is load-bearing: `_process_loop` bumps
+`ivsr._iv_n` on every candidate-bearing attempt (incl. profitability rejects and
+re-attempts), so preheader temp names depend on the exact attempt sequence; the
+framework rolls back IR on no-op/verify-fail but never the counter, matching ivsr.
+
+Files added: `loopopt/loop_ivsr.py` (LoopIVSR, IVSRReport, ivsr_module),
+`loopopt/ivsr_crosscheck.py`, `loopopt/_m9_test.py`. Modified:
+`loopopt/transform.py` (+replace_span()), `loopopt/__init__.py` (exports only).
+ivsr.py NOT modified (spec frozen).
+
+BEHAVIOURAL CROSS-CHECK (ivsr_crosscheck.py, whole corpus, ivsr vs M9 on
+independent deep copies, `ivsr._iv_n` reset to 0 before each, compared by
+per-instruction repr): 124/124 programs produce IDENTICAL IR, 0 MISMATCH, 17
+loops strength-reduced, 0 framework verifier failures, 0 rollbacks. Full M0–M9
+suite green (11 files). NOT wired into the compile pipeline (like M6/M8) — opt-in
+via ivsr_module. STOP after M9 delivery — no loop_reg migration yet (M10, await
+approval).
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M8: LICM migrated onto the framework
+
+First pass MIGRATION onto the M5 framework. `LoopLICM(LoopTransform)` reproduces
+`licm2.py`'s conservative loop-invariant code motion — hoist PURE, single-dest,
+non-memory, non-float computations to the existing preheader — but runs entirely
+through the framework: every edit goes through MutationTransaction, the framework
+owns rebuild/verify/rollback/stats, and discovery/nesting come from the shared M0
+descriptors. It is an architectural consolidation, NOT a new optimization; memory
+hoisting / aliasing / PRE / speculation / edge-splitting stay out of scope exactly
+as in licm2. licm2.py stays as the SPECIFICATION and A/B baseline (APARA_LICM).
+
+The ONLY framework addition M8 needed: `MutationTransaction.move(src, dst)` — an
+additive relocation primitive (pop src / insert dst, dst<=src, matching licm2's
+`del; insert` idiom). Because it only reorders existing objects, the txn's saved
+order snapshot already rolls it back exactly (no new bookkeeping).
+
+Faithful reproduction: `LoopLICM.run()` applies AT MOST ONE hoist per attempt
+(licm2's exact invariant-fixpoint + per-instruction whitelist/legality order),
+and `licm_module()` drives the outer fixpoint with licm2's IDENTICAL loop ordering
+(stable sort on -max(depth over body blocks)) and restart-after-each-hoist — so
+the decision sequence, and the final IR, match instruction-for-instruction. The
+per-instruction whitelist (_HOIST_KINDS/_is_float/_TERMS) is copied verbatim from
+licm2; loop-level legality (unique preheader that dominates the header) is the
+shared M7 `has_unique_preheader` + a dom check. LICM legality is per-INSTRUCTION,
+so it lives in the pass (M7 predicates are loop-level) — no design change.
+
+Files added: `loopopt/loop_licm.py` (LoopLICM, LICMReport, licm_module),
+`loopopt/licm_crosscheck.py`, `loopopt/_m8_test.py`. Modified:
+`loopopt/transform.py` (+move()), `loopopt/__init__.py` (exports only).
+
+BEHAVIOURAL CROSS-CHECK (licm_crosscheck.py, whole corpus, licm2 vs M8 on
+independent deep copies, compared by per-instruction repr): 124/124 programs
+produce IDENTICAL IR, 843 instructions hoisted on EACH side, 0 MISMATCH, 0
+framework verifier failures, 0 rollbacks. Full M0–M8 suite green (10 files).
+M8 does NOT wire LICM into the compile pipeline (like M6 rotation) — it is the
+migrated, unit-tested, corpus-verified pass, opt-in via licm_module. STOP after
+M8 delivery — no IVSR/loop_reg migration yet (await M9 approval).
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M7: Legality framework (shared predicates)
+
+Reusable, fact-only LEGALITY predicates shared by all future loop transforms.
+NOT a pass, performs no transformation: centralizes the legality logic that was
+embedded in LoopRotation so every transform asks the same questions the same way.
+
+Files added: `loopopt/legality.py` (LegalityFact, evaluate(), the predicate menu),
+`loopopt/_m7_test.py`. Modified: `loopopt/rotate.py` (legal() now COMPOSES shared
+predicates; inline legality removed), `loopopt/__init__.py` (exports only).
+
+Predicates (each returns a LegalityFact, truthy when the property holds; `known`
+flag False when the backing analysis was unavailable): has_labeled_header,
+is_top_tested, is_bottom_tested, has_unique_preheader, has_single_latch,
+has_explicit_backedge, has_dedicated_exits (reuses M4 _shared_exit_edges),
+has_side_effect_free_header, header_has_single_exit_test,
+guard_inputs_loop_independent, and the analysis-backed has_clean_iv (M1 IV),
+memory_safe (M2 MemEffects), profile_suitable (M3 Profile) -- these annotate the
+descriptor on demand (reuse, no duplication). `evaluate(desc, [preds])` returns
+the first failing fact; a transform composes exactly the predicates it needs.
+
+LoopRotation.legal() is now `evaluate(desc, _ROTATION_LEGALITY)` over 8 shared
+predicates whose conjunction is logically identical to the old inline checks.
+CROSS-CHECK (canonicalize+rotate whole corpus, before vs after refactor):
+IDENTICAL -- 73 rotations, 7 skips, 0 verifier failures, 0 rollbacks, 0 semantic
+mismatches, all 80 loops verify clean. Composed legal() ~20 us/call (pure
+descriptor-field predicates; <0.1% of the ~23 ms/loop transaction).
+
+Note: a single-block self-loop do-while is classified TOP_TESTED by _classify_shape
+(the header both tests and loops); such loops are still not rotated because their
+header carries stores (has_side_effect_free_header fails) -- unchanged behavior.
+
+Full M0–M7 suite green (9 files). STOP after M7 -- NO LICM/IVSR migration, no other
+optimization (await M8 approval).
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M6: Loop Rotation (first concrete transform)
+
+First real optimization pass. `LoopRotation(LoopTransform)` runs ENTIRELY through
+the M5 framework (MutationTransaction / framework rebuild / LoopVerifier / rollback
+/ CFGDiff / TransformStats) — no framework change, no direct IR mutation. Turns a
+canonical top-tested while loop into a guarded do-while.
+
+Files added: `loopopt/rotate.py` (LoopRotation + RotationReport + rotate_module),
+`loopopt/_m6_test.py`. Modified: `loopopt/__init__.py` (exports only).
+
+IDENTITY-PRESERVING formulation (the M5 framework re-locates a loop by HEADER
+LABEL): the old header is REUSED IN PLACE as the entry guard (relabeled hlbl->gl,
+its in-loop edge pointed at a new header forwarder H2 that keeps label hlbl); the
+guard test is deep-copied ONCE into a new bottom-test block L2 (the new single
+latch); the back edge is routed through L2. No dead block. Header condition
+duplicated so every predecessor of the body defines what the body/exit use ->
+semantics preserved on all paths. legal() uses ONLY existing analyses/descriptor
+facts (shape==TOP_TESTED, single explicit-back-edge latch, unique preheader, pure
+side-effect-free header ending in one condjump, labeled in-loop+exit successors,
+guard inputs not defined in the body). postcondition = BOTTOM_TESTED + single latch.
+
+BUG found+fixed during build: first formulation left the old header as a DEAD block
+that still had forward edges into the body, so the natural-loop backward flood
+pulled it into the loop body -> header-dominance + reachability verifier violations
+(framework correctly rolled it back). Fix: reuse old header as guard (no dead block).
+
+Validation (`_m6_test.py`): simple while, already-rotated/idempotent skip, nested
+(2 rotations, nesting preserved), do-while skip, short-circuit (&&: outer test
+rotated, inner kept in loop), multiple exits (break preserved), illegal (header
+side effect) skip, rollback (postcondition-fail -> byte-identical revert) — all
+green; each checks CFGDiff + verifier + descriptor regen + semantic equivalence.
+Full M0–M6 suite green (8 files). CORPUS (126 files, 80 loops; canonicalize then
+rotate through the framework): 74 top-tested pre-rotation, **73 rotated, 7 skipped
+(1 bottom-tested + 5 irregular + 1 top-tested with a side-effecting header:
+d11a_ctrl.c), 0 verifier failures, 0 rollbacks, 0 semantic mismatches, ALL 80
+verify clean post-rotation.** Rotation NOT wired into compile_c_to_mcode (M6 is the
+pass + tests + corpus analysis only). ~23 ms/loop (incl. canon + deepcopy snapshot
++ rebuilds). STOP after M6 — LICM / migrations / any further optimization NOT
+started (await M7 approval).
+
+## 2026-07-25 — LOOP-OPT FRAMEWORK M5: LoopTransform framework (infrastructure only)
+
+Generic transaction substrate every future loop optimization runs through. M5
+implements NO optimization (no rotation/LICM/unswitch/peel/unroll/pipeline/IVSR-
+or-LICM-migration) and ships ZERO passes — only reusable infrastructure.
+
+Files added: `loopopt/transform.py` (LoopTransform base, MutationTransaction,
+TransformResult, TransformStats, LoopTransformDriver, PassRegistry),
+`loopopt/_m5_test.py`. Modified: `loopopt/__init__.py` (exports only).
+
+The driver owns the ONE transaction protocol — begin → apply mutation → invalidate
+→ rebuild (the sole analysis-regeneration point: `discover_function`) → run
+LoopVerifier → commit / rollback — so no transform ever duplicates it. A transform
+supplies only `legal()`, `run(instrs,lo,desc,txn)` (edits go THROUGH the txn), and
+optional `postcondition()`. Reuses M4 mutation primitives (canonicalize._retarget/
+_slice_end/_fresh_label). Rollback = undo recorded field edits + restore the list
+snapshot → byte-identical IR. A faithful before/after LoopDiff comes from an
+INDEPENDENT deep-copied slice snapshot (so field retargets don't corrupt it).
+Epoch = monotonic invalidation token, bumped per commit; stale descriptors are
+never reused. The M4 canonicalizer is FROZEN — not migrated onto the framework
+(that would be a redesign; it's a later additive step). PassRegistry ships empty.
+
+Validation (`_m5_test.py`, dummy transforms only): commit+diff+stats, rollback via
+postcondition failure, rollback via lost loop identity, VERIFIER VETO via injected
+failing verifier (proves verifier integration), no-op skip, illegal skip,
+registration, and a MutationTransaction field-edit+splice rollback unit — all
+green. Full M0–M5 suite green (7 files). Framework probe over all 80 real corpus
+loops (throwaway dummy, NOT wired into the pipeline): 80/80 commit, 0 rollbacks,
+0 verifier failures, ~1.74 ms/attempt (deepcopy snapshot + 2 rebuilds + verify).
+STOP after M5 — Loop Rotation (M6) and all real passes NOT started (await M6 approval).
+
+## 2026-07-24 — LOOP-OPT FRAMEWORK M4: LoopCanonicalizer + CFG-diff tool (superseded as Latest by M5)
+
+First IR-MUTATING milestone of `compiler/loopopt/`. Purely STRUCTURAL loop
+canonicalization — no rotation/LICM/IVSR/peeling/unrolling/unswitching. Built on
+the frozen M0–M3 analysis layer (LoopDescriptor / LoopVerifier / CFG / Dom /
+LoopInfo / InductionVars / MemEffects / Profile); recomputes none of it.
+
+Files added: `loopopt/cfgdiff.py` (CFG-differencing DEVELOPER tool — blocks/edges
+added/removed, header/latch/exit/preheader changes, label-keyed identity),
+`loopopt/canonicalize.py` (LoopCanonicalizer + CanonReport), `loopopt/_cfgdiff_test.py`,
+`loopopt/_m4_test.py`. Modified: `loopopt/__init__.py` (exports only).
+
+Canonical form = LoopSimplify: (1) dedicated preheader, (2) single latch,
+(3) dedicated exits. Each independently gated on its property already being
+false ⇒ already-canonical loops are touched zero times. Exit normalization is
+OPT-IN (`normalize_exits=True`, default OFF) so the default is a total no-op on
+the corpus. Correctness protocol: every single mutation is transactional —
+snapshot, splice, **rebuild CFG/Dom/LoopInfo/LoopDescriptors from scratch**, run
+LoopVerifier, and ROLL BACK on any violation. Never trusts a stale descriptor.
+
+Validation: full M0–M4 suite green (M0/M1/M2/M3 + `_cfgdiff_test` + `_m4_test`).
+M4 covers already-canonical/missing-preheader/multi-preheader-edge/multi-latch/
+nested/do-while/short-circuit/multi-exit/opt-in-exit/irreducible/no-change; each
+checks CFG-diff + verifier + descriptor regen + semantic equivalence (a small
+branch-executing IR interpreter, since eval_ir bails on branches). Corpus (126
+files, 80 natural loops): 80/80 verify clean before AND after, **0 loops
+modified, 0 rollbacks** with defaults — a true no-op, exactly as intended.
+Opt-in exits would touch exactly 1 loop corpus-wide (testing/universal/c4.c, a
+`break` sharing the loop-condition exit). Perf: 0.138 ms/loop. STOP after M4 —
+LoopTransform/PassManager/rotation/LICM-migration NOT started (await M5 approval).
+
+## 2026-07-19 — HANDOFF HARDENING: clone-and-use like gcc
 
 For a clean handoff (works on any machine, no tribal knowledge):
 - **`apara-cc`** — gcc-like front door: `./apara-cc prog.c --run` compiles,
@@ -3764,3 +4100,261 @@ Full regression suite (pass/fail; new vs pre-existing failures), instruction
 count (N), bundle count (B), register pressure (peak/free), spill count,
 executed-instruction count — both improvements and regressions, small loops
 watched.
+
+---
+
+## R2.1 — Reusable IR Dependence Graph Infrastructure  (2026-07-25) ✅ DONE
+
+**Analysis-only.** No IR / assembly / bundle / tier-selection change; bundler,
+`LoopUnroll`, and every pass frozen. Full report: `loopopt/R2_1_DELIVERY.md`.
+
+- **Added** `loopopt/depgraph.py` — `DependenceGraph` (+`DepNode`/`DepEdge`) over
+  IR instructions, per function slice. Register RAW/WAR/WAW; memory RAW/WAR/WAW
+  via the **M2** `_access_key` classifier + `AliasSummary.may_alias` oracle;
+  minimal control ordering (terminator pinned last); loop-carried **recurrence**
+  edges via **LoopInfo**, held separately (`carried` flag + loop header) from
+  intra-iteration edges. API: nodes/edges, pred/succ (filterable), Tarjan
+  `sccs()`, `recurrences()`, `topo_order()`/`is_acyclic()`, `validate()`,
+  `dump()`, `to_dot()`; `build_function_graphs()` for whole modules.
+- **Reused (no duplication):** `ir_utils` primitives, `DefUse`, `CFG`,
+  `Dominators`, `LoopInfo`, and M2 `analysis_mem` (`_access_key`, `AliasSummary`).
+- **Modified:** `loopopt/__init__.py` — additive export only.
+- **may-precede fix (soundness):** a single-block loop body is on a CFG cycle, so
+  same-block pairs `i>j` may precede around the back edge — required to capture
+  accumulator/IV recurrences internal to one block (e.g. `s += p[i]`).
+- **Validation:** `_r2_1_test.py` 40/40; `depgraph_corpus.py` 124 progs / 194
+  functions → 194 graphs, 0 build errors, 0 validate failures, **0 IR mutations**,
+  124/124 compile+bundle (23782 edges: reg 6156 / mem 13019 / ctl 4607; 2544
+  carried; 81 recurrences); `pipeline_crosscheck.py` 124/124 identical per-tier
+  IR + code + selected tier, 0 rollbacks, **both** LICM gate states.
+- **Not done (by design):** not wired into any pass; no scheduling / list
+  scheduling / SWP / modulo scheduling; alias precision left conservative
+  (computed = alias-all, calls = full barrier) for R2.2 disambiguation to sharpen.
+
+---
+
+## R2.2 — Memory Dependence Disambiguation  (2026-07-25) ✅ DONE
+
+**Analysis-only, precision-only.** No IR / assembly / bundle / tier / behaviour
+change; DependenceGraph, LoopTransform, bundler, LoopUnroll frozen. Full report:
+`loopopt/R2_2_DELIVERY.md`.
+
+- **Added** `loopopt/depgraph_disambig.py` — `MemoryDisambiguator` plugged into
+  the R2.1 graph via the optional `disambiguator=` hook. `classify(i,j,carried)`
+  → disjoint / proven / conservative. Rules (each provably safe under M2's model):
+  (1) clean-slot — a non-escaping local slot can't be aliased by computed/global/
+  call; (2) distinct-local-objects — `&a` vs `&b` non-overlapping; (3) same-base
+  SIV — same base value + offsets affine in the same IV with equal scale: intra
+  disjoint iff const parts differ, carried disjoint unless const-diff is a nonzero
+  multiple of stride=scale·step (needs known nonzero step; `a[i]` vs `a[i]` has no
+  carry). Everything else conservative; genuine edges tagged `proven`.
+- **Reused (no duplication):** M1 `basic_ivs`/`iv_terms`, M2 `clean_slots`/
+  `written_keys`/`_access_key`/`may_alias`, DefUse `single_defs`, M0 `discover`.
+- **Modified (additive):** `depgraph.py` — `DepEdge.proven/reason`, optional
+  `disambiguator=` + eliminated counters, inline memory intra/carried emission
+  (no-disambiguator path byte-identical to R2.1, verified mem=13019), query
+  helpers. `__init__.py` exports. Default R2.1 output & tests unchanged.
+- **Results (R2.1→R2.2):** memory edges 13019→8271 (**4748 eliminated, 36.5%**);
+  loop-carried 2544→1977 (567 false carried pruned); surviving 2088 proven /
+  6183 conservative. Elim by reason: clean-slot-vs-global 2691, clean-slot-vs-
+  computed 1375, clean-slot-vs-call 449, distinct-const-offset 162, distinct-
+  local-objects 69, siv-self-index-no-carry 2.
+- **Soundness:** R2.2 memory edges are a strict SUBSET of R2.1's (only drops,
+  never adds/redirects); register/control edges identical — verified per-function
+  across all 194 functions (0 subset violations, 0 rc diffs).
+- **Validation:** `_r2_2_test.py` 39/39; `depgraph_r22_corpus.py` 124/194 0
+  violations/0 mutations/124-124 compile+bundle; R2.1 40/40 + corpus + pipeline
+  124/124 0 rollbacks all unchanged.
+- **Not done (by design):** graph not consumed by any pass; no scheduling /
+  critical-path / SWP / modulo; `a[i+1]`-style ±const-in-index + MIV + symbolic
+  base disambiguation left conservative for a future step. R2.3 not started.
+
+---
+
+## R2.3 — Dependence-Aware IR Scheduler  (2026-07-25) ✅ DONE
+
+**First optimisation that consumes the DependenceGraph.** Reorders IR *within
+basic blocks only*, semantics-preserving. Standalone pass (NOT wired into
+production compiler.py — shipped output frozen, pipeline crosscheck 124/124
+identical). Full report: `loopopt/R2_3_DELIVERY.md`.
+
+- **Added** `loopopt/schedule.py` — `schedule_module()` critical-path list
+  scheduler over the R2.2 graph. Per block: pin leading label/func-begin +
+  trailing terminator; constraints = NON-carried intra-block edges (RAW/WAR/WAW/
+  MEM/CONTROL, all low→high so DAG acyclic); priority = dependency height
+  (critical path), tie-break smallest original index (deterministic). Carried
+  edges respected BY CONSTRUCTION (intra-block reorder can't cross the back-edge;
+  adding them would cycle with intra partners). Guarded by internal topo verifier
+  + `ir_interp.differential` per-function, rollback on mismatch.
+- **Reused:** R2.1 DependenceGraph, R2.2 MemoryDisambiguator (fewer false mem
+  edges → more freedom), ir_interp differential oracle, func_slices.
+- **Modified (additive):** `__init__.py` exports only.
+- **Corpus:** 124 progs / 194 fns (128 changed), 1064 blocks (349 reordered),
+  2591 instrs reordered; 0 verifier-fail / 0 rollbacks / 0 compile-fail / 0
+  behaviour-mismatch; 119 differentially verified + 75 unsupported(legal-by-constr).
+- **Perf (R2.2→R2.3):** bundler-ON (production) bundles 6498→6218 (−280, −4.3%),
+  IPB 1.829→1.915; bundler-OFF (isolates scheduler) bundles 7858→7102 (−9.6%),
+  IPB 1.512→1.677 (+10.9%). Static +24 (reg-alloc), spills 0→0. FIRST R2 IPB gain
+  (R1.x unroll was flat) — scheduling targets the M11 ILP-exposure bottleneck.
+- **Not done (by design):** not pipeline-wired; no cross-block/global sched, no
+  SWP/modulo/trace/superblock; latency-weighted height + reg-pressure tie-break
+  are R2.4+. `_r2_3_test.py` 34/34; R2.1/R2.2 + pipeline all unchanged.
+
+---
+
+## R2.4 — Scheduler Quality Improvements  (2026-07-25) ✅ DONE
+
+**Additive quality upgrades to the R2.3 block scheduler** (no redesign; still
+standalone/not production-wired; pipeline crosscheck 124/124 identical). Full
+report: `loopopt/R2_4_DELIVERY.md`.
+
+- **Modified (additive)** `loopopt/schedule.py` — `SchedPolicy` (R23 reproduces
+  R2.3 exactly; R24 = new default), plus 4 features:
+  (F1) **latency-aware** critical path: `_latency` ISA-conservative (load/mul 3,
+  div/%/fsqrt 8, call 5, vec 2–4, else 1); height = latency+max(succ).
+  (F2) **register-pressure** tie-break BELOW height (never sacrifices critical
+  path): prefer ready node with max deaths−births (frees > defines); reuses
+  `compute_liveness` live-out + in-block use counts.
+  (F3) **bundle-aware** tie-break: light lane-cap model (≤4 ld/st, ≤1 div/sqrt,
+  8 total) mirrors bundler limits (knowledge, not code); informs tie-break +
+  utilisation estimate only.
+  (F4) **statistics** on ScheduleStats: crit-path, avg ready size, pressure peak,
+  movement (sum/max), est bundle util, metriced blocks.
+  Determinism preserved (final −index tie-break). `__init__.py` exports SchedPolicy.
+- **Reused:** R2.1/R2.2 graph (unchanged), compute_liveness, ir_utils def/use,
+  ir_interp differential, bundler's documented lane caps.
+- **Corpus (baseline→R2.3→R2.4, bundler ON):** static 11885→11909(+24)→11889(+4)
+  — pressure work cut codegen bloat +24→+4; bundles 6498→6218→**6188** (R2.4 −30
+  vs R2.3); IPB 1.829→1.915→**1.921**; spills 0 throughout. 132 fns changed
+  (vs 128), 2858 instrs moved (vs 2591); 0 rollbacks/0 structural/0 mismatch both
+  policies. Scheduling time 0.39s→0.48s (liveness+richer priority; trivial).
+- **Validation:** `_r2_4_test.py` 33/33; R2.1/R2.2/R2.3 unit+corpus + pipeline all
+  unchanged (R2.3 tests pass under R2.4 default — not weakened).
+- **Not done (by design):** not production-wired; no cross-block/SWP/modulo;
+  hardware-accurate latency table + pressure-ceiling + slack-based priority are
+  future local-quality work; SWP/modulo (uses R2.1 recurrence edges) is the next
+  architectural milestone, not started.
+
+---
+
+## R2.5 — Software Pipelining (Modulo Scheduling)  (2026-07-26) ✅ DONE
+
+**First optimisation that schedules across loop iterations.** Standalone (NOT
+production-wired; pipeline crosscheck 124/124 identical). Correctness mandatory:
+analysis phases mutation-free; generation gated by structural + multi-seed
+differential + compile, rollback otherwise. Full report: `loopopt/R2_5_DELIVERY.md`.
+
+- **Added** `loopopt/modulo.py` (5 phases): eligibility (one innermost top-tested
+  counted loop, single preheader/latch/exit, clean IV, no calls) + kernel model;
+  **Phase 1** RecMII (Bellman-Ford min-II no-positive-cycle over recurrence edges,
+  distance 1) / ResMII (caps 8/4/1) / MII; **Phase 2** iterative modulo scheduler
+  + ReservationTable + verify_schedule; **Phase 3** realise known-trip schedule by
+  linearising over T iterations (instance at it*II+cycle, per-iteration temp
+  banks = MVE by renaming, shared memory slots self-serialise recurrences) →
+  prologue/kernel/epilogue; **Phase 4** gate; **Phase 5** ModuloStats.
+- **Reused:** M0-M3 descriptors, R2.1 graph+recurrence edges, R2.2 disambig, R2.4
+  latency/class/caps, ir_interp differential. `__init__.py` exports.
+- **CRITICAL BUG FIXED mid-dev:** pipeline_module first rebuilt output from
+  func_slices only → DROPPED global decls (before first IRFuncBegin) → other
+  functions read 0 for globals → 3 corpus behaviour mismatches. Fix: preserve
+  non-function regions (globals/inter-fn) via prev_end tracking. The in-gate
+  differential validated the correctly-spliced `new`; only final reassembly was
+  broken. Lesson: rebuilding a module from func_slices loses out-of-function code.
+- **Corpus:** Phase 1: 45/79 eligible, **42 RecMII-bound vs 2 ResMII** (memory
+  IV/accumulator recurrences ≈5 dominate), MII hist {5:34,...}. Phase 3-4: 12
+  pipelined / 26 declined / 7 rolled-back (trip-not-known 21, diff-rollback 7,
+  single-stage 2, trip-too-small 3); **0 mismatches / 0 compile failures**; avg
+  stages 2.3.
+- **Perf (baseline→R2.3→R2.4→R2.5, bundler ON):** static 11885→11889→**13188**,
+  bundles 6498→6188→**6759**, IPB 1.829→1.921→**1.951** (highest), spills 0→**2**.
+  Honest tradeoff: full-unroll realisation trades CODE SIZE (static up) for ILP
+  (IPB highest; isolated sum loop 1.36→2.9) + fewer dynamic iterations; compact
+  kernel-loop MVE = future work.
+- **Not done (by design):** not production-wired; no compact kernel loop / no
+  symbolic-trip / no register-promotion of recurrences (the RecMII enabler) / no
+  cross-BB/trace/superblock/hyperblock/speculation. `_r2_5_test.py` 30/30; R2.1-4
+  + pipeline all unchanged.
+
+---
+
+## R2.6 — Loop Register Promotion  (2026-07-26) ✅ DONE
+
+**Attacks R2.5's RecMII bottleneck: memory-backed loop-carried recurrences →
+register recurrences.** Runs BEFORE R2.5, never modifies it. Standalone (NOT
+production-wired; pipeline crosscheck 124/124 identical). Full report:
+`loopopt/R2_6_DELIVERY.md`.
+
+- **Added** `loopopt/loop_promote.py`. Promotable = CLEAN slot (M2 clean_slots =
+  no alias/escape), loaded + EXACTLY ONE store, one width, in a single-preheader/
+  latch/exit loop with no calls. Transform = the codegen-safe IRAssign-move shape
+  PROVEN on hardware by production loop_reg: preheader `P=load(&X)`, body load
+  `t=*(&X)`→`t=P`, body store `*(&X)=v`→`P=v`, exit `store(&X)=P`; drop dead
+  loadaddrs. Promotes IV + accumulators (sum/prod/min/max). RecMII before/after +
+  mem-recurrence-removed computed from the R2.1 graph (graph-based so it works
+  after the IV loses its memory form).
+- **Reused:** M0-M3 descriptors + M2 clean_slots (the correctness PROOF), R2.1
+  graph/R2.2 disambig, R2.5 modulo (rec_mii/KernelModel/_compiles, consumed not
+  modified), ir_interp. `__init__.py` exports.
+- **Correctness:** register promotion of a CLEAN slot is sound by M2 escape
+  analysis (nothing but the promoted load/store touches it). Gate = structural +
+  clean-slot-respecting multi-seed differential (pointers kept NON-NEGATIVE so
+  they can't fabricate impossible aliasing with the negative clean slot -- the
+  false-reject bug I hit) + compile; 'unsupported' (call outside loop aborts
+  interp) accepted on the clean-slot proof (like loop_reg), only 'mismatch'
+  rolls back. Determinism needs `_rp_n` reset per driver call (ivsr._iv_n lesson).
+- **Corpus:** 124 progs/57 loops, 48 promotable, **46 promoted** (33 diff-verified
+  + 13 proof-only), 2 rollbacks, **0 mismatches**, **198 mem recurrences removed**,
+  **RecMII 5.48→3.67**, 98 fewer loop-body memory ops. `_r2_6_test.py` 24/24.
+- **Perf (baseline→R2.3→R2.4→R2.5→R2.6):** static 11885→...→11983, bundles 6498→
+  6527, IPB 1.829→1.836, spills 0. STATIC ~flat (register promotion is a DYNAMIC
+  win = fewer executed loads/iter, not static bundles).
+- **KEY LIMITATION (honest):** R2.6→R2.5 does NOT compose in the GENERATOR —
+  R2.5's build_kernel needs a MEMORY-slot counted IV (M1 is memory-based);
+  promoting the IV removes it → R2.5 declines promoted loops (pipeline coverage
+  12→2). RecMII win realised in ANALYSIS + for local R2.3/R2.4 scheduler, not
+  R2.5's generator. NEXT = teach R2.5/M1 register IVs (out of scope, R2.5 frozen).
+- **Not done (by design):** no SSA reconstruction / mem2reg / speculative /
+  alias-speculation / rotating-regs / MVE / production-integration / prior-pass
+  changes.
+
+---
+
+## R2.7 — Register-Aware Software Pipelining  (2026-07-26) ✅ DONE
+
+**Integrates R2.6 into R2.5: extends ONLY R2.5's recognition layer so the modulo
+scheduler pipelines register-recurrence loops.** Consumes R2.5/R2.6 unmodified;
+no MVE/rotating regs/scheduler redesign. Standalone (not production-wired;
+pipeline crosscheck 124/124 identical). Full report: `loopopt/R2_7_DELIVERY.md`.
+
+- **Added** `loopopt/pipeline_regaware.py`. KEY: R2.5's ONLY memory-IV assumption
+  is build_kernel eligibility `primary_iv is None or trip==UNKNOWN`; everything
+  else structural, and the graph already has register recurrence edges. R2.7
+  recognition: analyse ORIGINAL (M1 trip T) → R2.6 promote → NORMALISE promoted
+  desc (trip_count=KNOWN(T) carried over, sentinel primary_iv) → feed R2.5
+  build_kernel/modulo_schedule UNCHANGED (RecMII 5→3, II 5→3). `LoopRecurrence`
+  canonical abstraction (memory/register, from carried edges).
+- **CRITICAL realization fix:** R2.5 generate_pipeline renames ALL temps per
+  iteration → BREAKS register recurrence (each iter accumulates into independent
+  reg → sum=0). Memory recurrences survive because the SLOT is shared/unrenamed.
+  Fix = keep loop-carried registers SHARED (identity across banks) via
+  `realize_register_pipeline` that PRE-SEEDS R2.5's `_clone_op` cache so
+  recurrence temps (resources of carried RAW edges) map to themselves; everything
+  else expanded per-iter. Reuses _clone_op EXACTLY (one clone routine, only cache
+  seed differs mem vs reg). NOT MVE (no rotating regs/compact kernel — shared
+  loop-carried storage of a full unroll, same as R2.5 does for memory slots).
+- **Reused:** R2.5 build_kernel/min_ii/modulo_schedule/_clone_op/generate_pipeline
+  (memory form)/PipelineResult/_compiles, R2.6 promote_function/_promote_diff
+  (clean-slot-respecting gate). Determinism = reset loop_promote._rp_n per driver.
+- **Gate:** structural + clean-slot multiseed diff (promoted-vs-pipelined +
+  end-to-end original-vs-pipelined) + compile, rollback on mismatch. Prefer
+  register form (lower II); fall back to memory form (Case A) same code path.
+- **COVERAGE (headline):** R2.5 alone 12 → R2.6→R2.5 **2** (the regression) →
+  **R2.7 17** (13 register + 4 memory). 0 mismatches, 1 rollback. Recovers AND
+  EXCEEDS R2.5 (lower register II makes more loops profitable, stages≥2).
+- **PERF (baseline→R2.4→R2.5→R2.7):** static 11885→13651, bundles 6498→6894, IPB
+  1.829→1.921→1.951→**1.980 (HIGHEST of series)**, spills 0→2→3. Costs: more
+  full-unroll code + 3 spills (honest code-size-for-ILP trade). `_r2_7_test.py`
+  20/20.
+- **Not done (by design):** full-unroll only (compact kernel loop needs MVE, out
+  of scope), symbolic-trip declined, no prior-pass/scheduler/regalloc/bundler
+  redesign, no production integration.
