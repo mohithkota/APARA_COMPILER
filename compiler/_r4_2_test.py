@@ -233,13 +233,13 @@ def test_rejections():
     cases = {
         # ordinary (unpacked) arrays cannot be gathered/scattered
         'unpacked': ("long long f(){int a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]+b[i];return c[0];}",
-                     'unpacked-array-stride'),
+                     'contiguous-store'),
         # divide is not an elementwise VALU op
         'divide': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]/b[i];return c[0];}",
                    'unsupported-operator'),
         # a second array store in the body
         'two-stores': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++){c[i]=a[i]+b[i];b[i]=a[i];}return c[0];}",
-                       'expect-exactly-one-array-store'),
+                       'expect-exactly-one-contiguous-store'),
         # trip smaller than 2*lanes is not worth the remainder
         'small-trip': ("long long f(){vi8_t a[8],b[8],c[8];int i;for(i=0;i<8;i++)c[i]=a[i]+b[i];return c[0];}",
                        'unprofitable'),

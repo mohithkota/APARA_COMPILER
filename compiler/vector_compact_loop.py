@@ -248,6 +248,24 @@ def choose_smaller(candidates, global_base):
         if b is not None and not spilled:
             measured.append((name, slc, b, needs_margin))
     if not measured:
+        # R4.6.1: every candidate spilled under the POST-OPTIMIZER probe. That
+        # probe models tier-1 + superblock, which raises register pressure; the
+        # pipeline's own commit gate uses the PLAIN backend, so discarding here
+        # threw away kernels the pipeline would have accepted (measured on
+        # multi-operand 2-D stencils: 6 packed loads spill after mem2reg/LICM but
+        # compile clean without them). Fall back to the plain measurement and let
+        # the pipeline's spill gate make the real decision.
+        from vector_pipeline import _bundles
+        for cand in candidates:
+            name, slc = cand[0], cand[1]
+            if slc is None:
+                continue
+            b, spilled = _bundles(slc, global_base)
+            if b is not None and not spilled:
+                measured.append((name, slc, b,
+                                 cand[2] if len(cand) > 2 else True))
+                scores[name] = b
+    if not measured:
         return None, None, scores
 
     inc_name, inc_slice, inc_b, _ = measured[0]     # the incumbent (unrolled)

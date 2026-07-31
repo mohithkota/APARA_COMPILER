@@ -140,17 +140,23 @@ def plan_elementwise(desc, instrs, kernel, legality):
             return None, 'unpacked-array-stride'
         return addr_off[base.name], None
 
-    # ── the single affine store defines the shape ─────────────────────────────
+    # ── the single contiguous store defines the shape ─────────────────────────
+    # R4.6.1: decided by vector_affine, not by the pre-R4.2.8 `iv_terms` map. A
+    # 2-D-indexed store like `out[i*N+j]` has a SUM offset, which `iv_terms`
+    # cannot represent -- so a 2-D stencil was counted as ZERO stores and declined
+    # with 'expect-exactly-one-array-store(got 0)'. This is the last place in the
+    # elementwise path that still used the old mechanism.
+    import expression_tree as et
+    ectx = et.ExprContext(instrs, desc, elem_bytes=p.eb)
     stores = [i for i in region if _cname(instrs[i]) == 'IRStore'
-              and isinstance(getattr(instrs[i], 'offset', None), Temp)
-              and instrs[i].offset.name in iv_terms]
+              and classify_access(instrs[i], ectx.affine).kind == CONTIGUOUS]
     if len(stores) != 1:
-        p.reason = f'expect-exactly-one-array-store(got {len(stores)})'
+        p.reason = f'expect-exactly-one-contiguous-store(got {len(stores)})'
         return p
     st = instrs[stores[0]]
-    p.dst_slot, why = _packed_array_access(st)
+    p.dst_slot = ectx.slot_of(st)
     if p.dst_slot is None:
-        p.reason = f'store:{why}'
+        p.reason = 'store-not-a-local-packed-array'
         return p
     if st.elem_bytes != p.eb:
         p.reason = 'store-width-mismatch'
@@ -170,9 +176,7 @@ def plan_elementwise(desc, instrs, kernel, legality):
     # ── R4.5: the stored value is recognised as an EXPRESSION TREE ───────────
     # This replaces the old 1-or-2-operand matcher, so `a+b+c`, `a*b+c` and
     # `(a+b)*c` are accepted by the same code that always handled `a+b`.
-    import expression_tree as et
     from expression_lowering import vector_feasible
-    ectx = et.ExprContext(instrs, desc, elem_bytes=p.eb)
     tree, why = et.build_expression(st.src, ectx)
     if tree is None:
         p.reason = f'value-shape:{why}'
@@ -291,6 +295,14 @@ def plan_elementwise(desc, instrs, kernel, legality):
             break
     if p.iv_init_site is None:
         p.reason = 'iv-init-not-found'
+        return p
+    # R4.6.1: chunk addressing indexes elements as 0, lanes, 2*lanes, ... so the
+    # induction variable must START AT 0. A loop like `for (j = 1; ...)` would be
+    # lowered one element off; the differential caught it, but declining at match
+    # time is cheaper and states the limit instead of burning a rollback.
+    _iv0 = instrs[p.iv_init_site]
+    if not (isinstance(getattr(_iv0, 'src', None), Const) and _iv0.src.value == 0):
+        p.reason = 'iv-does-not-start-at-zero'
         return p
 
     # (the R4.5 peel template is built from the expression tree above)

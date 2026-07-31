@@ -5227,3 +5227,45 @@ report: `R4_6_DELIVERY.md`.
 - **TWO TEST EXPECTATIONS UPDATED, NOT WEAKENED:** `_r4_2_test.py` and
   `vector_elementwise_corpus.py` asserted `c[i]=a[i+1]+b[i]` is REJECTED; it is now
   correctly vectorized, so it moved to the newly-accepted list.
+
+---
+
+## R4.6.1 — 2-D Stencil Nest Recognition  (2026-07-31) ✅ DONE
+
+**Fixes the limitation R4.6 documented: 2-D stencils are now vectorized.** Two
+further optimizations were found on the way. No new IR, instructions, legality or
+profitability analysis, no new expression nodes. Full report: `R4_6_DELIVERY.md`
+(addendum).
+
+- **ROOT CAUSE — the last stale `iv_terms` user.** Elementwise STORE detection
+  still used the pre-R4.2.8 test (`offset.name in iv_terms`), which cannot
+  represent a SUM, so `out[i*N+j]` counted as **ZERO stores** →
+  `expect-exactly-one-array-store(got 0)`. Same bug class fixed in
+  `kernel_detector` for R4.4; this was the last place in the elementwise path.
+  Now asks `vector_affine` (`classify_access == CONTIGUOUS`).
+- **OPTIMIZATION 1 — do not discard candidates the pipeline would accept.**
+  Multi-operand stencils (3×3 = 6 packed loads) then hit
+  `lower:no-realisation-compiles`: both realisations compile SPILL-FREE under the
+  plain backend but spill under the POST-OPTIMIZER probe (tier-1 + superblock raise
+  pressure). `choose_smaller` discarded them even though the pipeline's own commit
+  gate uses the PLAIN probe and would have accepted them. It now falls back to the
+  plain measurement when every candidate spills under the post-optimizer probe.
+  That alone recovered the 3×3, weighted and vi16 stencils.
+- **OPTIMIZATION 2 / correctness guard — IV must start at zero.** The 5-point cross
+  (`for(j=1;...)`) rolled back on a differential mismatch: chunk addressing indexes
+  elements as `0, lanes, 2*lanes, ...`, so a non-zero start is lowered one element
+  off. The differential caught it (no wrong code), and it is now **declined at
+  match time** (`iv-does-not-start-at-zero`) instead of burning a rollback.
+- **RESULTS:** 2-D 3-point row −76%, 3×3 stencil −67%, weighted −76%, vi16 −61%,
+  remainder −71% dynamic. Conv corpus **14/14 expected, 0 mismatches, 0
+  rollbacks**; dynamic **18926 → 4371 (−76.9%)**; **vs R4.5 9/19 → 14/19**. Full
+  corpus **124/124 byte-identical**; 13 suites and 8 corpora pass; crosscheck
+  124/124.
+- **Honest limits:** static bundles grow substantially on 2-D stencils (3×3
+  42→101, +140%) — six overlapping windows plus cloned address computations are
+  inherently larger than the scalar loop; the win is dynamic. `for(j=1;...)` is
+  DECLINED, not supported: a non-zero IV start needs every chunk index and the IV
+  fix-up offset, a contained change that touches all four clients' plans and was
+  not attempted without budget to verify broadly. Column-strided stencils remain
+  correctly rejected. Three test expectations updated to new reason strings; no
+  assertion removed.

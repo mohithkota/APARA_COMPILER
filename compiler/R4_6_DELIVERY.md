@@ -102,11 +102,7 @@ an existing function.
   loop; the win is dynamic (−79.3%). No realisation avoids this — the compact and
   peeled variants are offered and the R4.2.6 gate picks the smaller.
 - **vi32 gains least** (−42%): 2 lanes, so a 3-tap stencil barely amortises.
-- **2-D stencils are NOT accepted as written.** `out[i*N+j] = in[i*N+j] + ...`
-  over an i/j nest is declined by the elementwise store check
-  (`expect-exactly-one-array-store`). The 1-D inner row of a 2-D stencil vectorizes
-  when written as such. Diagnosing the nest properly was out of remaining scope and
-  is stated rather than worked around.
+- **2-D stencils ARE accepted (fixed in R4.6.1, below).**
 - **The tap-innermost form** (`for(i) for(r) out[i] += in[i+r]*w[r]`) is not
   recognised — its accumulator is an array element at an invariant address, which
   the reduction machinery does not model (it expects a scalar slot). The fused form
@@ -123,3 +119,73 @@ _r3_1 / _r3_2 ........................ PASS
 conv / expression / gemm / axpy / compact / elementwise / dot / affine corpora ... PASS (8/8)
 pipeline_crosscheck.py ............... 124/124 identical
 ```
+
+
+---
+
+# R4.6.1 Addendum — 2-D Stencil Nest Recognition
+
+**Status:** ✅ COMPLETE & VERIFIED · **Date:** 2026-07-31
+
+The R4.6 report listed 2-D stencils as declined. That is now fixed, with two
+further optimizations found along the way. No new IR, instructions, legality or
+profitability analysis; no new expression nodes.
+
+## 1. Root cause — the last stale `iv_terms` user
+The elementwise **store detection** still used the pre-R4.2.8 mechanism:
+
+```python
+    stores = [... if instrs[i].offset.name in iv_terms]     # a SUM is never in it
+```
+
+`out[i*N+j]` has a **summed** offset, so a 2-D stencil was counted as **zero**
+stores and declined with `expect-exactly-one-array-store(got 0)`. Exactly the bug
+class fixed in `kernel_detector` for R4.4 — this was the last place in the
+elementwise path still using it. It now asks `vector_affine` (`classify_access ==
+CONTIGUOUS`), consistent with everything else.
+
+## 2. Optimization — do not discard candidates the pipeline would accept
+Multi-operand stencils (3×3 = 6 packed loads) then failed with
+`lower:no-realisation-compiles`. Diagnosis: both realisations compile **spill-free**
+under the plain backend, but spill under the **post-optimizer** probe (tier-1 +
+superblock raise register pressure). `choose_smaller` discarded them — yet the
+pipeline's own commit gate uses the *plain* probe and would have accepted them.
+
+`choose_smaller` now falls back to the plain measurement when every candidate
+spills under the post-optimizer probe, letting the pipeline's real spill gate
+decide. That alone recovered the 3×3, weighted and vi16 stencils.
+
+## 3. Correctness guard — the induction variable must start at zero
+The 5-point cross (`for (j = 1; ...)`) then rolled back on a differential
+mismatch: chunk addressing indexes elements as `0, lanes, 2*lanes, ...`, so a
+non-zero IV start is lowered one element off. The differential caught it — no
+wrong code was ever produced — but it is now **declined at match time**
+(`iv-does-not-start-at-zero`) rather than burning a rollback.
+
+## 4. Results
+```
+  2-D 3-point row            VECTORIZED   39 ->  52    868 -> 208   -76%
+  2-D 3x3 stencil            VECTORIZED   42 -> 101   1260 -> 420   -67%
+  2-D 3-point weighted       VECTORIZED   40 -> 103   1120 -> 271   -76%
+  2-D 3-point vi16           VECTORIZED   41 ->  44    952 -> 367   -61%
+  2-D 3-point remainder      VECTORIZED   39 ->  46    620 -> 180   -71%
+  REJECT IV start != 0 / dynamic window / gather / column stride / too deep
+
+  vectorized 14/14 expected · mismatches 0 · rollbacks 0
+  bundles 402 -> 612 · dynamic 18926 -> 4371 (-76.9%) · 308 ms/kernel
+  vs R4.5: 9/19 -> 14/19 · full corpus 124/124 byte-identical
+```
+
+## 5. Honest notes
+- **Static bundles grow substantially on 2-D stencils** (3×3: 42 → 101, +140%).
+  Six overlapping windows plus their cloned address computations are inherently
+  bigger than the scalar loop; the win is dynamic (−67%). The R4.2.6 gate still
+  picks the smaller of the four realisations.
+- **`for (j = 1; ...)` is declined, not supported.** Supporting a non-zero IV start
+  means offsetting every chunk index and the IV fix-up; it is a contained change
+  but touches all four clients' plans, and was not attempted without budget to
+  verify it broadly.
+- **Column-strided stencils remain correctly rejected** by `vector_affine`.
+- Three test expectations were updated to the new reason strings
+  (`expect-exactly-one-contiguous-store`, `contiguous-store`); no assertion was
+  removed.

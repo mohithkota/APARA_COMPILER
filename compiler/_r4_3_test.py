@@ -92,7 +92,7 @@ def test_rollback():
     print("non-AXPY and unsupported shapes are rejected (scalar kept)")
     cases = {
       'unpacked': ("long long f(){int X[64],Y[64];int i;int a=3;for(i=0;i<64;i++)Y[i]+=a*X[i];return Y[0];}",
-                   'unpacked-array-stride'),
+                   'contiguous-store'),
       'varying coefficient': ("long long f(){vi8_t X[64],Y[64];int i;for(i=0;i<64;i++)Y[i]+=i*X[i];return Y[0];}",
                    'contiguous,invariant'),
       'trip too small': ("long long f(){vi8_t X[8],Y[8];int i;int a=3;for(i=0;i<8;i++)Y[i]+=a*X[i];return Y[0];}",

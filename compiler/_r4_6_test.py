@@ -48,6 +48,24 @@ def test_shifted_addressing():
         v,d=differential_packed(ir,out,lo,hi)
         check(f"{n}: full-memory differential is a definite match ({d})", v=='match')
 
+def test_2d_stencils():
+    print("2-D stencils vectorize (inner row contiguous)")
+    for n, c in (('3-point row', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
+                 ('3x3 stencil', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<6;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2]+in[(i+1)*32+j]+in[(i+1)*32+j+1]+in[(i+1)*32+j+2];return out[0];}'),
+                 ('3-point weighted', 'long long f(){vi8_t in[320],out[320];int i,j;int a=1,b=2,c=3;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=a*in[i*32+j]+b*in[i*32+j+1]+c*in[i*32+j+2];return out[0];}'),
+                 ('3-point vi16', 'long long f(){vi16_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
+                 ('3-point remainder', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<20;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}')):
+        ir = _ir(c); out, st, _ = vectorize_conv_module(ir)
+        check(f"{n}: vectorized", st.vectorized == 1)
+        check(f"{n}: correct", _ok(ir, out))
+    ir = _ir('long long f(){vi8_t in[320],out[320];int i,j;for(i=1;i<6;i++)for(j=1;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j-1];return out[0];}'); out, st, reps = vectorize_conv_module(copy.deepcopy(ir))
+    check("IV not starting at 0 is declined at match time",
+          st.vectorized == 0 and bool(reps)
+          and 'iv-does-not-start-at-zero' in reps[0].reason)
+    check("  ... and the IR is untouched",
+          [repr(x) for x in out] == [repr(x) for x in ir])
+
+
 def test_rejections():
     print("unsupported convolutions are rejected")
     cases={'dynamic window':"long long f(int n){vi8_t in[72],w[8],out[72];int i,k;long long s=0;for(i=0;i<56;i++){s=0;for(k=0;k<n;k++)s+=in[i+k]*w[k];out[i]=s;}return out[0];}",
@@ -98,7 +116,7 @@ def test_spill_free_deterministic():
     check("identical output twice",[repr(i) for i in a]==[repr(i) for i in b])
 
 def main():
-    for t in (test_taps,test_shifted_addressing,test_rejections,test_client_is_thin,
+    for t in (test_taps,test_shifted_addressing,test_2d_stencils,test_rejections,test_client_is_thin,
               test_no_regression,test_spill_free_deterministic): t()
     print()
     if _fails: print(f"FAIL ({len(_fails)}): {_fails}"); return 1
