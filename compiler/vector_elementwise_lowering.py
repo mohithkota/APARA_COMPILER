@@ -40,6 +40,8 @@ from analysis import DefUse
 from vector_capability import VectorCapability
 from vector_capability_db import ELEMENT_TYPES
 from vector_lowering import _fresh, _packed_load
+from vector_affine import classify_access, CONTIGUOUS
+from expression_lowering import lower_vector
 
 _cap = VectorCapability()
 
@@ -64,7 +66,7 @@ class ElementwisePlan:
     __slots__ = ('ok', 'reason', 'op', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'dst_slot', 'src_slots', 'acc_unused',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
-                 'realisation', 'compact_per_iter', 'peel', 'peel_len')
+                 'realisation', 'compact_per_iter', 'peel', 'peel_len', 'expr')
 
     def __init__(self):
         self.ok = False
@@ -74,6 +76,7 @@ class ElementwisePlan:
         self.realisation = None         # 'compact' | 'unrolled', set by lowering
         self.compact_per_iter = 0
         self.peel = None                # R4.2.7 PeelTemplate, or None
+        self.expr = None                # R4.5 expression tree
         self.peel_len = 0
 
     def __repr__(self):
@@ -160,60 +163,53 @@ def plan_elementwise(desc, instrs, kernel, legality):
     vins = instrs[d]
     vcls = _cname(vins)
 
-    operand_temps = []
-    if vcls == 'IRLoad':
-        p.op = None                                     # A[i] = B[i]
-        operand_temps = [st.src]
-    elif vcls == 'IRBinOp' and vins.op in _BINOPS:
-        p.op = vins.op                                  # A[i] = B[i] op C[i]
-        if not (isinstance(vins.left, Temp) and isinstance(vins.right, Temp)):
-            p.reason = f'operand-not-a-temp(op {vins.op})'
-            return p
-        operand_temps = [vins.left, vins.right]
-    else:
-        detail = vins.op if vcls == 'IRBinOp' else vcls
-        p.reason = f'unsupported-value-shape:{detail}'
+    # ── R4.5: the stored value is recognised as an EXPRESSION TREE ───────────
+    # This replaces the old 1-or-2-operand matcher, so `a+b+c`, `a*b+c` and
+    # `(a+b)*c` are accepted by the same code that always handled `a+b`.
+    import expression_tree as et
+    from expression_lowering import vector_feasible
+    ectx = et.ExprContext(instrs, desc, elem_bytes=p.eb)
+    tree, why = et.build_expression(st.src, ectx)
+    if tree is None:
+        p.reason = f'value-shape:{why}'
         return p
+    if isinstance(tree, (et.Const, et.ScalarRef)):
+        p.reason = 'value-is-loop-invariant'
+        return p
+    ok, why = vector_feasible(tree)
+    if not ok:
+        p.reason = f'not-vectorizable:{why}'
+        return p
+    p.expr = tree
+    p.op = tree.op if isinstance(tree, et.BinOp) else None
+    refs = et.arrays(tree)
+    p.src_slots = [a.slot for a in refs]
 
-    # every operand must itself be a packed affine load of the SAME width
-    p.src_slots = []
-    src_info = []                       # (slot, elem_bytes, unsigned) per operand
-    for t in operand_temps:
-        di = def_map.get(t.name)
-        if di is None or _cname(instrs[di]) != 'IRLoad':
-            p.reason = 'operand-not-an-array-load'
-            return p
-        ld = instrs[di]
-        slot, why = _packed_array_access(ld)
-        if slot is None:
-            p.reason = f'operand:{why}'
-            return p
-        if ld.elem_bytes != p.eb:
-            p.reason = 'operand-width-mismatch'
-            return p
-        p.src_slots.append(slot)
-        src_info.append((slot, ld.elem_bytes,
-                         bool(getattr(ld, 'unsigned', False))))
+    # every ISA operation the tree needs must be supported for this element type
+    for n in et.walk(tree):
+        if isinstance(n, et.BinOp):
+            cap = _cap.can(_BINOPS[n.op], p.vtype)
+            if not cap.ok:
+                p.reason = f'isa-unsupported:{_BINOPS[n.op]}/{p.vtype}:{cap.reason}'
+                return p
+            if cap.lanes != p.lanes:
+                p.reason = 'lane-count-disagreement'
+                return p
 
     # no OTHER array traffic may hide in the body: every affine load must be one
-    # we consume, or a lane could read data the vector form never gathers.
+    # the tree consumes, or a lane could read data the vector form never gathers.
     affine_loads = [i for i in region if _cname(instrs[i]) == 'IRLoad'
-                    and isinstance(getattr(instrs[i], 'offset', None), Temp)
-                    and instrs[i].offset.name in iv_terms]
-    if len(affine_loads) != len(operand_temps):
-        p.reason = (f'extra-array-traffic({len(affine_loads)} affine loads, '
-                    f'{len(operand_temps)} consumed)')
+                    and classify_access(instrs[i], ectx.affine).kind == CONTIGUOUS]
+    if len(affine_loads) != len(refs):
+        p.reason = (f'extra-array-traffic({len(affine_loads)} contiguous loads, '
+                    f'{len(refs)} consumed)')
         return p
 
-    # ── the ISA must actually support this op for this element type ───────────
-    if p.op is not None:
-        cap = _cap.can(_BINOPS[p.op], p.vtype)
-        if not cap.ok:
-            p.reason = f'isa-unsupported:{_BINOPS[p.op]}/{p.vtype}:{cap.reason}'
-            return p
-        if cap.lanes != p.lanes:
-            p.reason = 'lane-count-disagreement'
-            return p
+    # R4.5 peel template: the SAME tree drives the scalar tail
+    from vector_remainder_peel import PeelTemplate
+    p.peel = PeelTemplate(expr=tree,
+                          dest=et.ArrayRef(p.dst_slot, st.elem_bytes,
+                                           bool(getattr(st, 'unsigned', False))))
 
     # ── the IV init site (same requirement and reasoning as R4.1) ─────────────
     p.iv_slot = desc.primary_iv
@@ -230,15 +226,7 @@ def plan_elementwise(desc, instrs, kernel, legality):
         p.reason = 'iv-init-not-found'
         return p
 
-    # R4.2.7 peel template: replay the ORIGINAL loads/binop/store attributes at a
-    # constant index rather than re-deriving the tail.
-    from vector_remainder_peel import PeelTemplate, PeelArray
-    p.peel = PeelTemplate(
-        operands=[PeelArray(sl, eb_, un_) for (sl, eb_, un_) in src_info],
-        op=(None if p.op is None
-            else (p.op, bool(getattr(vins, 'unsigned', False)))),
-        dest=PeelArray(p.dst_slot, st.elem_bytes))
-
+    # (the R4.5 peel template is built from the expression tree above)
     p.region_lo = hblk.lo
     p.region_hi = desc.cfg.blocks[desc.latches[0]].hi
     p.ok = True
@@ -257,23 +245,18 @@ def _packed_store(slot, chunk, value, lanes, eb):
 
 
 def build_elementwise_body(plan):
-    """The straight-line packed vector instructions processing the first
-    `chunks*lanes` elements. The kept scalar loop (IV re-initialised to
-    chunks*lanes) handles the remainder, exactly as in R4.1."""
+    """Straight-line packed chunks. The value is emitted by the SHARED recursive
+    vector lowering, so no expression walking happens here."""
     body = []
     for c in range(plan.chunks):
-        loaded = []
-        for slot in plan.src_slots:
-            t = _fresh('_vea')
-            body += _packed_load(t, slot, c, plan.lanes, plan.eb, plan.signed)
-            loaded.append(t)
-        if plan.op is None:
-            result = loaded[0]                          # copy: store what we read
-        else:
-            result = _fresh('_ver')
-            body.append(IRVecArith(result, plan.op, loaded[0], loaded[1],
-                                   '$' + plan.vtype))
-        body += _packed_store(plan.dst_slot, c, result, plan.lanes, plan.eb)
+        ins, val, _sc = lower_vector(
+            plan.expr, plan.vtype,
+            lambda a, t, c=c: _packed_load(t, a.slot, c, plan.lanes,
+                                           a.elem_bytes, not a.unsigned))
+        if ins is None:
+            raise ValueError(val)
+        body += ins
+        body += _packed_store(plan.dst_slot, c, val, plan.lanes, plan.eb)
     plan.body_len = len(body)
     return body
 
@@ -286,22 +269,15 @@ def build_compact_elementwise_body(plan):
     import vector_compact_loop as _vcl
 
     def emit(off):
-        body = []
-        loaded = []
-        for slot in plan.src_slots:
-            t = _fresh('_vea')
-            body += _vcl.packed_load_at(t, slot, off, plan.lanes, plan.eb,
-                                        plan.signed)
-            loaded.append(t)
-        if plan.op is None:
-            result = loaded[0]                      # copy: store what we read
-        else:
-            result = _fresh('_ver')
-            body.append(IRVecArith(result, plan.op, loaded[0], loaded[1],
-                                   '$' + plan.vtype))
-        body += _vcl.packed_store_at(plan.dst_slot, off, result, plan.lanes,
-                                     plan.eb)
-        return body
+        import vector_compact_loop as _v
+        ins, val, _sc = lower_vector(
+            plan.expr, plan.vtype,
+            lambda a, t: _v.packed_load_at(t, a.slot, off, plan.lanes,
+                                           a.elem_bytes, not a.unsigned))
+        if ins is None:
+            raise ValueError(val)
+        return list(ins) + _v.packed_store_at(plan.dst_slot, off, val,
+                                              plan.lanes, plan.eb)
 
     loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
                                                    plan.lanes, plan.chunks, emit)

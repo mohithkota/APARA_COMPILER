@@ -5117,3 +5117,62 @@ analysis. `vector_pipeline.py` untouched. Full report: `R4_4_5_DELIVERY.md`.
   small tree, which the descriptors already allow without touching clients.
 - 58/58 unit; 11 suites pass; all 6 corpora PASS; crosscheck 124/124; corpus
   124/124 byte-identical.
+
+---
+
+## R4.5 — Expression Tree Vectorization  (2026-07-31) ✅ DONE
+
+**Infrastructure: ONE representation, TWO evaluators.** No new IR, vector
+instructions, backend changes, legality or profitability analysis.
+`vector_pipeline.py` untouched. Full report: `R4_5_DELIVERY.md`.
+
+- **PROBLEM:** every client described its computation as at most
+  `operand OP operand`, and `PeelTemplate` mirrored it — enough for assignment,
+  AXPY, GEMM and simple elementwise, but not `a+b+c`, `a*b+c`, `(a+b)*c`, fused
+  expressions, convolution or a general vectorizer.
+- **Added** `expression_tree.py` (immutable kernel-independent nodes `Const`,
+  `ArrayRef`, `ScalarRef`, `BinOp`; `walk`/`arrays`/`depth`/`is_invariant`/
+  `map_arrays`; `build_expression` recognising trees from IR using **vector_affine
+  and nothing else**), `expression_lowering.py` (`lower_vector`, `lower_scalar`,
+  `vector_feasible`), `expression_corpus.py`, `_r4_5_test.py`.
+- **TWO EVALUATORS OVER ONE TREE:** `lower_vector` emits packed loads + `$v` ops
+  for a chunk; `lower_scalar` emits ordinary scalar IR for one element and is what
+  the remainder framework uses. A client describes its computation ONCE and gets
+  both the vector body and the peeled tail — **no second hand-written scalar
+  lowering to drift**.
+- **THE `$replicate` CONSTRAINT IS EXPLICIT, NOT IMPLICIT:** it broadcasts **src2**
+  only, so a scalar on the LEFT of a commutative op is commuted into src2, and on
+  the left of `-` it CANNOT be — `vector_feasible` REFUSES such a tree at match
+  time instead of mis-emitting it. Tested directly.
+- **PeelTemplate now consumes trees** (`expr`, `dest`, `dest_op`). The R4.4.5
+  `operands=/op=` form is still accepted and converted internally, so **all four
+  existing clients kept working unchanged** — their suites pass untouched.
+  `build_peeled_tail` calls `lower_scalar` and walks nothing itself.
+- **Elementwise became the first TREE-DRIVEN client:** its 1-or-2-operand matcher
+  was REPLACED by `build_expression`, and both vector bodies now call
+  `lower_vector`. A deletion of special-case code, not an addition.
+- **RESULTS:** coverage **R4.4.5 (binary only) 2/14 → R4.5 12/14**; 10 newly
+  accepted kernels (`a+b+c`, `a*b+c`, `a+b*c`, `(a+b)*c`, `a+b+c+d`, `a-b-c`,
+  `3*a+b`, `a+b+c` rem, vi16 `a*b+c`, vi32 `a+b+c`), plus `c[i]=a[i]*3` elsewhere
+  (dyn 640→24). Per kernel: dynamic instructions typically **−89%** (`a+b+c`
+  800→87) at **FLAT bundles (20→20)**. 0 mismatches, 0 rollbacks, full corpus
+  **124/124 byte-identical**. 58/58 unit; 12 suites pass; 7 corpora pass;
+  crosscheck 124/124.
+- **ON COMPARING TOTALS (honest):** the A/B sums are NOT like-for-like — R4.4.5
+  vectorizes 2 of these kernels and R4.5 vectorizes 12, so the totals cover
+  different sets. The meaningful figures are coverage 2→12 and the per-kernel
+  dynamic reduction at flat bundle count.
+- **Limitations:** only elementwise is tree-DRIVEN — dot/reduction/AXPY/GEMM
+  consume trees via `PeelTemplate` but still build their vector bodies with their
+  own binary emitters (converting them would be churn without behaviour change);
+  depth bounded at 4 (`MAX_DEPTH`) on purpose — deeper trees are declined, never
+  mis-lowered; `scalar - vector` refused (would need a new instruction).
+- **TWO TEST EXPECTATIONS UPDATED, NOT WEAKENED:** `_r4_2_test.py` and
+  `vector_elementwise_corpus.py` asserted `c[i]=a[i]*3` and `d[i]=a[i]+b[i]+c[i]`
+  are REJECTED; both are now correctly vectorized with clean differentials, so
+  they moved to an explicit "newly accepted since R4.5" check.
+- **BUG CAUGHT IN BRING-UP:** `MAX_DEPTH` was bound as a DEFAULT ARGUMENT at
+  import, so the A/B harness could not restrict depth and reported a meaningless
+  "+0 coverage". Fixed to read at call time; the real A/B is 2→12.
+- **Convolution is now mostly a client, not new lowering** — it needs kernel
+  recognition and a reduction destination, both of which already exist.

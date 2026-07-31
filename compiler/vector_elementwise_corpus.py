@@ -58,7 +58,9 @@ _KERNELS = [
     ('in-place a[i]+=b[i]', "long long f(){vi8_t a[32],b[32];int i;for(i=0;i<32;i++)a[i]=a[i]+b[i];return a[0];}", True),
     # --- rejections that MUST still be refused --------------------------------
     ('unpacked add (no-op)', "long long f(){int a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]+b[i];return c[0];}", False),
-    ('saxpy a*x (no-op)', "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}", False),
+    # R4.5: a literal coefficient is an expression-tree Const, so this is now
+    # ACCEPTED (it was rejected through R4.4.5 as 'operand-not-a-temp').
+    ('saxpy a*x (accepted R4.5)', "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}", True),
     ('divide (no-op)',    "long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]/b[i];return c[0];}", False),
     ('shifted a[i+1]',    "long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}", False),
     ('trip < 2*lanes',    "long long f(){vi8_t a[8],b[8],c[8];int i;for(i=0;i<8;i++)c[i]=a[i]+b[i];return c[0];}", False),

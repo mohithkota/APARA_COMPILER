@@ -47,66 +47,45 @@ from ir import Const, Temp, IRAssign, IRLoad, IRStore, IRLoadAddr, IRBinOp
 from vector_lowering import _fresh
 
 
-# ── operand / destination descriptors ───────────────────────────────────────────
+# ── descriptors are the shared expression-tree nodes (R4.5) ────────────────────
+# R4.4.5 defined its own operand descriptors; R4.5 replaces them with the
+# kernel-independent nodes from `expression_tree`, so ONE representation serves
+# recognition, vector lowering and the remainder tail. The old names remain as
+# aliases -- clients and tests written against R4.4.5 keep working.
 
-class PeelArray:
-    """An element of a packed array at the peeled index.
+import expression_tree as et
+from expression_tree import ArrayRef, ScalarRef, Const as ExprConst, BinOp
+from expression_lowering import lower_scalar
 
-    `offset_at(idx)` -> (instrs, offset_value) overrides address formation; the
-    default is the constant byte offset `idx * elem_bytes` from the array base,
-    which is what every client except GEMM needs."""
-    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at')
-
-    def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None):
-        self.slot = slot
-        self.elem_bytes = elem_bytes
-        self.unsigned = unsigned
-        self.offset_at = offset_at
-
-    def address(self, idx):
-        if self.offset_at is not None:
-            return self.offset_at(idx)
-        return [], Const(idx * self.elem_bytes)
-
-
-class PeelScalar:
-    """A loop-invariant scalar read from its own slot (AXPY's coefficient)."""
-    __slots__ = ('slot', 'elem_bytes', 'unsigned')
-
-    def __init__(self, slot, elem_bytes=8, unsigned=False):
-        self.slot = slot
-        self.elem_bytes = elem_bytes
-        self.unsigned = unsigned
-
-
-class PeelConst:
-    """A literal coefficient (`Y[i] += 3*X[i]`)."""
-    __slots__ = ('value',)
-
-    def __init__(self, value):
-        self.value = value
+PeelArray = ArrayRef
+PeelScalar = ScalarRef
+PeelConst = ExprConst
 
 
 class PeelTemplate:
     """One scalar element update, described declaratively.
 
-        operands  [PeelArray | PeelScalar | PeelConst], in the ORIGINAL order
-        op        (opcode, unsigned) combining operands[0] and operands[1],
-                  or None when there is a single operand
-        dest      PeelArray (indexed store) or PeelScalar (accumulator slot)
-        dest_op   None      -> dest = value            (plain assignment)
-                  (op, uns) -> dest = dest <op> value  (read-modify-write)
-    """
-    __slots__ = ('operands', 'op', 'dest', 'dest_op')
+        expr     an expression_tree node -- the value to compute
+        dest     ArrayRef (indexed store) or ScalarRef (accumulator slot)
+        dest_op  None -> dest = value ; (op, uns) -> dest = dest <op> value
 
-    def __init__(self, operands, dest, op=None, dest_op=None):
-        self.operands = list(operands)
+    R4.5: `expr` may now be an arbitrary small tree (`a+b+c`, `a*b+c`, ...). The
+    R4.4.5 form `PeelTemplate([operands], dest, op=..., dest_op=...)` is still
+    accepted and is converted to a tree, so existing clients are unaffected."""
+    __slots__ = ('expr', 'dest', 'dest_op')
+
+    def __init__(self, expr=None, dest=None, op=None, dest_op=None,
+                 operands=None):
+        if operands is not None:                     # legacy keyword form
+            expr = list(operands)
+        if isinstance(expr, (list, tuple)):          # legacy operands + op form
+            ops = list(expr)
+            expr = ops[0] if op is None else BinOp(op[0], ops[0], ops[1],
+                                                   bool(op[1]))
+        self.expr = expr
         self.dest = dest
-        self.op = op
         self.dest_op = dest_op
 
-
-# ── the single emitter ──────────────────────────────────────────────────────────
 
 def _load_at(slot, offset, elem_bytes, unsigned):
     base = _fresh('_vrpb')
@@ -121,57 +100,36 @@ def _store_at(slot, offset, value, elem_bytes):
     return [IRLoadAddr(base, slot), IRStore(base, offset, value, elem_bytes)]
 
 
-def _emit_operand(o, idx):
-    """(instrs, value_temp_or_const) for one operand at element index `idx`."""
-    if isinstance(o, PeelConst):
-        t = _fresh('_vrpk')
-        return [IRAssign(t, Const(o.value))], t
-    if isinstance(o, PeelScalar):
-        ins, t = _load_at(o.slot, Const(0), o.elem_bytes, o.unsigned)
-        return ins, t
-    pre, off = o.address(idx)
-    ins, t = _load_at(o.slot, off, o.elem_bytes, o.unsigned)
-    return list(pre) + ins, t
-
-
 def build_peeled_tail(plan):
     """Straight-line code for the `remainder` leftover elements, then the IV
-    fix-up. Returns (instrs, n_ops) or (None, reason)."""
+    fix-up. The value is emitted by the SHARED recursive scalar lowering, so a
+    client never writes tail code. Returns (instrs, n_ops) or (None, reason)."""
     tmpl = getattr(plan, 'peel', None)
     if tmpl is None:
         return None, 'no-peel-template'
     if plan.remainder <= 0:
         return None, 'no-remainder'
-    if not tmpl.operands or (tmpl.op is not None and len(tmpl.operands) != 2):
-        return None, 'malformed-peel-template'
 
     out = []
     for r in range(plan.remainder):
         idx = plan.chunks * plan.lanes + r
-        vals = []
-        for o in tmpl.operands:
-            ins, v = _emit_operand(o, idx)
-            out += ins
-            vals.append(v)
-        if tmpl.op is None:
-            val = vals[0]
-        else:
-            op, uns = tmpl.op
-            val = _fresh('_vrpr')
-            out.append(IRBinOp(val, op, vals[0], vals[1], unsigned=uns))
+        try:
+            ins, val = lower_scalar(tmpl.expr, idx)
+        except Exception as e:
+            return None, f'peel-lowering:{e}'
+        out += ins
 
         d = tmpl.dest
-        if isinstance(d, PeelScalar):
-            d_off, d_eb = Const(0), d.elem_bytes
-            pre = []
+        if isinstance(d, ScalarRef):
+            pre, d_off, d_eb = [], Const(0), d.elem_bytes
         else:
             pre, d_off = d.address(idx)
             d_eb = d.elem_bytes
-            out += list(pre)
+        out += list(pre)
         if tmpl.dest_op is not None:            # read-modify-write
-            ins, cur = _load_at(d.slot, d_off, d_eb,
-                                bool(getattr(d, 'unsigned', False)))
-            out += ins
+            lins, cur = _load_at(d.slot, d_off, d_eb,
+                                 bool(getattr(d, 'unsigned', False)))
+            out += lins
             op, uns = tmpl.dest_op
             nxt = _fresh('_vrpn')
             out.append(IRBinOp(nxt, op, cur, val, unsigned=uns))

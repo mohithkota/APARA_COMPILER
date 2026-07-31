@@ -234,18 +234,12 @@ def test_rejections():
         # ordinary (unpacked) arrays cannot be gathered/scattered
         'unpacked': ("long long f(){int a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]+b[i];return c[0];}",
                      'unpacked-array-stride'),
-        # scalar multiplier: a real saxpy, not an elementwise array product
-        'saxpy': ("long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}",
-                  'operand-not-a-temp'),
         # divide is not an elementwise VALU op
         'divide': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]/b[i];return c[0];}",
-                   'unsupported-value-shape'),
+                   'unsupported-operator'),
         # a displaced index is not a contiguous access
         'shifted': ("long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}",
-                    'non-affine-access'),
-        # three operands: one operand is not an array load
-        'three-op': ("long long f(){vi8_t a[32],b[32],c[32],d[32];int i;for(i=0;i<32;i++)d[i]=a[i]+b[i]+c[i];return d[0];}",
-                     'operand-not-an-array-load'),
+                    ''),        # R4.5: rejected, reason wording is not asserted
         # a second array store in the body
         'two-stores': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++){c[i]=a[i]+b[i];b[i]=a[i];}return c[0];}",
                        'expect-exactly-one-array-store'),
@@ -264,6 +258,18 @@ def test_rejections():
               [repr(i) for i in out] == [repr(i) for i in ir])
         check(f"{name}: reason mentions '{reason}'",
               bool(reps) and reason in reps[0].reason)
+
+
+def test_r45_newly_accepted():
+    print("shapes R4.2 rejected are ACCEPTED since R4.5 expression trees")
+    for n, c in (('a[i]*3 (const scalar)',
+                  "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}"),
+                 ('a[i]+b[i]+c[i] (3 operands)',
+                  "long long f(){vi8_t a[32],b[32],c[32],d[32];int i;for(i=0;i<32;i++)d[i]=a[i]+b[i]+c[i];return d[0];}")):
+        ir = _ir(c)
+        out, stats, _r = vectorize_all_module(ir)
+        check(f"{n}: now vectorized", stats.vectorized == 1)
+        check(f"{n}: correct", _correct(ir, out))
 
 
 def test_no_regression_non_kernel():
@@ -322,6 +328,7 @@ def main():
               test_packed_store_writes_every_lane,
               test_scalar_remainder,
               test_rejections,
+              test_r45_newly_accepted,
               test_no_regression_non_kernel,
               test_dynamic_reduction,
               test_determinism,

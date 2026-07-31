@@ -237,11 +237,11 @@ def plan_gemm(desc, instrs, kernel, legality):
         return p
     tmpl = p.peel
     if tmpl is not None:
-        tmpl.operands = [
-            (PeelArray(o.slot, o.elem_bytes, o.unsigned,
-                       offset_at=_row_offset(p.x_off))
-             if isinstance(o, PeelArray) else o)
-            for o in tmpl.operands]
+        import expression_tree as et
+        tmpl.expr = et.map_arrays(
+            tmpl.expr,
+            lambda o: PeelArray(o.slot, o.elem_bytes, o.unsigned,
+                                offset_at=_row_offset(p.x_off)))
         tmpl.dest = PeelArray(p.y_slot, p.eb, not p.signed,
                               offset_at=_row_offset(p.y_off))
     return p
