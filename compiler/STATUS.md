@@ -5818,3 +5818,39 @@ Nothing changed; HEAD stays `c0330eb`, verification **38/38**. Report:
   correct it is SLOWER (2 aligned loads + 3 ALU ops per shifted tap). If it
   cannot beat scalar, the right outcome is to **close R6.3 and keep the R6.2C
   decline**.
+
+---
+
+## R6.3 profitability analysis  (2026-08-01) ✅ ANSWERED: PURSUE
+
+**YES — the aligned sliding window beats scalar decisively. R6.3 continues.**
+Report: `R6_3_PROFITABILITY_ANALYSIS.md`. No code committed.
+
+- **I WITHDRAW MY OWN PREVIOUS WARNING.** R6.2E reported "1888 ticks vs 1517
+  scalar -> the window form is SLOWER". That compared WHOLE PROGRAMS at a small
+  trip count, dominated by a 136-iteration scalar init loop and a large one-off
+  vector setup. It was not a steady-state comparison and the conclusion was wrong.
+- **MEASURED STEADY STATE** (same kernel, both ways, 128 outputs, no remainder):
+  scalar body `fb_6` = 13 instrs / 7 bundles per output; sliding-window body
+  `vcl_2_body` = 28 instrs / 11 bundles per **8** outputs = **3.50 instr and 1.38
+  bundles per output** -> already **3.7x / 5.1x faster than scalar**.
+  Corroboration: scalar whole-program slope is a perfectly linear **19.0
+  ticks/output**.
+- **ISA UPPER BOUND** (3-tap vi8, per 8-output chunk): 2 aligned loads (W0/W1
+  shared by ALL taps) + 6 shift/or + 2 `$v +` + 1 store + 3 loop overhead = **14
+  instructions = 1.75/output**; dependence chain gives **~6 bundles = 0.75/output**
+  -> **7.4x / 9.3x faster than scalar**. The milestone's termination condition
+  ("theoretical best still slower than scalar") is not met, and not remotely.
+- **WHERE THE CURRENT IMPLEMENTATION LOSES (28 instrs where 14 suffice)** — all
+  redundancy, none structural: (1) **W0/W1 not shared between taps** -> 4 window
+  loads instead of 2; (2) **the IV is reloaded 4 times**, once per cloned offset
+  expression; (3) tap 0 loaded twice; (4) **add-then-subtract** — the clone adds
+  `+k` and the emitter immediately subtracts it.
+- **NEXT, in order:** fix the R6.2E correctness defect first (sparse reads after
+  the loop return zero), THEN share W0/W1 across taps (removes a third of the
+  body). The redundancies are pure upside and not on the correctness path.
+- **CAVEAT:** the vector figures come from a lowering that currently computes
+  wrong values for some kernels; the counts represent the intended work but must
+  be re-taken once it is correct. Also measured on one shape (3-tap vi8) — vi16/
+  vi32 amortise the same overhead over 4/2 outputs, so their advantage is
+  proportionally smaller and should be measured before generalising.
