@@ -5644,3 +5644,46 @@ RESULT: PASS**. Report: `R6_2C_CORRECTNESS_FIXES.md`.
   it (generates illegal addresses — never set it for code that will run).
 - **REMAINING:** convolution needs an aligned load+shift-merge lowering to return;
   D4 (casts to markers do not narrow) still open; `vf32_t` untested.
+
+---
+
+## R6.3 — Aligned Sliding Window Vector Lowering  (2026-08-01) ⛔ STOPPED
+
+**No lowering shipped; working tree reverted to `9cf4d57` (38/38 PASS).** Report:
+`R6_3_ALIGNED_SLIDING_WINDOW.md`.
+
+- **ISA GATE PASSED — the primitives EXIST.** `$slice` (isa.txt 526) and `$pack`
+  (501) are both in the ISA, and `<<`/`>>`/`|` on a 64-bit register are already
+  emitted by codegen and already representable as `IRBinOp`. A funnel shift built
+  from shifts+or is simpler than slice/pack and needs **no new IR node and no
+  pseudo-instruction**, so the milestone's stop-condition did not apply.
+- **ALGORITHM DERIVED FROM THE IMPLEMENTATION, not assumed:** DMEM puts byte b at
+  bits [63-8b:56-8b] (element 0 in the MOST significant byte) and `Break_Vector`
+  takes lane I from `vec >> ((nfields-I-1)*nbits)` (lane 0 = MOST significant).
+  Both agree, so a window `s` bytes into a word is
+  `(W0 << 8s) | (W1 >>UNSIGNED (64-8s))` from two ALIGNED loads.
+- **IMPLEMENTED, reusing everything:** one field on `ArrayRef` (`word_shift`),
+  one shared emitter (`packed_window_load_at`), the three existing packed-load
+  sites, and a legality relaxation for LOADS only (a misaligned STORE is never
+  reconstructable and still rejects). No new client, no conv-specific backend.
+  Planning worked: conv 3-tap carried word_shift 0/1/2 correctly.
+- **BLOCKED by a NEW discovery — `vector_validation` orders lanes BACKWARDS vs
+  the hardware.** `_lane(packed,i) = (packed >> (i*bits))` is LSB-first;
+  `Break_Vector` is MSB-first. **Every kernel shipped to date is
+  order-INDEPENDENT** (elementwise/AXPY/expression apply the same op per lane;
+  `$dot`/`$vreduce` sum across lanes), so the reversal has never been observable.
+  A sliding window is the FIRST order-dependent lowering, so a reconstruction
+  that is correct on hardware is reported `differential:mismatch` and the
+  pipeline correctly refuses to commit. **The gate worked; the model behind it is
+  wrong.**
+- **REVERTED rather than shipped inert:** the legality relaxation admits
+  misaligned loads on the assumption the lowering rebuilds them, so leaving it in
+  while every kernel rolls back would be an unvalidated hazard. Re-verified after
+  revert: **38/38 PASS**.
+- **NEXT (in order):** (1) settle the lane-order question — evidence says
+  `Break_Vector` MSB-first is the contract, since it agrees with the DMEM byte
+  order the compiler already relies on — fix `vector_validation` and
+  **re-validate every existing vector kernel on the simulator**, because that
+  oracle gates all of them; (2) re-apply this milestone's small, localized diff;
+  (3) verify and measure. Misaligned stores, column-strided accesses and
+  runtime-variable misalignment remain out of scope regardless.
