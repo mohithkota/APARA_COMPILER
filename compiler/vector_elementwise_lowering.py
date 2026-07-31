@@ -66,7 +66,8 @@ class ElementwisePlan:
     __slots__ = ('ok', 'reason', 'op', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'dst_slot', 'src_slots', 'acc_unused',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
-                 'realisation', 'compact_per_iter', 'peel', 'peel_len', 'expr')
+                 'realisation', 'compact_per_iter', 'peel', 'peel_len', 'expr',
+                 'dst_off', 'shifted', '_instrs', '_defmap', '_region')
 
     def __init__(self):
         self.ok = False
@@ -77,6 +78,9 @@ class ElementwisePlan:
         self.compact_per_iter = 0
         self.peel = None                # R4.2.7 PeelTemplate, or None
         self.expr = None                # R4.5 expression tree
+        self.dst_off = None             # R4.6 store offset expression
+        self.shifted = False            # R4.6 any non-bare offset?
+        self._instrs = self._defmap = self._region = None
         self.peel_len = 0
 
     def __repr__(self):
@@ -205,11 +209,74 @@ def plan_elementwise(desc, instrs, kernel, legality):
                     f'{len(refs)} consumed)')
         return p
 
+    # ── R4.6: honour a SHIFTED access (`in[i+1]`, `in[i+r]`) ─────────────────
+    # A convolution tap is contiguous but its address is not `base + idx*eb`.
+    # Rather than reconstruct it, re-emit the loop's OWN address computation with
+    # the induction variable substituted -- the same `clone_offset` mechanism R4.4
+    # introduced for GEMM row bases. Bare `IV`/`IV*const` offsets keep the
+    # base-relative form, so R4.2/R4.5 output is unchanged.
+    from gemm_lowering import clone_offset
+
+    def _bare(off):
+        if not isinstance(off, Temp):
+            return False
+        d0 = def_map.get(off.name)
+        if d0 is None:
+            return False
+        ii = instrs[d0]
+        if _cname(ii) == 'IRLoad':
+            return _loads_iv(ii)
+        if _cname(ii) == 'IRBinOp' and ii.op == '*':
+            for cc, oo in ((ii.right, ii.left), (ii.left, ii.right)):
+                if isinstance(cc, Const) and isinstance(oo, Temp):
+                    dd = def_map.get(oo.name)
+                    if dd is not None and _cname(instrs[dd]) == 'IRLoad' \
+                            and _loads_iv(instrs[dd]):
+                        return True
+        return False
+
+    def _loads_iv(ii):
+        b = getattr(ii, 'base', None)
+        if not isinstance(b, Temp):
+            return False
+        bd = def_map.get(b.name)
+        return (bd is not None and _cname(instrs[bd]) == 'IRLoadAddr'
+                and instrs[bd].fp_offset == desc.primary_iv
+                and isinstance(getattr(ii, 'offset', None), Const)
+                and ii.offset.value == 0)
+
+    p._instrs, p._defmap, p._region = instrs, def_map, region
+    p.dst_off = getattr(st, 'offset', None)
+    offs = [a.offset_expr for a in refs] + [p.dst_off]
+    p.shifted = any(o is not None and not _bare(o) for o in offs)
+
+    def _at(off_expr):
+        def at(idx):
+            ins2, t2 = clone_offset(instrs, def_map, region, off_expr,
+                                    desc.primary_iv, Const(idx))
+            if ins2 is None:
+                raise ValueError(t2)
+            return ins2, t2
+        return at
+
+    if p.shifted:
+        for o in offs:
+            if o is None or clone_offset(instrs, def_map, region, o,
+                                         desc.primary_iv, Const(0))[0] is None:
+                p.reason = 'shifted-offset-not-clonable'
+                return p
+        tree = et.map_arrays(tree, lambda a: et.ArrayRef(
+            a.slot, a.elem_bytes, a.unsigned, offset_at=_at(a.offset_expr),
+            offset_expr=a.offset_expr))
+        p.expr = tree
+
     # R4.5 peel template: the SAME tree drives the scalar tail
     from vector_remainder_peel import PeelTemplate
     p.peel = PeelTemplate(expr=tree,
                           dest=et.ArrayRef(p.dst_slot, st.elem_bytes,
-                                           bool(getattr(st, 'unsigned', False))))
+                                           bool(getattr(st, 'unsigned', False)),
+                                           offset_at=(_at(p.dst_off)
+                                                      if p.shifted else None)))
 
     # ── the IV init site (same requirement and reasoning as R4.1) ─────────────
     p.iv_slot = desc.primary_iv
@@ -249,14 +316,30 @@ def build_elementwise_body(plan):
     vector lowering, so no expression walking happens here."""
     body = []
     for c in range(plan.chunks):
-        ins, val, _sc = lower_vector(
-            plan.expr, plan.vtype,
-            lambda a, t, c=c: _packed_load(t, a.slot, c, plan.lanes,
-                                           a.elem_bytes, not a.unsigned))
-        if ins is None:
-            raise ValueError(val)
-        body += ins
-        body += _packed_store(plan.dst_slot, c, val, plan.lanes, plan.eb)
+        if plan.shifted:
+            import vector_compact_loop as _v
+            from gemm_lowering import clone_offset as _co
+
+            def _ld(a, t, c=c):
+                pre, off = a.offset_at(c * plan.lanes)
+                return list(pre) + _v.packed_load_at(t, a.slot, off, plan.lanes,
+                                                     a.elem_bytes, not a.unsigned)
+            ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
+            if ins is None:
+                raise ValueError(val)
+            body += ins
+            pre, doff = plan.peel.dest.offset_at(c * plan.lanes)
+            body += list(pre) + _v.packed_store_at(plan.dst_slot, doff, val,
+                                                   plan.lanes, plan.eb)
+        else:
+            ins, val, _sc = lower_vector(
+                plan.expr, plan.vtype,
+                lambda a, t, c=c: _packed_load(t, a.slot, c, plan.lanes,
+                                               a.elem_bytes, not a.unsigned))
+            if ins is None:
+                raise ValueError(val)
+            body += ins
+            body += _packed_store(plan.dst_slot, c, val, plan.lanes, plan.eb)
     plan.body_len = len(body)
     return body
 
@@ -270,6 +353,27 @@ def build_compact_elementwise_body(plan):
 
     def emit(off):
         import vector_compact_loop as _v
+        if plan.shifted:
+            # R4.6: re-emit each access's own address computation, re-loading the
+            # IV slot (iv_value=None) so it tracks the compact loop.
+            from gemm_lowering import clone_offset as _co
+
+            def _ld(a, t):
+                pre, o = _co(plan._instrs, plan._defmap, plan._region,
+                             a.offset_expr, plan.iv_slot, None)
+                if pre is None:
+                    raise ValueError(o)
+                return list(pre) + _v.packed_load_at(t, a.slot, o, plan.lanes,
+                                                     a.elem_bytes, not a.unsigned)
+            ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
+            if ins is None:
+                raise ValueError(val)
+            pre, doff = _co(plan._instrs, plan._defmap, plan._region,
+                            plan.dst_off, plan.iv_slot, None)
+            if pre is None:
+                raise ValueError(doff)
+            return list(ins) + list(pre) + _v.packed_store_at(
+                plan.dst_slot, doff, val, plan.lanes, plan.eb)
         ins, val, _sc = lower_vector(
             plan.expr, plan.vtype,
             lambda a, t: _v.packed_load_at(t, a.slot, off, plan.lanes,

@@ -35,7 +35,10 @@ from vector_affine import (LoopAffineContext, classify_access, CONTIGUOUS,
                            INVARIANT)
 
 SUPPORTED_OPS = ('+', '-', '*')
-MAX_DEPTH = 4                       # bounded on purpose: small expressions only
+MAX_DEPTH = 8                       # bounded on purpose: small expressions only.
+                                    # R4.6 raised 4 -> 8 so a 7-point stencil
+                                    # (depth 7) fits. Still a hard bound: deeper
+                                    # trees are declined, never mis-lowered.
 
 
 def _cname(x):
@@ -55,13 +58,20 @@ class Const:
 
 
 class ArrayRef:
-    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at')
+    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at', 'offset_expr')
 
-    def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None):
+    def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None,
+                 offset_expr=None):
         self.slot = slot
         self.elem_bytes = elem_bytes
         self.unsigned = unsigned
         self.offset_at = offset_at
+        # R4.6: the ORIGINAL offset expression this reference came from. A
+        # convolution's `in[i+r]` is contiguous but its address is NOT
+        # `base + idx*elem_bytes` -- the invariant part must be honoured, exactly
+        # as GEMM honours a row base. Keeping the expression lets lowering
+        # re-emit the loop's own address computation instead of assuming zero.
+        self.offset_expr = offset_expr
 
     def address(self, idx):
         if self.offset_at is not None:
@@ -190,7 +200,8 @@ def build_expression(value, ctx, depth_left=None):
             if ctx.elem_bytes is not None and ins.elem_bytes != ctx.elem_bytes:
                 return None, 'operand-width-mismatch'
             return ArrayRef(slot, ins.elem_bytes,
-                            bool(getattr(ins, 'unsigned', False))), None
+                            bool(getattr(ins, 'unsigned', False)),
+                            offset_expr=getattr(ins, 'offset', None)), None
         if kind == INVARIANT and not ctx.affine.varies(value.name):
             return ScalarRef(slot, ins.elem_bytes,
                              bool(getattr(ins, 'unsigned', False))), None

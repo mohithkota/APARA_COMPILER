@@ -5176,3 +5176,54 @@ instructions, backend changes, legality or profitability analysis.
   "+0 coverage". Fixed to read at call time; the real A/B is 2→12.
 - **Convolution is now mostly a client, not new lowering** — it needs kernel
   recognition and a reduction destination, both of which already exist.
+
+---
+
+## R4.6 — Automatic Convolution Vectorization  (2026-07-31) ✅ DONE
+
+**HEADLINE: convolution required NO new client logic.** `conv_vectorizer.py` is
+**under 20 executable lines** — an entry point plus documentation — and is
+test-asserted to contain no `IRVecArith`, no packed load/store, no
+`lower_vector`/`lower_scalar` call, no `PeelTemplate` and no `VectorTransform`.
+A fused convolution `out[i] = w0*in[i]+w1*in[i+1]+w2*in[i+2]` is, to the existing
+framework, an ELEMENTWISE EXPRESSION over shifted contiguous accesses. Full
+report: `R4_6_DELIVERY.md`.
+
+- **THE PREMISE ("no further infrastructure work should be necessary") DID NOT
+  FULLY HOLD — measured, not guessed.** Before any change every convolution form
+  was RECOGNISED AND THEN ROLLED BACK: `out[i]=in[i+1]`, `out[i]=in[i]+in[i+1]`
+  and the 3-tap all hit `differential:mismatch`. The cause was **ADDRESSING**, not
+  recognition or lowering: the tree-driven vector body addressed arrays as
+  `base + chunk*lanes*eb`, which assumes the offset's invariant part is zero —
+  true for `a[i]`, false for `in[i+k]`.
+- **NO NEW MECHANISM WAS INVENTED.** R4.4 had already solved this for GEMM row
+  bases with `clone_offset` (re-emit the loop's own address computation with the IV
+  substituted). R4.6 wires that same function into the tree path: `ArrayRef` gained
+  an `offset_expr` FIELD (not a new node), the expression client uses
+  `clone_offset` for both realisations (constant index unrolled / re-load the IV
+  slot compact) **only when the offset is not a bare `IV`/`IV*const`** so
+  R4.2/R4.5 output is unchanged, and `MAX_DEPTH` rose 4→8 so a 7-point stencil
+  fits (a bound, not a mechanism — deeper trees are still declined).
+- **CORPUS:** vectorized **9/9 expected**, **0 mismatches, 0 rollbacks**; dynamic
+  instructions **14106 → 2925 (−79.3%)**; 188 ms/kernel. Per kernel: 3-tap −83%,
+  5-tap −82%, 7-tap −83%, weighted −81/−80%, vi16 −70%, vi32 −42%, remainder
+  −90%/−89%. All 4 rejections correct (dynamic window, gather, column stride,
+  window > MAX_DEPTH). **vs R4.5: 5/13 → 9/13.** Also newly accepted elsewhere:
+  `c[i]=a[i+1]+b[i]`. Full corpus **124/124 byte-identical**. 50/50 unit; 13 suites;
+  8 corpora; crosscheck 124/124.
+- **RECOGNITION vs LOWERING (quantified):** conv client <20 executable lines,
+  `expression_tree.py` ~6 lines (one field + one constant),
+  `vector_elementwise_lowering.py` ~55 lines of address plumbing. **ZERO lines of
+  new vector lowering, ZERO new scalar lowering, ZERO new reduction.**
+- **Honest limitations:** static bundles GROW on convolution (201→266, +32%) — a
+  k-tap stencil loads k overlapping windows so the vector body is inherently
+  larger; the win is dynamic. vi32 gains least (−42%, only 2 lanes). **2-D
+  stencils are NOT accepted as written** (`out[i*N+j]=...` over an i/j nest is
+  declined by `expect-exactly-one-array-store`); the 1-D inner row vectorizes when
+  written as such — stated rather than worked around. The **tap-innermost form**
+  (`for(i) for(r) out[i]+=in[i+r]*w[r]`) is not recognised: its accumulator is an
+  array element at an invariant address, which the reduction machinery (expecting a
+  scalar slot) does not model.
+- **TWO TEST EXPECTATIONS UPDATED, NOT WEAKENED:** `_r4_2_test.py` and
+  `vector_elementwise_corpus.py` asserted `c[i]=a[i+1]+b[i]` is REJECTED; it is now
+  correctly vectorized, so it moved to the newly-accepted list.

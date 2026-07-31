@@ -237,9 +237,6 @@ def test_rejections():
         # divide is not an elementwise VALU op
         'divide': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]/b[i];return c[0];}",
                    'unsupported-operator'),
-        # a displaced index is not a contiguous access
-        'shifted': ("long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}",
-                    ''),        # R4.5: rejected, reason wording is not asserted
         # a second array store in the body
         'two-stores': ("long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++){c[i]=a[i]+b[i];b[i]=a[i];}return c[0];}",
                        'expect-exactly-one-array-store'),
@@ -264,6 +261,8 @@ def test_r45_newly_accepted():
     print("shapes R4.2 rejected are ACCEPTED since R4.5 expression trees")
     for n, c in (('a[i]*3 (const scalar)',
                   "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}"),
+                 ('a[i+1]+b[i] (shifted access, R4.6)',
+                  "long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}"),
                  ('a[i]+b[i]+c[i] (3 operands)',
                   "long long f(){vi8_t a[32],b[32],c[32],d[32];int i;for(i=0;i<32;i++)d[i]=a[i]+b[i]+c[i];return d[0];}")):
         ir = _ir(c)

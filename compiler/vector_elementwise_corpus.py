@@ -62,7 +62,9 @@ _KERNELS = [
     # ACCEPTED (it was rejected through R4.4.5 as 'operand-not-a-temp').
     ('saxpy a*x (accepted R4.5)', "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}", True),
     ('divide (no-op)',    "long long f(){vi8_t a[32],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]/b[i];return c[0];}", False),
-    ('shifted a[i+1]',    "long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}", False),
+    # R4.6: a shifted access is contiguous and now addressed correctly, so this
+    # is ACCEPTED (it was rejected through R4.5).
+    ('shifted a[i+1] (accepted R4.6)', "long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}", True),
     ('trip < 2*lanes',    "long long f(){vi8_t a[8],b[8],c[8];int i;for(i=0;i<8;i++)c[i]=a[i]+b[i];return c[0];}", False),
     ('narrow acc (rb)',   "long long f(){vi16_t a[16],b[16];int i;long s=0;for(i=0;i<16;i++)s+=a[i]*b[i];return s;}", False),
 ]
