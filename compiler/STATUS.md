@@ -5894,3 +5894,43 @@ Report: `R6_3_PROFITABILITY_ANALYSIS.md`. No code committed.
   into a SCALAR FALLBACK, and the reproducer "passed" with the scalar tick count.
   Both caught only by re-checking that the kernel is still genuinely vectorized.
   **In this compiler a green test is not evidence that the code under test ran.**
+
+---
+
+## R6.3.2 — Sliding Window Optimization  (2026-08-01) ✅ DONE — AT THE BOUND
+
+**The convolution loop body now sits EXACTLY on the derived architectural lower
+bound: 14 instructions per 8 outputs = 1.750 instr/output**, from 3.500.
+38/38 maintained throughout. Report: `R6_3_2_WINDOW_OPTIMIZATION.md`.
+
+- **GUARDED MEASUREMENT (built first, because of the R6.3 lesson):** every number
+  comes from a harness that refuses to report unless the kernel actually
+  vectorized, the mcode contains `$v` AND funnel-shift instructions, simulator
+  verification passes, AND **ticks differ from the scalar baseline (3077)**. A
+  scalar fallback now FAILS the measurement instead of flattering it.
+- **Phase 1 (commit e198dc9) — complete W0/W1 sharing** at the compact load site
+  (the one conv actually uses): pair emitted once per (array, aligned word) per
+  chunk, keyed on `word_index`. **3.500 -> 2.375 instr/output (−32%)**, dynamic
+  instrs 1518 -> 1370. **Reported as measured:** whole-program ticks ROSE
+  1830 -> 1846 (+0.9%) despite the smaller body (−16 bundles over 16 chunks);
+  cause outside the steady state (peel/prologue live ranges), no spill. Phase 3
+  recovered it.
+- **Phase 2 — IV loaded once: ALREADY ACHIEVED, no code written.** The body had
+  **zero** IV reloads: Phase 1 collapsed the 3 cloned offsets to 1, and loop-reg
+  promotion keeps the IV in `$r3` across the back edge. Verified by inspecting
+  the emitted body, not assumed. Claiming it would have been double-counting.
+- **Phase 3 (commit eab1ffb) — emit the final affine address directly:** with the
+  pair keyed on a word-aligned tap the correction degenerates to `off - 0`, the
+  last add-then-subtract remnant. **2.375 -> 2.250 instr/output, 1.250 -> 1.125
+  bundles/output, ticks 1846 -> 1798 (−2.6%, −41.6% vs scalar 3077).**
+- **FINAL BODY = the predicted sequence item for item:** 1 address + 2 shared
+  aligned loads + 6 funnel-shift + 2 `$v +` + 1 store + 2 loop overhead = 14.
+  Tap 0 IS W0 (no load, no copy).
+- **TWO FIGURES REPORTED, both honest:** **1.750** = steady-state loop body (what
+  the bound was derived for); **2.250** = same kernel through the guarded harness,
+  whose program also has a 136-element init loop, sparse result reads and a peeled
+  remainder. Quoting only the first would overstate it.
+- **REMAINING:** no redundancy left IN THE BODY. Dynamic IPB fell 0.830 -> 0.753
+  (fewer instrs in the same bundles) and occupancy is ~20%, so ~4 of 5 issue slots
+  in the vector body are idle — a supply problem for unrolling/pipelining, not for
+  this milestone.
