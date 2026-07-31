@@ -96,6 +96,8 @@ def vectorize_all_module(instrs, global_base=0x400):
     pass over the module. Clients are tried in order per loop; each loop is
     claimed by whichever client recognises its kind."""
     from elementwise_vectorizer import ElementwiseTransform
+    from axpy_vectorizer import AxpyTransform
     return run_module(instrs, [DotReductionTransform(_SUPPORTED, global_base),
-                               ElementwiseTransform(global_base)],
+                               ElementwiseTransform(global_base),
+                               AxpyTransform(global_base)],
                       global_base=global_base)

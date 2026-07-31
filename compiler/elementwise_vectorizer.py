@@ -38,7 +38,7 @@ class ElementwiseTransform(VectorTransform):
     """Elementwise copy / add / sub / multiply over packed arrays."""
 
     name = 'elementwise'
-    kinds = ('vector-add', 'saxpy')     # pre-filter; match() decides for real
+    kinds = ('vector-add',)             # 'saxpy' is owned by AxpyTransform (R4.3)
 
     def __init__(self, global_base=0x400):
         # R4.2.5 needs the real backend to compare realisations. It is passed in
@@ -72,6 +72,14 @@ class ElementwiseTransform(VectorTransform):
 
 def vectorize_elementwise_module(instrs, global_base=0x400):
     """Vectorize ONLY elementwise loops. (The production compiler runs the full
-    client set; this entry point exists for testing and corpus measurement.)"""
-    return run_module(instrs, [ElementwiseTransform(global_base)],
+    client set; this entry point exists for testing and corpus measurement.)
+
+    R4.3 note: `kernel_detector` labels an elementwise MULTIPLY (`C[i]=A[i]*B[i]`)
+    as kind 'saxpy', which the AXPY client now owns and which falls back to the
+    elementwise planner for exactly this shape. Registering both clients here
+    keeps this entry point's contract -- every elementwise shape R4.2 handled --
+    unchanged."""
+    from axpy_vectorizer import AxpyTransform
+    return run_module(instrs, [ElementwiseTransform(global_base),
+                               AxpyTransform(global_base)],
                       global_base=global_base)

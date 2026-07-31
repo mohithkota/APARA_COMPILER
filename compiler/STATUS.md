@@ -4941,3 +4941,59 @@ the vector clients yet. Full report: `R4_2_8_DELIVERY.md`.
   so the roadmap table is the evidence, not the corpus. Conservative on multi-def
   temps. `varies()` is not memoized across accesses (fine at 65 loops). Recursion
   bounded at depth 16.
+
+---
+
+## R4.3 — Automatic AXPY Vectorization  (2026-07-31) ✅ DONE
+
+**The first production client of `vector_affine` (R4.2.8).** Not matrix
+multiplication — that was shown impossible on this architecture; AXPY is the
+transformation the affine analysis actually unlocks. `vector_pipeline`,
+`vector_affine`, legality, profitability, validation, scheduler, bundler and
+backend all consumed UNMODIFIED. Full report: `R4_3_DELIVERY.md`.
+
+- **Added** `axpy_lowering.py` (`plan_axpy` + `lower_axpy`), `axpy_vectorizer.py`
+  (`AxpyTransform`), `axpy_corpus.py`, `_r4_3_test.py`. **Modified**
+  `elementwise_vectorizer.py` (kinds drops 'saxpy'; its standalone entry point
+  registers both clients so its contract is unchanged), `dot_vectorizer.py`
+  (`vectorize_all_module` registers AXPY).
+- **LOWERING:** per chunk `packed load X → $v * with $replicate(a) → packed load Y
+  → $v + → packed store Y`. **No new vector instruction.** `$replicate` broadcasts
+  **src2**, so the scalar is passed as src2 of the multiply. The coefficient is
+  materialised ONCE ahead of the vector body (slot load, or `IRAssign` for a
+  literal). Both realisations are built and the R4.2.6 post-optimizer probe keeps
+  the smaller — **compact wins on 8 of 10** kernels.
+- **`vector_affine` IS THE ONLY AFFINE ANALYSIS** — `plan_axpy` never reads
+  `desc.iv_terms` (asserted by test); store and Y/X reloads must be CONTIGUOUS,
+  the coefficient INVARIANT, all via `classify_access`.
+- **CORRECTION THE IMPLEMENTATION FORCED:** `classify_access` describes the
+  ADDRESS pattern, not the loaded VALUE. A load of the IV's own slot sits at a
+  constant offset and so looks address-invariant while its value changes every
+  iteration — `Y[i] += i*X[i]` initially MATCHED and was caught only by the
+  differential. The coefficient test now also requires `ctx.varies(...)` false, and
+  it is rejected at match time. **A usage lesson, NOT a vector_affine limitation**
+  — both facts were already exposed; the client asked the wrong one.
+- **DESIGN CONSEQUENCE:** `kernel_detector` labels ANY multiply-bearing stored
+  value 'saxpy' — both real AXPY and R4.2's `C[i]=A[i]*B[i]`. The pipeline
+  dispatches ONE client per kind, so only one can own it. `AxpyTransform` owns
+  'saxpy' and **falls back to the R4.2 elementwise planner/lowering** when its own
+  match fails, so every R4.2 shape still vectorizes by the same code (R4.2 suite +
+  corpus pass unchanged). No pipeline change, no detector change.
+- **CORPUS (13 cases):** vectorized **10/10 expected**, **0 mismatches, 0
+  rollbacks**; bundles 200→212 (the 8 exact-multiple kernels are FLAT at 20→20,
+  the 2 remainder kernels grow to 22 and 30); code 14131→17110 chars; dynamic ops
+  **13664 → 1804 (−86.8%)**; 104 ms/kernel. **vs R4.2.6 on the same kernels:
+  0/13 → 10/13 (+10)**. Full corpus **124/124 scalar byte-identical**.
+- **vi32 is SUPPORTED, not rejected** (the spec anticipated a possible rejection):
+  `$v` covers vi32 — only `$dot` lacks a 32-bit form — so AXPY vi32 vectorizes at
+  2 lanes.
+- All 7 criteria met. 59/59 unit; crosscheck 124/124; R3.1–R4.2.8 suites and all
+  corpora pass.
+- **Honest limitations:** static size grows on the two remainder kernels (the
+  exact-multiple ones stay flat); **no peeled remainder for AXPY** — `PeelTemplate`
+  cannot express `Y[i] += a*X[i]` (two loads + invariant scalar + two ops) and
+  extending it speculatively was out of scope, so the scalar tail loop is kept as
+  in R4.1/R4.2 (the obvious follow-on); `a` is materialised once per vector body,
+  which for the compact form is once per loop iteration (LICM may hoist it — not
+  verified); validation remains the packed IR oracle.
+- **NO `vector_affine` LIMITATION BLOCKED AXPY.**
