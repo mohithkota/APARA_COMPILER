@@ -289,7 +289,7 @@ def build_compact(plan, instrs, def_map, region):
     pre, a_val = _load_scalar(plan)
     err_box = [None]
 
-    def emit(_off):
+    def emit(_off, iv_index=None):
         # The address comes from the cloned expression, which RE-LOADS the IV
         # slot, so `build_compact_chunk_loop`'s own scaled offset is unused here.
         # That re-read is why GEMM was the client that exposed defect D2: the

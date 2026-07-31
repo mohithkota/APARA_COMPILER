@@ -341,7 +341,7 @@ def build_compact_body(plan):
     R2.8-class live-range hazard cannot arise."""
     import vector_compact_loop as _vcl
 
-    def emit(off):
+    def emit(off, iv_index=None):
         body = []
         init, acc = _vcl.slot_load(plan.acc_slot, plan.signed,
                                    elem_bytes=plan.acc_bytes)

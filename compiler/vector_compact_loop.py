@@ -207,6 +207,29 @@ def slot_width(instrs, lo, hi, slot):
 
 # ── the compact chunk loop ──────────────────────────────────────────────────────
 
+def unroll_factor(chunks):
+    """How many chunks one loop iteration should process (R6.4).
+
+    Default 4, chosen by MEASUREMENT across the 38-program simulator suite:
+    total ticks 210359 -> 138014 (-34.4%). 8 was no better (139032) and 2 was far
+    WORSE (351992, +67%) because GEMM stopped vectorizing at that factor and fell
+    back to scalar. `APARA_VECTOR_UNROLL` overrides it for measurement.
+
+    Only a factor that DIVIDES the chunk count is accepted, so the loop needs no
+    remainder path and the guard `i < chunks*lanes` stays exact; a kernel whose
+    chunk count is not a multiple simply steps down to the largest factor that
+    is, which is why this never introduces a tail."""
+    try:
+        u = int(os.environ.get('APARA_VECTOR_UNROLL', '4'))
+    except ValueError:
+        return 1
+    if u < 1:
+        return 1
+    while u > 1 and chunks % u:
+        u //= 2
+    return max(1, u)
+
+
 def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body,
                             iv_bytes=8):
     """Emit `for (i = iv_slot; i < chunks*lanes; i += lanes) emit_body(i*eb)`.
@@ -233,7 +256,8 @@ def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body,
     out += ld
     out.append(IRCondJump(i_cur, '<', Const(chunks * lanes), body_l, end_l))
 
-    # body:  off = i * eb ; <packed work>
+    # body:  off = i * eb ; <packed work>   (R6.4: U chunks per iteration)
+    u = unroll_factor(chunks)
     out.append(IRLabel(body_l))
     ld, i_body = slot_load(iv_slot, elem_bytes=iv_bytes)
     out += ld
@@ -242,20 +266,41 @@ def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body,
     else:
         off = _fresh('_vco')
         out.append(IRBinOp(off, '*', i_body, Const(eb)))
-    out += emit_body(off)
+    # R6.4: emit the SAME body u times at chunk offsets off, off + w, off + 2w,
+    # ... where w = lanes*eb is one packed word. The lowering is reused
+    # unchanged -- `emit_body` already takes the byte offset -- so this adds no
+    # legality, address-generation or vector-instruction logic. The copies are
+    # independent (they touch disjoint words), which is the whole point: it
+    # hands the existing scheduler and bundler more ready work.
+    # `emit_body(off, iv_index)` -- both are needed. A client that addresses
+    # chunks directly uses the BYTE offset; a client that re-emits the loop's own
+    # address computation through `clone_offset` (GEMM's row base, a shifted
+    # convolution window) must substitute the ELEMENT index instead, or every
+    # copy re-derives the same address and the copies are identical.
+    for k in range(u):
+        if k == 0:
+            out += emit_body(off, i_body)
+            continue
+        off_k = _fresh('_vcu')
+        iv_k = _fresh('_vci')
+        out.append(IRBinOp(off_k, '+', off, Const(k * lanes * eb)))
+        out.append(IRBinOp(iv_k, '+', i_body, Const(k * lanes)))
+        out += emit_body(off_k, iv_k)
 
-    # incr:  i += lanes ; goto cond
+    # incr:  i += u*lanes ; goto cond
     out.append(IRLabel(incr_l))
     ld, i_inc = slot_load(iv_slot, elem_bytes=iv_bytes)
     out += ld
     nxt = _fresh('_vcn')
-    out.append(IRBinOp(nxt, '+', i_inc, Const(lanes)))
+    out.append(IRBinOp(nxt, '+', i_inc, Const(u * lanes)))
     out += slot_store(iv_slot, nxt, elem_bytes=iv_bytes)
     out.append(IRJump(cond_l))
 
     out.append(IRLabel(end_l))
-    # executed instructions per full iteration = everything but the 4 labels
-    per_iter = len(out) - 4
+    # Executed instructions per CHUNK (everything but the 4 labels, divided by
+    # the unroll factor). Normalising per chunk keeps every existing caller's
+    # `chunks * per_iter` dynamic model correct without changing it.
+    per_iter = (len(out) - 4) / float(u)
     return out, per_iter
 
 

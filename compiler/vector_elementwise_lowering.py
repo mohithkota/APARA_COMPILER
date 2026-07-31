@@ -410,7 +410,7 @@ def build_compact_elementwise_body(plan):
     the offset change."""
     import vector_compact_loop as _vcl
 
-    def emit(off):
+    def emit(off, iv_index=None):
         import vector_compact_loop as _v
         if plan.shifted:
             # R4.6: re-emit each access's own address computation, re-loading the
@@ -429,7 +429,7 @@ def build_compact_elementwise_body(plan):
                 pre_all = []
                 if key not in _pairs:
                     pre, o = _co(plan._instrs, plan._defmap, plan._region,
-                                 a.offset_expr, plan.iv_slot, None)
+                                 a.offset_expr, plan.iv_slot, iv_index)
                     if pre is None:
                         raise ValueError(o)
                     ld, w0, w1 = _v.aligned_pair_at(a.slot, o, sh, plan.lanes,
@@ -442,7 +442,7 @@ def build_compact_elementwise_body(plan):
             if ins is None:
                 raise ValueError(val)
             pre, doff = _co(plan._instrs, plan._defmap, plan._region,
-                            plan.dst_off, plan.iv_slot, None)
+                            plan.dst_off, plan.iv_slot, iv_index)
             if pre is None:
                 raise ValueError(doff)
             return list(ins) + list(pre) + _v.packed_store_at(

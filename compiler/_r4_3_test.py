@@ -160,9 +160,19 @@ def test_compact_realisation_reused():
     reals = {_vcl.realisation_of(vectorize_all_module(_ir(c))[0]) for c in _AX}
     check(f"every AXPY kernel gets a realisation {reals}",
           reals and all(r.startswith(('compact', 'unrolled')) for r in reals))
+    # R6.4 NOTE: with vector unrolling on by default the compact loop is larger,
+    # so the size probe picks the fully unrolled form more often. The property
+    # under test -- that compact remains REACHABLE, i.e. the probe really
+    # measures rather than hard-coding -- is checked with unrolling pinned off.
     _DOT = ("long long f(){vi8_t a[64],b[64];int i;long long s=0;"
             "for(i=0;i<64;i++)s+=a[i]*b[i];return s;}")
-    other = _vcl.realisation_of(vectorize_all_module(_ir(_DOT))[0])
+    _old = os.environ.get('APARA_VECTOR_UNROLL')
+    os.environ['APARA_VECTOR_UNROLL'] = '1'
+    try:
+        other = _vcl.realisation_of(vectorize_all_module(_ir(_DOT))[0])
+    finally:
+        if _old is None: os.environ.pop('APARA_VECTOR_UNROLL', None)
+        else: os.environ['APARA_VECTOR_UNROLL'] = _old
     check(f"the compact realisation is still selected somewhere ({other})",
           other.startswith('compact'))
 

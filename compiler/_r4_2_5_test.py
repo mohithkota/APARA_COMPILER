@@ -174,6 +174,21 @@ def test_realisation_chosen_by_measurement():
 
 
 def test_static_size_reduced():
+    # R6.4 NOTE: vector loop unrolling deliberately trades STATIC SIZE for ILP,
+    # so with the default factor the compact form is no longer the smaller one.
+    # The property this test guards -- that the realisation CHOICE reduces size
+    # versus always-unrolled -- is about R4.2.5, so the factor is pinned to 1
+    # here rather than the assertion being dropped.
+    _old = os.environ.get('APARA_VECTOR_UNROLL')
+    os.environ['APARA_VECTOR_UNROLL'] = '1'
+    try:
+        return _test_static_size_reduced_body()
+    finally:
+        if _old is None: os.environ.pop('APARA_VECTOR_UNROLL', None)
+        else: os.environ['APARA_VECTOR_UNROLL'] = _old
+
+
+def _test_static_size_reduced_body():
     print("static size falls versus always-unrolled (R4.2 behaviour)")
     tot_u = tot_a = 0
     chars_u = chars_a = 0

@@ -5934,3 +5934,47 @@ bound: 14 instructions per 8 outputs = 1.750 instr/output**, from 3.500.
   (fewer instrs in the same bundles) and occupancy is ~20%, so ~4 of 5 issue slots
   in the vector body are idle — a supply problem for unrolling/pipelining, not for
   this milestone.
+
+---
+
+## R6.4 — Vector Loop Unrolling  (2026-08-01) ✅ DONE — 4x DEFAULT, −34.4% SUITE TICKS
+
+**Suite ticks 210359 -> 138014 (−34.4%) across 38 programs; 38/38 maintained at
+EVERY factor tested.** Report: `R6_4_VECTOR_UNROLLING.md`.
+
+- **DESIGN:** unroll INSIDE the existing compact chunk loop, after vectorization.
+  `emit_body` is the unchanged R6.3 lowering; U copies at chunk offsets
+  `off + k*lanes*eb`, step `U*lanes`. Only factors DIVIDING the chunk count are
+  accepted -> no remainder path. No new vector instruction, no legality/address/
+  scheduler/bundler change.
+- **CONTRACT CHANGE REQUIRED:** `emit_body(off)` -> `emit_body(off, iv_index)`.
+  Clients that re-emit addresses via `clone_offset` (GEMM row base, shifted conv
+  window) IGNORE the byte offset and re-derive from the IV — so every unrolled
+  copy computed the SAME address. **The differential oracle caught it
+  (`differential:mismatch`) before any measurement was taken.**
+- **FACTOR COMPARISON (suite ticks):** 1x 210359 | **2x 351992 (+67.3%!)** |
+  **4x 138014 (−34.4%)** | 8x 139032 (−33.9%). **2x is PATHOLOGICAL — all four
+  GEMM kernels go vectorized 1->0 and run scalar (+175%).** 8x buys nothing over
+  4x. **4x adopted as default**, `APARA_VECTOR_UNROLL` overrides.
+- **PER-KERNEL at 4x:** gemm −50..−60%, reduction −13..−22%, conv3 vi32 −20%,
+  elementwise vi32/vu32 −19..−20%, dot −4%. **REGRESSIONS: axpy vi16 +15.6%,
+  elementwise vi16 +10.7%, vu16 +6.3..6.4%** — reported because they are real.
+- **HONEST READING OF THE HEADLINE METRICS:** dynamic IPB only 0.744 -> 0.767
+  (+3.1%) and occupancy 19.7% -> 20.5% (+0.8pp), while ticks fell 13-34%.
+  **Unrolling REMOVED work rather than packing it denser** — one compare/branch/
+  IV-update now amortises over 4 chunks. The remaining bundles are just as
+  sparse; the intra-chunk dependence chain is unchanged and the independent
+  copies are NOT being interleaved into the same bundles. **R6.1's diagnosis
+  stands: ~80% of vector slots are still idle**; filling them needs the scheduler
+  to interleave copies (software pipelining), which is out of scope here.
+- **ADAPTIVE NOT IMPLEMENTED, deliberately.** Per-kernel selection would keep the
+  GEMM win and leave the four 16-bit kernels at 1x. But R4.2.5's probe optimises
+  STATIC SIZE, which is the wrong objective for unrolling (it would always pick
+  1x); a correct adaptive selector needs a dynamic objective — a design decision,
+  not a mechanical extension, so it was not guessed at.
+- **REGRESSION:** 38/38 at 1x/2x/4x/8x; crosscheck 124/124; all 15 suites. Two
+  suites updated for R6.4's INTENDED static-size trade (not correctness), by
+  PINNING the factor to 1x rather than dropping the check: `_r4_2_5` (size vs
+  always-unrolled) and `_r4_3` (compact still reachable).
+- **UNEXPLAINED:** why GEMM loses vectorization at 2x but not 4x/8x. Reported and
+  avoided, not diagnosed.

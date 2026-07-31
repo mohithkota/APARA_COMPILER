@@ -321,7 +321,7 @@ def build_unrolled(plan):
 def build_compact(plan):
     pre, a_val = _load_scalar(plan)
 
-    def emit(off):
+    def emit(off, iv_index=None):
         return _chunk(
             plan, a_val,
             lambda t: _vcl.packed_load_at(t, plan.x_slot, off, plan.lanes,
