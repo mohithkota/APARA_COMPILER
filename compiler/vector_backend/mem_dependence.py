@@ -160,17 +160,27 @@ def annotate(flat):
     provable. That is not a theoretical gap: it is the difference between a
     compact vector loop gaining nothing and gaining everything.
 
-    A register WRITTEN EXACTLY ONCE in the whole function may keep its symbolic
-    value across block boundaries. Soundness: with a single definition, any
-    dynamic use must be preceded by that definition (a use of a never-written
-    register would be a use of an undefined value, which codegen does not emit),
-    so the value at every later use is the one computed there. The value is only
-    ever carried FORWARD in program order, so a use appearing textually before
-    the definition still sees an opaque live-in.
+    A register may keep its symbolic value across block boundaries only when it
+    is written exactly once AND its value is expressed purely in terms of
+    FUNCTION-ENTRY live-ins -- the frame/stack pointer as they are on entry.
 
-    Multiply-defined registers -- induction variables, accumulators, anything
-    the loop updates -- get a FRESH opaque symbol at each block, exactly as
-    before. Those are the ones a back edge can change."""
+    The entry-live-in condition is not optional, and the original R6.2 rule
+    (single static write alone) was UNSOUND without it. "Written once" is a
+    STATIC count: a definition inside a loop body executes on every iteration,
+    and its expression is written in terms of that block's live-in symbols,
+    which denote a DIFFERENT concrete value each time round. Carrying such a
+    value into another block lets two addresses cancel symbols that were never
+    equal at the same moment, so the model can report "independent" for accesses
+    that genuinely alias. Measured: it let a later scalar load of `out[11]` be
+    reordered above the vector stores that write it, and the kernel read 0.
+
+    A value built only from entry live-ins is loop-invariant by construction --
+    it has the same concrete value on every iteration and after every loop -- so
+    carrying it is safe. That is also exactly the case the carry exists for:
+    LICM hoists array bases into the preheader as `FP + constant`.
+
+    Multiply-defined registers -- induction variables, accumulators, anything a
+    loop updates -- still get a FRESH opaque symbol per block."""
     counts = {}
     for e in flat:
         for w in e['writes']:
@@ -187,12 +197,18 @@ def annotate(flat):
     if block:
         blocks.append(block)
 
+    def _entry_only(addr):
+        """True when `addr` depends on nothing but function-entry live-ins, so
+        it has the same value on every iteration and after every loop."""
+        return addr.ok and all(s[0] == 'in' and s[1] == 0 for s in addr.terms)
+
     carried = {}
     for i, blk in enumerate(blocks):
         sym = annotate_block(blk, i, carried=carried, single=single)
         for reg in single:
-            if reg in sym.vals:
-                carried[reg] = sym.vals[reg]
+            v = sym.vals.get(reg)
+            if v is not None and _entry_only(v):
+                carried[reg] = v
     return flat
 
 

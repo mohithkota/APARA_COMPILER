@@ -5730,3 +5730,49 @@ committed.** Report: `R6_2D_VECTOR_LANE_ORDER.md`.
   simulator still FAILS: `Mem[0x81] = 0x0, expected 0xc`, with chunk 0 correct
   and chunk 1 zero. **A second, independent blocker remains**, localised to the
   reconstructed window's per-chunk advance. Documented, not pursued.
+
+---
+
+## R6.3 — Sliding Window Completion (investigation)  (2026-08-01) ⚠️ PARTIAL
+
+**The stated hypothesis was WRONG.** The defect is not the chunk advance and not
+the funnel shift. One real unsoundness in R6.2 was found and fixed; it is not
+enough to unblock R6.3, so **no lowering is committed**. Report:
+`R6_3_SLIDING_WINDOW_COMPLETION.md`.
+
+- **THE RECONSTRUCTION IS CORRECT.** Instrumented with kernels exposing EVERY
+  output element: conv 3-tap vi8 `in[40]`/30 iters (all 30 checked) **PASS**; and
+  the EXACT failing shape `in[72]`/61 iters with the first 24 outputs checked
+  **PASS** — including `out[11] = 0xc`, the very element the suite reports wrong.
+  Chunks 0 AND 1 both correct; 0 unaligned loads.
+- **REAL CAUSE — R6.2 memory disambiguation.** The suite kernel differs only in
+  reading `out[0]/out[11]/out[60]` into `results[0..2]` instead of sequentially.
+  `APARA_NO_MEMDISAMB=1` -> **PASS** (1888 ticks); ON -> FAIL. The failure is
+  IDENTICAL for vi8/vu8/vi16/vu16/vi32/vu32 — different lanes, shifts and chunk
+  counts — which no window-arithmetic bug could be. A later scalar read of
+  `out[11]` is moved above / co-issued with the vector stores that write it.
+- **UNSOUNDNESS FOUND AND FIXED (committed on its own merits):** R6.2 carried a
+  register's symbolic value across blocks when it was "written exactly once".
+  That is a STATIC count — a definition inside a loop executes every iteration,
+  and its value is expressed in that block's live-in symbols, which denote a
+  DIFFERENT value each time. Two addresses could then cancel symbols that were
+  never equal simultaneously. **Minimum correction:** carry only when the value
+  depends solely on FUNCTION-ENTRY live-ins (loop-invariant by construction, and
+  exactly the LICM-hoisted `FP + const` array bases the carry exists for).
+- **STILL OPEN:** disabling the model in EITHER consumer alone makes it pass
+  (scheduler-only PASS, packer-only PASS, both FAIL). Not yet explained; the
+  offending pair was not isolated. 40 pairs are proven independent inside the
+  block, none obviously wrong on inspection.
+- **NO PERFORMANCE CLAIMED** (nothing shipped). One number, labelled unshippable:
+  with disambiguation off the reconstructed conv 3-tap vi8 runs **1888 ticks vs
+  1517 for the scalar form the compiler ships** — the window form is currently
+  SLOWER (two aligned loads + three ALU ops per shifted tap), so profitability
+  must be re-examined even once it is correct.
+- **REGRESSION for the committed fix:** verification **38/38 PASS**; 124-corpus
+  **2 changed** (`universal/b3.c`, `u5_sieve.c`) — both **re-verified on the
+  simulator against their gcc goldens, PASS**; crosscheck 124/124; all 15 suites.
+  The 2 changes are the model being correctly more conservative.
+- **NEXT:** isolate the wrongly-proven pair (one-command repro), THEN re-apply the
+  lowering (one ArrayRef field, one emitter, three call sites, one legality
+  relaxation), THEN re-check profitability. **The disambiguation defect is latent
+  at HEAD only because convolution is declined — it is not convolution-specific.**
