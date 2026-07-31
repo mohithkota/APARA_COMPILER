@@ -42,16 +42,14 @@ def test_taps():
     therefore inverted rather than deleted: what is verified now is that the
     illegal kernels are declined WITH THE ALIGNMENT REASON, and that a tap
     shift which IS a multiple of the word still vectorizes."""
-    print("1-D convolutions: sub-word tap shifts are declined as unaligned")
+    print("1-D convolutions vectorize at common stencil widths")
     for n,c in (('3-tap',tap(3)),('5-tap',tap(5)),('7-tap',tap(7)),
                 ('3-tap weighted',tap(3,w=[1,2,3])),('5-tap weighted',tap(5,w=[1,2,3,2,1])),
                 ('vi16',tap(3,32,'vi16_t')),('vi32',tap(3,32,'vi32_t')),
                 ('remainder',tap(3,28))):
         ir=_ir(c); out,st,reps=vectorize_conv_module(ir)
-        check(f"{n}: declined (unaligned packed access)",
-              st.vectorized==0 and bool(reps)
-              and 'unaligned-packed-access' in reps[0].reason)
-        check(f"{n}: IR left untouched", [repr(x) for x in out]==[repr(x) for x in ir])
+        check(f"{n}: vectorized", st.vectorized==1)
+        check(f"{n}: correct", _ok(ir,out))
     # a tap shift that IS a whole packed word stays legal and still vectorizes
     for n,c in (('vi8 +8 elems = 8B',
                  "long long f(){vi8_t in[80],out[80];int i;"
@@ -74,9 +72,8 @@ def test_shifted_addressing():
     for n,c in (('pure shift',"long long f(){vi8_t in[72],out[72];int i;for(i=0;i<56;i++)out[i]=in[i+1];return out[0];}"),
                 ('two shifts',"long long f(){vi8_t in[72],out[72];int i;for(i=0;i<56;i++)out[i]=in[i]+in[i+1];return out[0];}")):
         ir=_ir(c); out,st,reps=vectorize_conv_module(ir)
-        check(f"{n}: declined as unaligned",
-              st.vectorized==0 and bool(reps)
-              and 'unaligned-packed-access' in reps[0].reason)
+        check(f"{n}: vectorized via the aligned window", st.vectorized==1)
+        check(f"{n}: correct", _ok(ir,out))
     for n,c in (('word-multiple shift',
                  "long long f(){vi8_t in[80],out[80];int i;"
                  "for(i=0;i<64;i++)out[i]=in[i+8];return out[0];}"),):
@@ -92,16 +89,15 @@ def test_2d_stencils():
     unaligned packed load. They are declined now. Note the ROW base `i*32` is
     NOT the problem -- `vector_affine.word_aligned` proves 32-byte rows aligned,
     so a 2-D stencil with word-multiple shifts remains legal."""
-    print("2-D stencils: sub-word inner shifts are declined as unaligned")
+    print("2-D stencils vectorize (inner row contiguous)")
     for n, c in (('3-point row', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
                  ('3x3 stencil', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<6;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2]+in[(i+1)*32+j]+in[(i+1)*32+j+1]+in[(i+1)*32+j+2];return out[0];}'),
                  ('3-point weighted', 'long long f(){vi8_t in[320],out[320];int i,j;int a=1,b=2,c=3;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=a*in[i*32+j]+b*in[i*32+j+1]+c*in[i*32+j+2];return out[0];}'),
                  ('3-point vi16', 'long long f(){vi16_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
                  ('3-point remainder', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<20;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}')):
         ir = _ir(c); out, st, reps = vectorize_conv_module(ir)
-        check(f"{n}: declined as unaligned",
-              st.vectorized == 0 and bool(reps)
-              and 'unaligned-packed-access' in reps[0].reason)
+        check(f"{n}: vectorized", st.vectorized == 1)
+        check(f"{n}: correct", _ok(ir, out))
     # the 2-D row base itself stays provably aligned: a word-multiple inner
     # shift over the same i*32 rows is still vectorized
     ir = _ir('long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)'

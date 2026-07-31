@@ -274,7 +274,13 @@ def _packed_accesses_aligned(desc, instrs):
                 acc = classify_access(ins, ctx)
                 if acc.kind != CONTIGUOUS:
                     continue                     # scalar or already rejected
-                if not word_aligned(acc, _WORD_BYTES):
+                if word_aligned(acc, _WORD_BYTES):
+                    continue
+                reconstructable = (type(ins).__name__ == 'IRLoad'
+                                   and acc.const_off is not None
+                                   and not (acc.sym_div
+                                            and acc.sym_div % _WORD_BYTES))
+                if not reconstructable:
                     return False, acc
         return True, None
     except Exception:

@@ -86,6 +86,27 @@ def packed_load_at(dest, slot, off_temp, lanes, eb, signed):
     return [la, ld]
 
 
+def packed_window_load_at(dest, slot, off_temp, shift_bytes, lanes, eb, signed):
+    """A packed window starting `shift_bytes` into a word, from ALIGNED loads."""
+    if not shift_bytes:
+        return packed_load_at(dest, slot, off_temp, lanes, eb, signed)
+    sh = 8 * shift_bytes
+    base = _fresh('_vwb'); aoff = _fresh('_vwa'); aoff2 = _fresh('_vwc')
+    w0 = _fresh('_vw0'); w1 = _fresh('_vw1')
+    hi = _fresh('_vwh'); lo = _fresh('_vwl')
+    out = [IRLoadAddr(base, slot),
+           IRBinOp(aoff, '-', off_temp, Const(shift_bytes)),
+           IRBinOp(aoff2, '+', aoff, Const(8))]
+    ld0 = IRLoad(w0, base, aoff, elem_bytes=8, unsigned=True)
+    ld1 = IRLoad(w1, base, aoff2, elem_bytes=8, unsigned=True)
+    ld0._vec_pack = (lanes, eb); ld1._vec_pack = (lanes, eb)
+    out += [ld0, ld1,
+            IRBinOp(hi, '<<', w0, Const(sh)),
+            IRBinOp(lo, '>>', w1, Const(64 - sh), unsigned=True),
+            IRBinOp(dest, '|', hi, lo)]
+    return out
+
+
 def packed_store_at(slot, off_temp, value, lanes, eb):
     """Store one packed 64-bit result back at a register offset."""
     base = _fresh('_vcs')

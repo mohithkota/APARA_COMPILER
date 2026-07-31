@@ -65,7 +65,7 @@ class ElementwisePlan:
     """The extracted shape of one elementwise loop, or a rejection reason."""
     __slots__ = ('ok', 'reason', 'op', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'dst_slot', 'src_slots', 'acc_unused',
-                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
+                 'iv_slot', 'iv_bytes', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
                  'realisation', 'compact_per_iter', 'peel', 'peel_len', 'expr',
                  'dst_off', 'shifted', '_instrs', '_defmap', '_region')
 
@@ -269,9 +269,27 @@ def plan_elementwise(desc, instrs, kernel, legality):
                                          desc.primary_iv, Const(0))[0] is None:
                 p.reason = 'shifted-offset-not-clonable'
                 return p
+        from vector_affine import LoopAffineContext, resolve_offset
+        import vector_capability_db as _vdb
+        _WB = _vdb.WORD_BITS // 8
+        _ctx = LoopAffineContext(instrs, desc)
+
+        def _word_shift(oe):
+            if oe is None: return 0
+            acc = resolve_offset(oe, _ctx)
+            if not acc.ok or acc.const_off is None: return None
+            if acc.sym_div and acc.sym_div % _WB: return None
+            return acc.const_off % _WB
+
+        for _o in offs:
+            if _word_shift(_o) is None:
+                p.reason = 'shift-not-compile-time-constant'; return p
+        if _word_shift(p.dst_off) != 0:
+            p.reason = 'unaligned-vector-store'; return p
         tree = et.map_arrays(tree, lambda a: et.ArrayRef(
             a.slot, a.elem_bytes, a.unsigned, offset_at=_at(a.offset_expr),
-            offset_expr=a.offset_expr))
+            offset_expr=a.offset_expr,
+            word_shift=(_word_shift(a.offset_expr) or 0)))
         p.expr = tree
 
     # R4.5 peel template: the SAME tree drives the scalar tail
@@ -284,6 +302,16 @@ def plan_elementwise(desc, instrs, kernel, legality):
 
     # ── the IV init site (same requirement and reasoning as R4.1) ─────────────
     p.iv_slot = desc.primary_iv
+    # R6.2C / defect D2, completed here. The compact chunk loop REUSES the
+    # scalar loop's induction-variable slot, so it must access it at the width
+    # the scalar code uses -- an 8-byte write and a 4-byte read of one 64-bit
+    # DMEM word do not see the same bits. R6.2C fixed the dot/reduction, AXPY
+    # and GEMM clients; this fourth client was missed. It stayed latent because
+    # an elementwise body addresses chunks with the loop's OWN offset temp and
+    # never re-reads the slot -- only a client that re-reads it through
+    # `clone_offset` (a shifted convolution window) can observe the mismatch.
+    import vector_compact_loop as _vcl_w      # local: _vcl imports this module
+    p.iv_bytes = _vcl_w.slot_width(instrs, lo, hi, p.iv_slot)
     hblk = desc.cfg.blocks[desc.header]
     p.iv_init_site = None
     for k in range(hblk.lo - 1, lo - 1, -1):
@@ -334,8 +362,9 @@ def build_elementwise_body(plan):
 
             def _ld(a, t, c=c):
                 pre, off = a.offset_at(c * plan.lanes)
-                return list(pre) + _v.packed_load_at(t, a.slot, off, plan.lanes,
-                                                     a.elem_bytes, not a.unsigned)
+                return list(pre) + _v.packed_window_load_at(
+                    t, a.slot, off, getattr(a, 'word_shift', 0), plan.lanes,
+                    a.elem_bytes, not a.unsigned)
             ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
             if ins is None:
                 raise ValueError(val)
@@ -375,7 +404,8 @@ def build_compact_elementwise_body(plan):
                              a.offset_expr, plan.iv_slot, None)
                 if pre is None:
                     raise ValueError(o)
-                return list(pre) + _v.packed_load_at(t, a.slot, o, plan.lanes,
+                return list(pre) + _v.packed_window_load_at(
+                    t, a.slot, o, getattr(a, 'word_shift', 0), plan.lanes,
                                                      a.elem_bytes, not a.unsigned)
             ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
             if ins is None:
@@ -388,7 +418,8 @@ def build_compact_elementwise_body(plan):
                 plan.dst_slot, doff, val, plan.lanes, plan.eb)
         ins, val, _sc = lower_vector(
             plan.expr, plan.vtype,
-            lambda a, t: _v.packed_load_at(t, a.slot, off, plan.lanes,
+            lambda a, t: _v.packed_window_load_at(
+                t, a.slot, off, getattr(a, 'word_shift', 0), plan.lanes,
                                            a.elem_bytes, not a.unsigned))
         if ins is None:
             raise ValueError(val)
@@ -396,7 +427,8 @@ def build_compact_elementwise_body(plan):
                                               plan.lanes, plan.eb)
 
     loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
-                                                   plan.lanes, plan.chunks, emit)
+                                                   plan.lanes, plan.chunks, emit,
+                                                   iv_bytes=plan.iv_bytes)
     plan.compact_per_iter = per_iter
     return loop
 

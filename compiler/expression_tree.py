@@ -58,10 +58,11 @@ class Const:
 
 
 class ArrayRef:
-    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at', 'offset_expr')
+    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at', 'offset_expr',
+                 'word_shift')
 
     def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None,
-                 offset_expr=None):
+                 offset_expr=None, word_shift=0):
         self.slot = slot
         self.elem_bytes = elem_bytes
         self.unsigned = unsigned
@@ -72,6 +73,7 @@ class ArrayRef:
         # as GEMM honours a row base. Keeping the expression lets lowering
         # re-emit the loop's own address computation instead of assuming zero.
         self.offset_expr = offset_expr
+        self.word_shift = word_shift
 
     def address(self, idx):
         if self.offset_at is not None:
