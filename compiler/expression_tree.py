@@ -59,10 +59,10 @@ class Const:
 
 class ArrayRef:
     __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at', 'offset_expr',
-                 'word_shift')
+                 'word_shift', 'word_index')
 
     def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None,
-                 offset_expr=None, word_shift=0):
+                 offset_expr=None, word_shift=0, word_index=0):
         self.slot = slot
         self.elem_bytes = elem_bytes
         self.unsigned = unsigned
@@ -74,6 +74,10 @@ class ArrayRef:
         # re-emit the loop's own address computation instead of assuming zero.
         self.offset_expr = offset_expr
         self.word_shift = word_shift
+        # R6.3 Phase 2: which aligned 64-bit word this access starts in,
+        # relative to the chunk base. Every tap landing in the same word reads
+        # the SAME two aligned words, so the pair is loaded once and shared.
+        self.word_index = word_index
 
     def address(self, idx):
         if self.offset_at is not None:

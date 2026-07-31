@@ -55,7 +55,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ir import (Const, Temp, IRLoad, IRStore, IRLoadAddr, IRLabel, IRJump,
-                IRCondJump, IRBinOp)
+                IRCondJump, IRBinOp, IRAssign)
 from vector_lowering import _fresh
 
 
@@ -84,6 +84,34 @@ def packed_load_at(dest, slot, off_temp, lanes, eb, signed):
     ld = IRLoad(dest, base, off_temp, elem_bytes=8, unsigned=(not signed))
     ld._vec_pack = (lanes, eb)
     return [la, ld]
+
+
+def aligned_pair_at(slot, off_temp, shift_bytes, lanes, eb):
+    """(instrs, w0, w1) -- the two ALIGNED words a window at `shift_bytes` needs.
+
+    Shared across taps (R6.3 Phase 2): every tap that starts in the same 64-bit
+    word reads exactly these two words, so they are loaded once per word per
+    chunk instead of once per tap."""
+    base = _fresh('_vwb'); aoff = _fresh('_vwa'); aoff2 = _fresh('_vwc')
+    w0 = _fresh('_vw0'); w1 = _fresh('_vw1')
+    out = [IRLoadAddr(base, slot),
+           IRBinOp(aoff, '-', off_temp, Const(shift_bytes)),
+           IRBinOp(aoff2, '+', aoff, Const(8))]
+    ld0 = IRLoad(w0, base, aoff, elem_bytes=8, unsigned=True)
+    ld1 = IRLoad(w1, base, aoff2, elem_bytes=8, unsigned=True)
+    ld0._vec_pack = (lanes, eb); ld1._vec_pack = (lanes, eb)
+    return out + [ld0, ld1], w0, w1
+
+
+def window_from_pair(dest, w0, w1, shift_bytes):
+    """The funnel shift itself: dest = (w0 << 8s) | (w1 >>u (64-8s))."""
+    if not shift_bytes:
+        return [IRAssign(dest, w0)]          # the word IS the window
+    sh = 8 * shift_bytes
+    hi = _fresh('_vwh'); lo = _fresh('_vwl')
+    return [IRBinOp(hi, '<<', w0, Const(sh)),
+            IRBinOp(lo, '>>', w1, Const(64 - sh), unsigned=True),
+            IRBinOp(dest, '|', hi, lo)]
 
 
 def packed_window_load_at(dest, slot, off_temp, shift_bytes, lanes, eb, signed):

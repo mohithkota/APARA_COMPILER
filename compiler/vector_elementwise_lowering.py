@@ -274,12 +274,17 @@ def plan_elementwise(desc, instrs, kernel, legality):
         _WB = _vdb.WORD_BITS // 8
         _ctx = LoopAffineContext(instrs, desc)
 
-        def _word_shift(oe):
-            if oe is None: return 0
+        def _word_of(oe):
+            """(shift_into_word, word_index), or None if not provable."""
+            if oe is None: return (0, 0)
             acc = resolve_offset(oe, _ctx)
             if not acc.ok or acc.const_off is None: return None
             if acc.sym_div and acc.sym_div % _WB: return None
-            return acc.const_off % _WB
+            return (acc.const_off % _WB, acc.const_off // _WB)
+
+        def _word_shift(oe):
+            r = _word_of(oe)
+            return None if r is None else r[0]
 
         for _o in offs:
             if _word_shift(_o) is None:
@@ -289,7 +294,8 @@ def plan_elementwise(desc, instrs, kernel, legality):
         tree = et.map_arrays(tree, lambda a: et.ArrayRef(
             a.slot, a.elem_bytes, a.unsigned, offset_at=_at(a.offset_expr),
             offset_expr=a.offset_expr,
-            word_shift=(_word_shift(a.offset_expr) or 0)))
+            word_shift=((_word_of(a.offset_expr) or (0, 0))[0]),
+            word_index=((_word_of(a.offset_expr) or (0, 0))[1])))
         p.expr = tree
 
     # R4.5 peel template: the SAME tree drives the scalar tail
@@ -360,11 +366,23 @@ def build_elementwise_body(plan):
             import vector_compact_loop as _v
             from gemm_lowering import clone_offset as _co
 
-            def _ld(a, t, c=c):
-                pre, off = a.offset_at(c * plan.lanes)
-                return list(pre) + _v.packed_window_load_at(
-                    t, a.slot, off, getattr(a, 'word_shift', 0), plan.lanes,
-                    a.elem_bytes, not a.unsigned)
+            # R6.3 Phase 2: every tap starting in the same aligned word reads
+            # the SAME two words, so load the pair once per (array, word) per
+            # chunk and share it. Tap 0 falls out for free -- its window IS W0.
+            _pairs = {}
+
+            def _ld(a, t, c=c, _pairs=_pairs):
+                sh = getattr(a, 'word_shift', 0)
+                key = (a.slot, getattr(a, 'word_index', 0))
+                pre_all = []
+                if key not in _pairs:
+                    pre, off = a.offset_at(c * plan.lanes)
+                    ins, w0, w1 = _v.aligned_pair_at(a.slot, off, sh,
+                                                     plan.lanes, a.elem_bytes)
+                    pre_all = list(pre) + ins
+                    _pairs[key] = (w0, w1)
+                w0, w1 = _pairs[key]
+                return pre_all + _v.window_from_pair(t, w0, w1, sh)
             ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
             if ins is None:
                 raise ValueError(val)
