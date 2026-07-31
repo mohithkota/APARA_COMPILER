@@ -60,6 +60,7 @@ class AxpyPlan:
                  'chunks', 'remainder', 'y_slot', 'x_slot', 'a_slot',
                  'a_eb', 'a_unsigned', 'a_const', 'iv_slot', 'iv_init_site',
                  'region_lo', 'region_hi', 'realisation', 'compact_per_iter',
+                 'y_off', 'x_off', 'row_based',
                  'unrolled_len', 'peel', 'peel_len')
 
     def __init__(self):
@@ -69,6 +70,8 @@ class AxpyPlan:
         self.compact_per_iter = 0
         self.unrolled_len = 0
         self.a_const = None              # literal coefficient, if any
+        self.y_off = self.x_off = None   # R4.4: offset temps (row-based GEMM)
+        self.row_based = False           # R4.4: set by plan_gemm
         self.peel = None                 # R4.3 offers no peeled variant (see below)
         self.peel_len = 0
 

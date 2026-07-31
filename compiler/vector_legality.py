@@ -25,6 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from ir import Temp
 from ir_utils import func_slices
 from loopopt.discovery import discover_function
 from loopopt.analysis_iv import annotate_induction_vars, TripCount
@@ -163,8 +164,58 @@ def _aliasing_ok(desc, graph, kernel):
             if isinstance(res, tuple) and len(res) > 1 and res[0] == 'stack' \
                     and res[1] in clean_slots:
                 continue
+            # R4.4 additive DISPROOF (never adds an edge; only excuses one R2.2
+            # could not analyse). R2.2's SIV rule handles a bare `IV*const`
+            # offset, so AXPY passes, but a 2-D-indexed offset like C[i*N+j] is a
+            # SUM and falls back to a generic ('computed',) may-alias. The facts
+            # needed to disprove it exist in vector_affine (R4.2.8):
+            #   * different stack slots  -> distinct objects, cannot alias;
+            #   * same slot AND the SAME offset temp, both CONTIGUOUS -> the two
+            #     accesses share one address, so they collide only within a single
+            #     iteration; distinct iterations touch distinct elements.
+            # Anything else still rejects.
+            if _lane_disjoint(desc, graph, e):
+                continue
             return False                            # array carried dependence
     return True
+
+
+def _access_slot(instrs, def_map, ins):
+    base = getattr(ins, 'base', None)
+    if not isinstance(base, Temp):
+        return None
+    d = def_map.get(base.name)
+    if d is None or type(instrs[d]).__name__ != 'IRLoadAddr':
+        return None
+    return instrs[d].fp_offset
+
+
+def _lane_disjoint(desc, graph, e):
+    """True if the carried edge `e` cannot order two DIFFERENT iterations."""
+    try:
+        from vector_affine import LoopAffineContext, classify_access, CONTIGUOUS
+        from analysis import DefUse
+        instrs = desc.cfg.instrs
+        a, b = instrs[e.src], instrs[e.dst]
+        if type(a).__name__ not in ('IRLoad', 'IRStore') or \
+           type(b).__name__ not in ('IRLoad', 'IRStore'):
+            return False
+        ctx = LoopAffineContext(instrs, desc)
+        if classify_access(a, ctx).kind != CONTIGUOUS or \
+           classify_access(b, ctx).kind != CONTIGUOUS:
+            return False
+        lo, hi = desc.func_slice
+        dm = DefUse(instrs, lo, hi).single_defs()
+        sa, sb = _access_slot(instrs, dm, a), _access_slot(instrs, dm, b)
+        if sa is None or sb is None:
+            return False
+        if sa != sb:
+            return True                             # distinct objects
+        oa, ob = getattr(a, 'offset', None), getattr(b, 'offset', None)
+        return (isinstance(oa, Temp) and isinstance(ob, Temp)
+                and oa.name == ob.name)             # identical address
+    except Exception:
+        return False
 
 
 def analyze_legality_function(instrs, lo, hi):

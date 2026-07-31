@@ -4997,3 +4997,65 @@ backend all consumed UNMODIFIED. Full report: `R4_3_DELIVERY.md`.
   which for the compact form is once per loop iteration (LICM may hoist it — not
   verified); validation remains the packed IR oracle.
 - **NO `vector_affine` LIMITATION BLOCKED AXPY.**
+
+---
+
+## R4.4 — Automatic Packed GEMM Vectorization  (2026-07-31) ✅ DONE
+
+**GEMM IS AXPY OVER A ROW.** The i-k-j inner j loop is exactly `Y[j] += a*X[j]`
+with Y = C's i-th row and X = B's k-th row, so NO second vector lowering was
+written: R4.4 reuses R4.3's planner, scalar loader and chunk body verbatim and adds
+only row-aware addressing. `vector_pipeline.py` untouched. Full report:
+`R4_4_DELIVERY.md`.
+
+- **Added** `gemm_lowering.py` (`plan_gemm` — reuses `plan_axpy` for the ENTIRE
+  structural match; `clone_offset`; `lower_gemm`), `gemm_vectorizer.py`
+  (`GemmTransform`, owns 'saxpy', chains GEMM→AXPY→elementwise), `gemm_corpus.py`,
+  `_r4_4_test.py`. **Modified** `kernel_detector.py`, `vector_legality.py`,
+  `axpy_lowering.py` (3 fields), `dot_vectorizer.py` (registration).
+- **TWO UPSTREAM BLOCKERS had to be removed first — GEMM reached no client at all.**
+  `kernel_detector._affine_access` and `_affine_store_src` still used the
+  pre-R4.2.8 `iv_terms` test, which only sees a BARE `IV*const` offset, so the GEMM
+  inner loop (offset is a SUM) was classified as **no kernel**, and legality
+  rejected it with `no-recognised-kernel`. Both now fall back to `vector_affine` —
+  this REMOVES a duplicate address recognizer rather than adding one. Strictly
+  additive; R4.0–R4.3 unchanged.
+- **THE ONE DEVIATION from "reuse without modification"** (declared, not buried):
+  `vector_legality._aliasing_ok` rejected GEMM with `unproven-aliasing`. R2.2's SIV
+  rule proves distinctness for a bare `IV*const` offset (which is why AXPY passes),
+  but a 2-D-indexed SUM falls back to a generic `('computed',)` may-alias edge. An
+  ADDITIVE disproof was added — never creates an edge, only excuses one R2.2 cannot
+  analyse: different slots → distinct objects; same slot AND same offset temp, both
+  CONTIGUOUS → one shared address, so collisions are intra-iteration only.
+- **REUSE, NOT DUPLICATION:** `axpy_lowering._chunk` was already parameterised by
+  three access emitters, so GEMM passes ROW-AWARE emitters and reuses `plan_axpy`,
+  `_load_scalar` and `_chunk` unchanged. `gemm_lowering.py` emits **no IRVecArith
+  of its own** (asserted by test).
+- **THE ONE THING GEMM ADDS = a row base.** R4.3 addresses a chunk as
+  `slot + chunk*lanes*eb`, assuming a ZERO invariant part; for `C[i*N+j]` it is
+  `i*N`, and ignoring it would read/write row 0 every time. `clone_offset`
+  **re-emits the loop's OWN address computation** with the IV substituted (a Const
+  for unrolled, re-loading the IV slot for compact) — correct by construction for
+  any affine index R4.2.8 accepts, not just `i*N+j`.
+- **OTHER ORDERINGS REJECT WITHOUT A SPECIAL CHECK:** in i-j-k the innermost loop
+  is k, where `B[k*N+j]` steps a whole row → `vector_affine` says STRIDED
+  (coeff = N·eb ≠ eb) → never recognised. The ordering requirement FALLS OUT of the
+  affine analysis. Verified: i-j-k declined, IR byte-identical.
+- **CORPUS (14 kernels):** vectorized **11/11 expected**, **0 mismatches, 0
+  rollbacks**; dynamic instructions **7555 → 1358 (−82.0%)**; 564 ms/kernel.
+  **vs R4.3 (GEMM planner disabled): 0/14 → 11/14.** Full corpus **124/124 scalar
+  byte-identical**. 48/48 unit; crosscheck 124/124; all 6 corpora pass.
+- **CRITERION 6 NOT MET — reported, not claimed:** bundles **535 → 548 (+2.4%)**,
+  code 49282→61852 chars. Square/rect exact-multiple GEMMs (the main case) DO
+  shrink — 16³ 54→44 (−19%), 8×8×16 41→35 (−15%), 4×8×24 41→38 — but remainder
+  shapes grow, dominated by vi16 N=30 alone (54→72, +18). Cause is the one carried
+  from R4.2.6: a remainder keeps the scalar tail loop and `PeelTemplate` still
+  cannot express this kernel family. **Remainder peeling for the AXPY/GEMM family
+  is the highest-value follow-on.**
+- **Other limitations:** only the innermost j loop is vectorized (i and k stay
+  scalar, as specified); vi8 needs inner trip ≥ 16 (8 lanes × the trip ≥ 2·lanes
+  rule), so 8×8×8 vi8 is correctly declined; attribution changed — 'saxpy' is now
+  owned by `GemmTransform` so those kernels report `via=gemm`, and four R4.3
+  assertions were relaxed to accept either name (transformations unchanged).
+- **Nothing required new IR, new vector instructions, gather, frontend layout
+  changes or backend redesign.**

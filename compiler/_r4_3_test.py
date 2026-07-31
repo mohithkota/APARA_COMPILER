@@ -52,8 +52,11 @@ def test_recognition():
     for n, c, lanes in (('vi8', AX8, 8), ('vi16', AX16, 4), ('vi32', AX32, 2),
                         ('vu8', AXU8, 8), ('const a', AXC, 8), ('X*a', AXSWAP, 8)):
         ir = _ir(c); out, st, reps = vectorize_all_module(ir)
-        check(f"{n}: vectorized by the axpy client",
-              st.vectorized == 1 and reps[0].transform == 'axpy')
+        # R4.4: the 'saxpy' kind is now owned by GemmTransform, which chains
+        # GEMM -> AXPY -> elementwise internally. Attribution changed; the
+        # transformation applied to these kernels did not.
+        check(f"{n}: vectorized by the saxpy-family client",
+              st.vectorized == 1 and reps[0].transform in ('axpy', 'gemm'))
         check(f"{n}: {lanes} lanes", reps[0].lanes == lanes)
 
 def test_replicate_lowering():
@@ -105,10 +108,11 @@ def test_rollback():
 
 def test_no_regression():
     print("R4.1/R4.2 kernels still vectorize, non-kernels unchanged")
-    for n, c, via in (('dot', DOT8, 'dot-reduction'), ('elementwise mul', EMUL, 'axpy')):
+    for n, c, via in (('dot', DOT8, ('dot-reduction',)),
+                      ('elementwise mul', EMUL, ('axpy', 'gemm'))):
         ir = _ir(c); out, st, reps = vectorize_all_module(ir)
-        check(f"{n}: still vectorized (via {via})",
-              st.vectorized == 1 and reps[0].transform == via)
+        check(f"{n}: still vectorized (via {'/'.join(via)})",
+              st.vectorized == 1 and reps[0].transform in via)
         check(f"{n}: still correct", _ok(ir, out))
     ir = _ir(NOK); out, st, _ = vectorize_all_module(copy.deepcopy(ir))
     check("non-kernel: nothing vectorized", st.vectorized == 0)

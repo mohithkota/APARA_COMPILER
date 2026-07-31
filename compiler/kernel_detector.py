@@ -113,6 +113,14 @@ def _detect_loop(desc, instrs):
     # address-temps that are affine in an IV (reuse M1 iv_terms: name->(slot,scale))
     iv_addr_temps = set(desc.iv_terms.keys())
 
+    # R4.4: the ad-hoc test below only sees a BARE `IV*const` offset temp, so a
+    # 2-D-indexed access like C[i*N+j] -- whose offset is a SUM -- was invisible
+    # and the loop was classified as no kernel at all. vector_affine (R4.2.8) is
+    # the project's one address recognizer; consulting it here removes this
+    # module's duplicate one rather than adding a third. The fallback is strictly
+    # ADDITIVE: everything the old test accepted still passes it first.
+    _affine_ctx = [None]
+
     def _affine_access(ins):
         """A load/store whose offset is IV-derived (unit/affine stride)."""
         off = getattr(ins, 'offset', None)
@@ -122,7 +130,14 @@ def _detect_loop(desc, instrs):
             return True
         if isinstance(base, Temp) and base.name in iv_addr_temps:
             return True
-        return False
+        try:
+            if _affine_ctx[0] is None:
+                from vector_affine import LoopAffineContext
+                _affine_ctx[0] = LoopAffineContext(instrs, desc)
+            from vector_affine import classify_access, CONTIGUOUS
+            return classify_access(ins, _affine_ctx[0]).kind == CONTIGUOUS
+        except Exception:
+            return False
 
     k.affine_loads = sum(1 for l in loads if _affine_access(l))
     k.affine_stores = sum(1 for s in stores if _affine_access(s))
@@ -238,14 +253,29 @@ def _affine_store_src(k, desc, instrs):
     addr_off = {n: instrs[i].fp_offset for n, i in du.single_defs().items()
                 if _cname(instrs[i]) == 'IRLoadAddr'}
     iv_terms = set(desc.iv_terms.keys())
+    ctx = [None]
+
+    def _is_affine(ins):
+        off = getattr(ins, 'offset', None)
+        base = getattr(ins, 'base', None)
+        if (isinstance(off, Temp) and off.name in iv_terms) or \
+           (isinstance(base, Temp) and base.name in iv_terms):
+            return True
+        # R4.4: same additive vector_affine fallback as _affine_access, so a
+        # 2-D-indexed store (offset is a SUM) still yields its stored value.
+        try:
+            if ctx[0] is None:
+                from vector_affine import LoopAffineContext
+                ctx[0] = LoopAffineContext(instrs, desc)
+            from vector_affine import classify_access, CONTIGUOUS
+            return classify_access(ins, ctx[0]).kind == CONTIGUOUS
+        except Exception:
+            return False
+
     for i in region:
         ins = instrs[i]
-        if _cname(ins) in ('IRStore', 'IRGlobalStore'):
-            off = getattr(ins, 'offset', None)
-            base = getattr(ins, 'base', None)
-            if (isinstance(off, Temp) and off.name in iv_terms) or \
-               (isinstance(base, Temp) and base.name in iv_terms):
-                return ins.src
+        if _cname(ins) in ('IRStore', 'IRGlobalStore') and _is_affine(ins):
+            return ins.src
     return None
 
 
