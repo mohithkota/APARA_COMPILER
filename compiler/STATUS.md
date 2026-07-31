@@ -5535,3 +5535,53 @@ Report: `R6_2_MEMORY_DISAMBIGUATION.md`.
   updated (not weakened) because R6.2 deliberately changed what they asserted.
 - **NEXT:** the remaining prize is unrolling (R6.1 measured unroll+disambiguate at
   +36.7%) — but **D1/D2/D3 from R6.2A must be fixed first.**
+
+---
+
+## R6.2B — Unsigned Packed Load Correctness (defect D3)  (2026-07-31) ✅ DONE
+
+**D3 only.** No D1/D2 work. ONE production line changed (`ir_gen.py`). Report:
+`R6_2B_UNSIGNED_LOAD_FIX.md`.
+
+- **ROOT CAUSE — a missing table entry with a silent fallback, not faulty logic.**
+  pycparser does NOT expand typedefs, so `vu8_t a[64]` arrives as
+  `IdentifierType(['vu8_t'])`. `_CTYPE_TO_APARA` had `vf32_t` but NOT the six
+  integer markers, so `_c_decl_to_apara_type` returned the `'$i64'` default and
+  `_is_unsigned_decl` answered SIGNED for vu8_t/vu16_t/vu32_t. Stages 4-10 were
+  all correct and faithfully propagated the wrong answer.
+- **PIPELINE TRACE (first loss = stage 3):** source -> fake typedef -> **parser
+  type resolution LOSES IT** -> `_is_unsigned_decl` False -> `_unsigned_vars`
+  -> `IRLoad.unsigned=False` -> codegen `($i8)` -> `$ld ($i8)` -> simulator
+  sign-extends 192 to -64. BOTH IRLoad paths (`_arrayref` and all five
+  `_Addr(...)` in `_eval_addr`) read the same `_unsigned_vars`, so both were
+  fixed at stage 3; neither needed its own change.
+- **ISA CHECK (milestone rule):** `isa.txt` defines `$u8` 00110 distinct from
+  `$i8` 00001, and `___execute_load_operation___` applies `Sign_Extend_64` ONLY
+  when `signed_flag`. Unsigned loads EXIST -> compiler must emit them. Not an
+  ISA limitation, no workaround.
+- **FIX:** `'vu8_t': '$u8', 'vu16_t': '$u16', 'vu32_t': '$u32'`. Fixed at the
+  point of loss so it benefits every use of packed unsigned types (elements,
+  pointers, `&`, casts, arithmetic conversions) — no kernel/vector special case.
+- **SIGNED markers deliberately EXCLUDED:** `$i64` already gives the right
+  SIGNEDNESS; the only other consumer is cast narrowing, and adding them made 28
+  programs change ticks. Written up as **D4 (new, not fixed): casts to packed
+  markers do not narrow** — `(vi8_t)300` does not truncate.
+- **RESULT:** `$ld ($i8)` -> `$ld ($u8)`; `gemm vu8` FAIL -> PASS on the
+  simulator (27/38 -> 28/38). Stores unchanged (grammar ignores `$u` on `$st`).
+- **REGRESSION:** 124-corpus **byte-identical**; **signed + scalar programs 0 tick
+  changes**; crosscheck 124/124; all 15 unit suites pass.
+- **SECOND LATENT HOLE CLOSED:** with vu8_t finally known unsigned, the R4.0
+  legality check now fires — `reduction vu8` is REJECTED with
+  `unsigned-vreduce-buggy`. Before this the compiler vectorized unsigned
+  reductions using SIGNED `$vreduce` (recorded as toolchain-broken).
+- **HONEST GAP DISCLOSED:** `_r4_3`, `_r4_2_5`, `_r4_2_6` were already failing at
+  HEAD — **R6.2 consequences the R6.2 sweep missed** (those suites were not run).
+  All three asserted a SNAPSHOT of R4.2.5's compact-vs-unrolled crossover, which
+  R6.2 legitimately moved. Each now asserts the invariant it exists to protect
+  (realisation is MEASURED; the smaller candidate wins) instead of re-freezing
+  today's outcome.
+- **Also produced** `ENGINE_CPP_CHANGES_FOR_PROF.md` — the four engine fixes that
+  exist only in our tree (unsigned `$vreduce`, `is_vector_cast`, int<->float
+  swap, uninitialised cast output; one already lost in a revert once), the
+  `AddrIsAligned` case-32 defect still in the prof's master (`0x1` should be
+  `0x1f`), and the unadopted `$dot $replicate` feature.

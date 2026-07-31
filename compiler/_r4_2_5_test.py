@@ -143,19 +143,28 @@ def test_iv_handoff_to_scalar_remainder():
 
 
 def test_realisation_chosen_by_measurement():
+    """R6.2 NOTE: this used to hard-code which side of the crossover each kernel
+    lands on (8 chunks -> compact, 4 chunks -> unrolled), a snapshot of where
+    R4.2.5 measured it. Symbolic memory disambiguation made the unrolled form
+    pack considerably tighter, so the crossover MOVED and the 8-chunk vi16/vi32
+    kernels now choose unrolled. The invariant this test exists to protect --
+    that the realisation is MEASURED rather than assumed, and that the compiler
+    keeps the smaller of the two candidates -- is unchanged, and is what is
+    asserted now. Hard-coding the outcome again would just re-freeze today's
+    crossover."""
     print("the realisation is chosen by MEASURED bundle count, not assumed")
-    # many chunks -> the loop wins; few chunks -> the bundler's wide packing wins
-    for name, code, expect in (('add vi16 (8 chunks)', ADD16_8C, 'compact'),
-                               ('add vi32 (8 chunks)', ADD32_8C, 'compact'),
-                               ('add vi8 (4 chunks)', ADD8_4C, 'unrolled'),
-                               ('dot vi8 (4 chunks)', DOT8_4C, 'unrolled'),
-                               ('copy vi8 (4 chunks)', CPY8_4C, 'unrolled')):
+    for name, code in (('add vi16 (8 chunks)', ADD16_8C),
+                       ('add vi32 (8 chunks)', ADD32_8C),
+                       ('add vi8 (4 chunks)', ADD8_4C),
+                       ('dot vi8 (4 chunks)', DOT8_4C),
+                       ('copy vi8 (4 chunks)', CPY8_4C)):
         ir = _ir(code)
         out, stats, _ = vectorize_all_module(ir)
         got = _vcl.realisation_of(out)
-        check(f"{name}: chose {expect}", stats.vectorized == 1 and got == expect)
-    # and the choice is genuinely the smaller one
-    for code in (ADD16_8C, ADD8_4C):
+        check(f"{name}: vectorized with a real realisation ({got})",
+              stats.vectorized == 1 and got.startswith(('compact', 'unrolled')))
+    # and the choice is genuinely the smaller one -- the actual invariant
+    for code in (ADD16_8C, ADD32_8C, ADD8_4C, DOT8_4C, CPY8_4C):
         _i, comp, sc, _ = _forced(code, 'compact')
         _i, unro, su, _ = _forced(code, 'unrolled')
         auto = vectorize_all_module(_ir(code))[0]

@@ -26,6 +26,22 @@ _CTYPE_TO_APARA = {
     'unsigned long long': '$u64', 'unsigned long long int': '$u64', 'uint64_t': '$u64',
     'float':  '$f32',       'float32_t': '$f32',       'vf32_t': '$f32',
     'double': '$f64',       'float64_t': '$f64',
+    # UNSIGNED packed-array marker typedefs (_PACKED_ARRAY_TYPEDEFS below /
+    # compiler.py _FAKE_TYPEDEFS). pycparser does NOT expand a typedef, so a
+    # `vu8_t x` declaration arrives here as IdentifierType(['vu8_t']) and
+    # nothing else resolves it -- without these entries every marker fell
+    # through to the '$i64' default and `_is_unsigned_decl` reported SIGNED.
+    # That is R6.2A defect D3: a vu8_t element holding 192 was loaded with
+    # `$ld ($i8)` and sign-extended to -64.
+    #
+    # The three SIGNED markers (vi8_t/vi16_t/vi32_t) are deliberately NOT
+    # listed. For signedness the '$i64' default already gives the right answer,
+    # and the only other consumer of this table is cast narrowing -- so adding
+    # them would make `(vi8_t)x` start emitting a truncating $cast it does not
+    # emit today. That is a real latent defect, but it changes SIGNED code and
+    # is out of scope here; it is written up as D4 in
+    # R6_2B_UNSIGNED_LOAD_FIX.md rather than folded in silently.
+    'vu8_t':  '$u8',        'vu16_t': '$u16',          'vu32_t': '$u32',
 }
 
 def _is_unsigned_decl(node):

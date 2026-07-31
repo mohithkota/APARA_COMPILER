@@ -153,14 +153,27 @@ def test_margin_rejects_trivial_wins():
             os.environ.pop('APARA_VECTOR_COMPACT_MARGIN', None)
         else:
             os.environ['APARA_VECTOR_COMPACT_MARGIN'] = old
-    # with no margin the genuinely-smaller compact form is taken
+    # With no margin the genuinely-smaller candidate is taken.
+    # R6.2 NOTE: this used to assert that candidate is COMPACT for ADD16. That
+    # was true when R4.2.6 measured it; symbolic memory disambiguation then made
+    # the unrolled form pack tighter, so compact is no longer the smaller one
+    # here. The margin MECHANISM is what this test guards, so it now asserts the
+    # mechanism -- dropping the margin never yields a LARGER result than keeping
+    # it -- instead of re-freezing which form happens to win today.
     os.environ['APARA_VECTOR_COMPACT_MARGIN'] = '0.0'
     try:
-        out = vectorize_all_module(_ir(ADD16))[0]
-        check("margin 0.0 admits the smaller compact form",
-              _vcl.realisation_of(out).startswith('compact'))
+        out0 = vectorize_all_module(_ir(ADD16))[0]
+        b0, sp0 = probe_bundles(out0, 0x400)
     finally:
         os.environ.pop('APARA_VECTOR_COMPACT_MARGIN', None)
+    os.environ['APARA_VECTOR_COMPACT_MARGIN'] = '1.0'
+    try:
+        out1 = vectorize_all_module(_ir(ADD16))[0]
+        b1, sp1 = probe_bundles(out1, 0x400)
+    finally:
+        os.environ.pop('APARA_VECTOR_COMPACT_MARGIN', None)
+    check(f"margin 0.0 never yields a larger result than margin 1.0 "
+          f"({b0} <= {b1})", b0 is not None and b1 is not None and b0 <= b1)
 
 
 # ── R4.2.6c: remainder peeling ──────────────────────────────────────────────────
