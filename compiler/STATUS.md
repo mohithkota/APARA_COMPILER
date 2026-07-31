@@ -5854,3 +5854,43 @@ Report: `R6_3_PROFITABILITY_ANALYSIS.md`. No code committed.
   be re-taken once it is correct. Also measured on one shape (3-tap vi8) — vi16/
   vi32 amortise the same overhead over 4/2 outputs, so their advantage is
   proportionally smaller and should be measured before generalising.
+
+---
+
+## R6.3 — Sliding Window Completion  (2026-08-01) ✅ PHASE 1 + PHASE 2.1 DONE
+
+**Convolution vectorization is RECOVERED and simulator-verified.** 38/38 PASS.
+
+### Phase 1 — correctness (commit 0ed2d38)
+- **ROOT CAUSE: `vector_elementwise_lowering` is a FOURTH client of
+  `build_compact_chunk_loop` that never got the R6.2C fix** — it called the
+  builder without `iv_bytes` and its plan never computed one, so the compact loop
+  wrote the shared IV slot 8 bytes wide while the scalar code reads it 4 wide.
+  R6.2C fixed the dot/reduction, AXPY and GEMM clients and missed this one.
+- **Why it looked like "sparse reads":** an elementwise body uses the loop's OWN
+  offset temp and never re-reads the slot; only a client re-reading it through
+  `clone_offset` (a shifted window) can observe the mismatch, and only in the
+  COMPACT realisation. The number of result reads merely changed which
+  realisation the size probe picked (unrolled = no such loop = passes).
+- Fix mirrors R6.2C: `slot_width` + thread `iv_bytes`. All six conv3 kernels
+  vectorize and pass; conv3 vi8 **1023 ticks vs 1517 scalar**.
+- `_r4_6` assertions that R6.2C inverted are RESTORED to their original intent
+  (vectorized + correct), not weakened — the window is now rebuilt from two
+  aligned loads.
+
+### Phase 2.1 — share W0/W1 across taps (commit 0dd6fb0)
+- `packed_window_load_at` split into `aligned_pair_at` (loads W0/W1) +
+  `window_from_pair` (the funnel shift); the caller memoises the pair on
+  `(slot, word_index)`. **Tap 0 falls out for free** — its window IS W0, so its
+  duplicate load disappears too (Phase 2 items 1 and 3 in one step).
+- **MEASURED: conv3 vi8/vu8 1023 -> 850 ticks (−16.9%)**; total conv3 6721 ->
+  6375 (−5.1%). vi16/vi32 unchanged: they select a realisation whose load site is
+  not yet converted — sharing is applied to **1 of the 3** packed-load sites, so
+  the steady-state compact body is still 28 instrs / 8 outputs.
+- **REMAINING toward the 1.75 instr/output bound:** convert the other two load
+  sites; load the IV once (4 reloads today); drop the add-then-subtract of the
+  tap offset.
+- **PROCESS NOTE:** twice a change raised `NameError`, the pipeline swallowed it
+  into a SCALAR FALLBACK, and the reproducer "passed" with the scalar tick count.
+  Both caught only by re-checking that the kernel is still genuinely vectorized.
+  **In this compiler a green test is not evidence that the code under test ran.**
