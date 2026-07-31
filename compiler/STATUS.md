@@ -4878,3 +4878,66 @@ realisation SELECTION changed; `vector_pipeline.py` stays byte-for-byte untouche
   kernels remain a MILD static loss (21 vs 19) that no realisation fixes — with 2
   chunks there is nothing to compact; declining to vectorize would fix size at the
   cost of a 4.3× dynamic win, a policy call left open.
+
+---
+
+## R4.2.8 — Affine Access Recognition  (2026-07-31) ✅ DONE
+
+**The affine infrastructure the vector roadmap requires — determined by SURVEY,
+then built to exactly that envelope.** ANALYSIS ONLY in the R3.0/R4.0 mould:
+mutates nothing, generated code byte-identical **124/124**. Nothing is wired into
+the vector clients yet. Full report: `R4_2_8_DELIVERY.md`.
+
+- **THE QUESTION:** is `invariant_base + IV*constant` sufficient for the roadmap?
+  **ANSWER: NO** — four reasons, each MEASURED on emitted IR, not reasoned about:
+  1. **For `elem_bytes ≥ 2` the scale is applied AFTER the index sum.**
+     `C[i*8+j]` on `vi16_t` emits `(i*8 + j) * 2` = `(invariant + IV) * const`,
+     NOT `invariant + IV*const`. A matcher for the latter matches NONE of the
+     vi16/vi32 kernels — it would appear to work on vi8 (where ×1 is elided) then
+     silently fail to generalize. Worst possible failure mode.
+  2. **Operand order varies with loop order** — conv1d emits `(inv + IV*1)` with
+     taps innermost and `(IV*1 + inv)` with outputs innermost.
+  3. **Expressions nest** — conv2d's `in[(i+r)*8+(j+s)]` hides the IV TWO levels
+     down inside `(j+s)`.
+  4. **Invariance is a VALUE property, not syntactic** — the invariant
+     subexpressions (`i*8`) are RECOMPUTED INSIDE the innermost body (LICM has not
+     run), so they look local. Deciding by position rejected EVERY 2-D kernel in
+     the first prototype. Must ask M2's question: is the slot written in the loop?
+     (Same class as R1.4's value-invariant fix.)
+  Plus: **`coeff == 0` must be first-class** — identifying the loop-invariant
+  operand is exactly what recognises AXPY's `$replicate` scalar and GEMM row-dot's
+  accumulator.
+- **THE MINIMUM SUFFICIENT EXTENSION:** a bounded affine normalizer resolving
+  `offset == coeff*IV + invariant` (coeff a compile-time constant) over `{+,-,*}`
+  with constant folding, recursive, against ONE induction variable. Classification:
+  `coeff == elem_bytes` → CONTIGUOUS, `coeff == 0` → INVARIANT, other const →
+  STRIDED (stride reported), else UNKNOWN. **Subsumes** `invariant + IV*const`.
+- **WHY NOT OVER-GENERAL — the key argument:** multiple varying IVs cannot arise
+  *by construction*, because vectorization always targets the INNERMOST loop, so
+  every enclosing IV is invariant w.r.t. it. Also rejected: symbolic coefficients
+  (`B[k*N+j]` with runtime N — correctly, that IS the column-strided case),
+  division/modulo/shifts/min/max, gathers. No SCEV, no polyhedral machinery.
+- **SOUNDNESS BUG FOUND AND FIXED IN VALIDATION:** the first implementation
+  classified `a[idx[k]]` (a GATHER) as INVARIANT, because the invariance test
+  checked only the load's base slot (`idx`, never written in the loop) and ignored
+  whether its OFFSET moved with the IV. That would hand a gather to a vectorizer
+  as a scalar. Fixed; regression test asserts it is neither contiguous NOR
+  invariant.
+- **Added** `vector_affine.py` (`LoopAffineContext`, `resolve_offset`,
+  `classify_access`, `classify_loop`), `_r4_2_8_test.py`, `affine_corpus.py`.
+  Nothing modified.
+- **RESULTS:** all **10/10** roadmap kernel shapes RESOLVED (R4.1 dot/reduction,
+  R4.2 elementwise vi8+vi16, AXPY vi8+vi16, GEMM row-dot, conv1d both orders,
+  conv2d); all **4/4** out-of-envelope forms rejected with reasons (column-strided
+  → stride 8 NAMED, symbolic stride, gather, unpacked int). **0 disagreements**
+  with today's recognizer on currently-vectorized kernels. Corpus 124 programs /
+  65 innermost loops, 47 fully resolved, 15 contiguous + 493 invariant vs 26
+  strided + 3 unknown accesses, generated code **identical 124/124**. 39/39 unit;
+  crosscheck 124/124; R3.1–R4.2.6 suites pass.
+- **Honest limitations:** NOTHING IS WIRED IN — the clients still use their own
+  `_packed_array_access`; adopting this would WIDEN what they accept (row-wise
+  kernels), a behaviour change belonging to the milestone that needs it. The
+  corpus barely exercises it (15 contiguous accesses — almost no packed arrays),
+  so the roadmap table is the evidence, not the corpus. Conservative on multi-def
+  temps. `varies()` is not memoized across accesses (fine at 65 loops). Recursion
+  bounded at depth 16.
