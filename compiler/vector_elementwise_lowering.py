@@ -232,12 +232,12 @@ def plan_elementwise(desc, instrs, kernel, legality):
 
     # R4.2.7 peel template: replay the ORIGINAL loads/binop/store attributes at a
     # constant index rather than re-deriving the tail.
-    from vector_remainder_peel import PeelTemplate
+    from vector_remainder_peel import PeelTemplate, PeelArray
     p.peel = PeelTemplate(
-        loads=src_info,
-        value=(None if p.op is None
-               else (p.op, bool(getattr(vins, 'unsigned', False)))),
-        store=(p.dst_slot, st.elem_bytes))
+        operands=[PeelArray(sl, eb_, un_) for (sl, eb_, un_) in src_info],
+        op=(None if p.op is None
+            else (p.op, bool(getattr(vins, 'unsigned', False)))),
+        dest=PeelArray(p.dst_slot, st.elem_bytes))
 
     p.region_lo = hblk.lo
     p.region_hi = desc.cfg.blocks[desc.latches[0]].hi

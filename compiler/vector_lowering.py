@@ -229,9 +229,12 @@ def plan_lowering(desc, instrs, kernel, legality):
         if _value is None:
             _value = ('*', False)
     if p.acc_slot is not None:
-        from vector_remainder_peel import PeelTemplate
-        p.peel = PeelTemplate(loads=array_info[:need], value=_value,
-                              acc_slot=p.acc_slot)
+        from vector_remainder_peel import (PeelTemplate, PeelArray, PeelScalar)
+        p.peel = PeelTemplate(
+            operands=[PeelArray(sl, eb_, un_) for (sl, eb_, un_) in array_info[:need]],
+            op=_value,
+            dest=PeelScalar(p.acc_slot, 8, False),
+            dest_op=('+', False))
 
     # locate the IV-init store (constant store to the IV slot before the header)
     hblk = desc.cfg.blocks[desc.header]

@@ -212,6 +212,38 @@ def plan_gemm(desc, instrs, kernel, legality):
         p.ok = False
         p.reason = 'not-row-based(plain-axpy)'
     p.iv_slot = desc.primary_iv
+    if not p.row_based:
+        return p
+
+    # R4.4.5: reuse the SHARED remainder framework. plan_axpy already installed a
+    # template addressing from the array base; GEMM only replaces the array
+    # operand and destination with ROW-AWARE ones whose `offset_at` clones the
+    # loop's own address computation at a constant index. There is no GemmPeeler.
+    from vector_remainder_peel import PeelArray
+
+    def _row_offset(off_expr):
+        def at(idx):
+            ins, t = clone_offset(instrs, def_map, region, off_expr,
+                                  p.iv_slot, Const(idx))
+            if ins is None:
+                raise ValueError(t)
+            return ins, t
+        return at
+
+    probe_y = clone_offset(instrs, def_map, region, p.y_off, p.iv_slot, Const(0))
+    probe_x = clone_offset(instrs, def_map, region, p.x_off, p.iv_slot, Const(0))
+    if probe_y[0] is None or probe_x[0] is None:
+        p.peel = None                       # cannot peel; the scalar tail stays
+        return p
+    tmpl = p.peel
+    if tmpl is not None:
+        tmpl.operands = [
+            (PeelArray(o.slot, o.elem_bytes, o.unsigned,
+                       offset_at=_row_offset(p.x_off))
+             if isinstance(o, PeelArray) else o)
+            for o in tmpl.operands]
+        tmpl.dest = PeelArray(p.y_slot, p.eb, not p.signed,
+                              offset_at=_row_offset(p.y_off))
     return p
 
 
@@ -292,6 +324,7 @@ def lower_gemm(instrs, lo, hi, plan, global_base=0x400):
     region = set()
     # the region is recoverable from the spliced bounds recorded by plan_axpy
     region.update(range(plan.region_lo, plan.region_hi + 1))
+    from vector_remainder_peel import splice_peeled
     cands = []
     ub, err_u = build_unrolled(plan, instrs, def_map, region)
     if ub is not None:
@@ -300,6 +333,18 @@ def lower_gemm(instrs, lo, hi, plan, global_base=0x400):
     cb, err_c = build_compact(plan, instrs, def_map, region)
     if cb is not None:
         cands.append(('compact', _splice(instrs, plan, cb, 0)))
+    # R4.4.5: peel the scalar tail through the shared framework
+    if plan.remainder > 0 and getattr(plan, 'peel', None) is not None:
+        try:
+            if ub is not None:
+                cands.append(('unrolled+peeled',
+                              splice_peeled(instrs, plan, ub,
+                                            plan.chunks * plan.lanes)))
+            if cb is not None:
+                cands.append(('compact+peeled',
+                              splice_peeled(instrs, plan, cb, 0)))
+        except Exception:
+            pass                            # peel unavailable -> keep scalar tail
     if not cands:
         return None, err_u or err_c or 'no-realisation'
     best, name, _s = _vcl.choose_smaller(cands, global_base)

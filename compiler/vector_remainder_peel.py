@@ -1,33 +1,41 @@
 """
-vector_remainder_peel.py -- Remainder Peeling for Vector Kernels (R4.2.7).
+vector_remainder_peel.py -- Generalized Vector Remainder Peeling (R4.2.7, R4.4.5).
 
-R4.1-R4.2.6 handle `trip % lanes` leftover elements by KEEPING the original
-scalar loop, with its induction variable started at `chunks*lanes`. That loop
-runs at most `lanes-1` times but still costs a full loop skeleton -- a compare, a
-branch, an IV load/add/store and the label boundaries the bundler cannot pack
-across. It is the documented weak case: `vector add`, N=20 at 8 lanes, is 2 chunks
-plus a 4-iteration tail and finishes at 30 bundles against a 23-bundle SCALAR
-baseline. Vectorizing made it bigger, and compaction could not help because with
-2 chunks there is nothing to compact.
+When `trip % lanes != 0` a vectorized kernel has leftover elements. The default is
+to keep the original scalar loop for them, but that loop costs a full skeleton --
+a compare, a branch, an IV load/add/store, and label boundaries the bundler cannot
+pack across. PEELING deletes it and emits the (at most `lanes-1`) tail iterations
+as straight-line code at constant indices.
 
-PEELING removes that loop entirely: the remainder is known at compile time and is
-bounded by `lanes-1 <= 7`, so the tail iterations are emitted as straight-line
-code at CONSTANT offsets, and the scalar loop is deleted. The bundler can then
-pack the tail against the vector body instead of being blocked by a loop
-boundary.
+R4.2.7 could only express `dest = f(loads)` where every load sat at the SAME
+element index, which covered dot, reduction and elementwise but NOT
 
-WHY THIS IS SAFE -- the tail is NOT re-derived from the source. Re-synthesising
-`c[i] = a[i] + b[i]` from scratch would risk getting integer promotion or
-sub-word truncation subtly wrong (exactly the class of bug that made R4.1's
-narrow-accumulator dot diverge). Instead each planner records a `PeelTemplate`
-holding the ORIGINAL instructions' own `elem_bytes` and `unsigned` flags and the
-original arithmetic opcode, and peeling replays those attributes at constant
-offsets. The differential oracle then validates the result like any other
-lowering, and a mismatch rolls the whole kernel back to scalar.
+        Y[i] += a * X[i]
 
-The IV slot is set to `trip` explicitly after the peeled tail, because the
-deleted loop is what used to leave it there and the vectorized function must
-leave memory identical to the scalar one.
+because `a` is an invariant scalar (not indexed) and `Y[i]` is read AND written.
+AXPY and GEMM therefore kept scalar tails, and that was the sole cause of the
+bundle-count growth reported in R4.3 and R4.4.
+
+R4.4.5 GENERALIZES THE TEMPLATE so one framework covers every client. There is no
+`AxpyPeeler` or `GemmPeeler`: clients describe their update declaratively and this
+module is the only thing that emits scalar tail code.
+
+    Y[i] = X[i]            operands=[array X]                dest=array Y
+    Y[i] = X[i] + Z[i]     operands=[array X, array Z] op=+  dest=array Y
+    Y[i] += X[i]           operands=[array X]                dest=array Y, dest_op=+
+    Y[i] += a * X[i]       operands=[scalar a, array X] op=* dest=array Y, dest_op=+
+    s    += A[i]*B[i]      operands=[array A, array B]  op=* dest=slot s,  dest_op=+
+
+WHY DECLARATIVE AND NOT A PER-CLIENT EMITTER CALLBACK: the tail must reproduce the
+ORIGINAL loop's integer promotion and sub-word truncation exactly. Clients record
+the original instructions' own `elem_bytes`, `unsigned` flags and opcodes; this
+module replays them. Letting each client emit its own tail would re-open exactly
+the class of bug that made R4.1's narrow-accumulator dot diverge.
+
+The one genuinely per-client concern -- how an array element's ADDRESS is formed --
+is a callback (`PeelArray.offset_at`), because GEMM addresses a row
+(`C[i*N + j]`) while the others address from the array base. The default covers
+every client except GEMM.
 """
 
 import os
@@ -35,84 +43,144 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import Const, IRLoad, IRStore, IRLoadAddr, IRBinOp
+from ir import Const, Temp, IRAssign, IRLoad, IRStore, IRLoadAddr, IRBinOp
 from vector_lowering import _fresh
 
 
-class PeelTemplate:
-    """Everything needed to replay ONE scalar element operation at a constant
-    index, taken from the original loop body rather than re-derived.
+# ── operand / destination descriptors ───────────────────────────────────────────
 
-        loads     [(slot, elem_bytes, unsigned)] in operand order
-        value     (op, unsigned) combining the loads, or None for a single load
-        acc_slot  reduction accumulator slot (dot/reduction), else None
-        acc_op    how the value joins the accumulator (always '+')
-        store     (slot, elem_bytes) for elementwise, else None
-    """
-    __slots__ = ('loads', 'value', 'acc_slot', 'acc_op', 'store')
+class PeelArray:
+    """An element of a packed array at the peeled index.
 
-    def __init__(self, loads, value=None, acc_slot=None, acc_op='+', store=None):
-        self.loads = loads
+    `offset_at(idx)` -> (instrs, offset_value) overrides address formation; the
+    default is the constant byte offset `idx * elem_bytes` from the array base,
+    which is what every client except GEMM needs."""
+    __slots__ = ('slot', 'elem_bytes', 'unsigned', 'offset_at')
+
+    def __init__(self, slot, elem_bytes, unsigned=False, offset_at=None):
+        self.slot = slot
+        self.elem_bytes = elem_bytes
+        self.unsigned = unsigned
+        self.offset_at = offset_at
+
+    def address(self, idx):
+        if self.offset_at is not None:
+            return self.offset_at(idx)
+        return [], Const(idx * self.elem_bytes)
+
+
+class PeelScalar:
+    """A loop-invariant scalar read from its own slot (AXPY's coefficient)."""
+    __slots__ = ('slot', 'elem_bytes', 'unsigned')
+
+    def __init__(self, slot, elem_bytes=8, unsigned=False):
+        self.slot = slot
+        self.elem_bytes = elem_bytes
+        self.unsigned = unsigned
+
+
+class PeelConst:
+    """A literal coefficient (`Y[i] += 3*X[i]`)."""
+    __slots__ = ('value',)
+
+    def __init__(self, value):
         self.value = value
-        self.acc_slot = acc_slot
-        self.acc_op = acc_op
-        self.store = store
 
 
-def _elem_load(slot, byte_off, elem_bytes, unsigned):
+class PeelTemplate:
+    """One scalar element update, described declaratively.
+
+        operands  [PeelArray | PeelScalar | PeelConst], in the ORIGINAL order
+        op        (opcode, unsigned) combining operands[0] and operands[1],
+                  or None when there is a single operand
+        dest      PeelArray (indexed store) or PeelScalar (accumulator slot)
+        dest_op   None      -> dest = value            (plain assignment)
+                  (op, uns) -> dest = dest <op> value  (read-modify-write)
+    """
+    __slots__ = ('operands', 'op', 'dest', 'dest_op')
+
+    def __init__(self, operands, dest, op=None, dest_op=None):
+        self.operands = list(operands)
+        self.dest = dest
+        self.op = op
+        self.dest_op = dest_op
+
+
+# ── the single emitter ──────────────────────────────────────────────────────────
+
+def _load_at(slot, offset, elem_bytes, unsigned):
     base = _fresh('_vrpb')
     dest = _fresh('_vrpv')
     return [IRLoadAddr(base, slot),
-            IRLoad(dest, base, Const(byte_off), elem_bytes=elem_bytes,
+            IRLoad(dest, base, offset, elem_bytes=elem_bytes,
                    unsigned=unsigned)], dest
 
 
-def _elem_store(slot, byte_off, value, elem_bytes):
+def _store_at(slot, offset, value, elem_bytes):
     base = _fresh('_vrps')
-    return [IRLoadAddr(base, slot), IRStore(base, Const(byte_off), value,
-                                            elem_bytes)]
+    return [IRLoadAddr(base, slot), IRStore(base, offset, value, elem_bytes)]
+
+
+def _emit_operand(o, idx):
+    """(instrs, value_temp_or_const) for one operand at element index `idx`."""
+    if isinstance(o, PeelConst):
+        t = _fresh('_vrpk')
+        return [IRAssign(t, Const(o.value))], t
+    if isinstance(o, PeelScalar):
+        ins, t = _load_at(o.slot, Const(0), o.elem_bytes, o.unsigned)
+        return ins, t
+    pre, off = o.address(idx)
+    ins, t = _load_at(o.slot, off, o.elem_bytes, o.unsigned)
+    return list(pre) + ins, t
 
 
 def build_peeled_tail(plan):
-    """Straight-line code for the `remainder` leftover elements, followed by the
-    IV fix-up. Returns (instrs, n_ops) or (None, reason)."""
+    """Straight-line code for the `remainder` leftover elements, then the IV
+    fix-up. Returns (instrs, n_ops) or (None, reason)."""
     tmpl = getattr(plan, 'peel', None)
     if tmpl is None:
         return None, 'no-peel-template'
     if plan.remainder <= 0:
         return None, 'no-remainder'
+    if not tmpl.operands or (tmpl.op is not None and len(tmpl.operands) != 2):
+        return None, 'malformed-peel-template'
 
     out = []
     for r in range(plan.remainder):
         idx = plan.chunks * plan.lanes + r
-        byte = idx * plan.eb
         vals = []
-        for (slot, eb, uns) in tmpl.loads:
-            ins, d = _elem_load(slot, byte, eb, uns)
+        for o in tmpl.operands:
+            ins, v = _emit_operand(o, idx)
             out += ins
-            vals.append(d)
-        if tmpl.value is None:
+            vals.append(v)
+        if tmpl.op is None:
             val = vals[0]
         else:
-            op, uns = tmpl.value
+            op, uns = tmpl.op
             val = _fresh('_vrpr')
             out.append(IRBinOp(val, op, vals[0], vals[1], unsigned=uns))
-        if tmpl.acc_slot is not None:            # dot / reduction
-            abase = _fresh('_vrpa')
-            acur = _fresh('_vrpc')
-            out.append(IRLoadAddr(abase, tmpl.acc_slot))
-            out.append(IRLoad(acur, abase, Const(0), elem_bytes=8,
-                              unsigned=False))
+
+        d = tmpl.dest
+        if isinstance(d, PeelScalar):
+            d_off, d_eb = Const(0), d.elem_bytes
+            pre = []
+        else:
+            pre, d_off = d.address(idx)
+            d_eb = d.elem_bytes
+            out += list(pre)
+        if tmpl.dest_op is not None:            # read-modify-write
+            ins, cur = _load_at(d.slot, d_off, d_eb,
+                                bool(getattr(d, 'unsigned', False)))
+            out += ins
+            op, uns = tmpl.dest_op
             nxt = _fresh('_vrpn')
-            out.append(IRBinOp(nxt, tmpl.acc_op, acur, val))
-            out += _elem_store(tmpl.acc_slot, 0, nxt, 8)
-        else:                                    # elementwise
-            slot, eb = tmpl.store
-            out += _elem_store(slot, byte, val, eb)
+            out.append(IRBinOp(nxt, op, cur, val, unsigned=uns))
+            val = nxt
+        out += _store_at(d.slot, d_off, val, d_eb)
 
     # The deleted scalar loop is what used to leave the IV at `trip`; restore it
     # so the vectorized function leaves memory identical to the scalar one.
-    out += _elem_store(plan.iv_slot, 0, Const(plan.trip), 8)
+    out += _store_at(plan.iv_slot, Const(0), Const(plan.trip), 8)
     return out, len(out)
 
 

@@ -243,6 +243,25 @@ def plan_axpy(desc, instrs, kernel, legality):
 
     p.region_lo = hblk.lo
     p.region_hi = desc.cfg.blocks[desc.latches[0]].hi
+
+    # R4.4.5: `Y[i] += a*X[i]` is now expressible by the shared remainder
+    # framework -- an invariant scalar operand and a read-modify-write array
+    # destination. Operands are recorded in the ORIGINAL order so a
+    # non-commutative opcode would still replay faithfully.
+    from vector_remainder_peel import (PeelTemplate, PeelArray, PeelScalar,
+                                       PeelConst)
+    coeff = (PeelConst(p.a_const) if p.a_const is not None
+             else PeelScalar(p.a_slot, p.a_eb, p.a_unsigned))
+    xop = PeelArray(p.x_slot, p.eb, not p.signed)
+    ops = ([coeff, xop] if isinstance(mul.left, Const)
+           or (isinstance(mul.left, Temp) and a_i is not None
+               and def_map.get(mul.left.name) == a_i)
+           else [xop, coeff])
+    p.peel = PeelTemplate(
+        operands=ops,
+        op=('*', bool(getattr(mul, 'unsigned', False))),
+        dest=PeelArray(p.y_slot, p.eb, not p.signed),
+        dest_op=('+', bool(getattr(add, 'unsigned', False))))
     p.ok = True
     return p
 
@@ -326,18 +345,22 @@ def _splice(instrs, plan, body, iv_init_value):
 def lower_axpy(instrs, lo, hi, plan, global_base=0x400):
     """Vectorized function slice, or (None, reason).
 
-    Offers the unrolled and compact realisations and keeps whichever the R4.2.6
-    post-optimizer probe measures smaller. No peeled variant: the peel template
-    cannot express `Y[i] += a*X[i]` (two loads plus an invariant scalar and two
-    operations), and extending it speculatively is out of scope -- with a
-    remainder the scalar tail loop is kept, exactly as R4.1/R4.2 do."""
+    Offers the unrolled and compact realisations, plus their peeled variants when
+    there is a remainder (R4.4.5 generalized the shared peel framework to express
+    `Y[i] += a*X[i]`), and keeps whichever the R4.2.6 post-optimizer probe
+    measures smaller."""
     if not plan.ok:
         return None, plan.reason
-    unrolled = _splice(instrs, plan, build_unrolled(plan),
-                       plan.chunks * plan.lanes)
-    compact = _splice(instrs, plan, build_compact(plan), 0)
-    best, name, _s = _vcl.choose_smaller(
-        [('unrolled', unrolled), ('compact', compact)], global_base)
+    from vector_remainder_peel import splice_peeled
+    ub, cb = build_unrolled(plan), build_compact(plan)
+    unrolled = _splice(instrs, plan, ub, plan.chunks * plan.lanes)
+    compact = _splice(instrs, plan, cb, 0)
+    cands = [('unrolled', unrolled), ('compact', compact)]
+    if plan.remainder > 0:                      # R4.4.5: peel the scalar tail
+        cands.append(('unrolled+peeled',
+                      splice_peeled(instrs, plan, ub, plan.chunks * plan.lanes)))
+        cands.append(('compact+peeled', splice_peeled(instrs, plan, cb, 0)))
+    best, name, _s = _vcl.choose_smaller(cands, global_base)
     if best is None:
         return None, 'no-realisation-compiles'
     plan.realisation = name

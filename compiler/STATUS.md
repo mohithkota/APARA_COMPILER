@@ -5059,3 +5059,61 @@ only row-aware addressing. `vector_pipeline.py` untouched. Full report:
   assertions were relaxed to accept either name (transformations unchanged).
 - **Nothing required new IR, new vector instructions, gather, frontend layout
   changes or backend redesign.**
+
+---
+
+## R4.4.5 — Generalized Vector Remainder Peeling  (2026-07-31) ✅ DONE
+
+**Infrastructure only: ONE reusable remainder framework for every vector client.**
+No new IR, vector instructions, backend functionality, legality or profitability
+analysis. `vector_pipeline.py` untouched. Full report: `R4_4_5_DELIVERY.md`.
+
+- **PROBLEM:** R4.2.7's `PeelTemplate` could only express `dest = f(loads)` with
+  every load at the SAME element index — fine for dot/reduction/elementwise, but
+  `Y[i] += a*X[i]` has an INVARIANT SCALAR operand and a READ-MODIFY-WRITE array
+  destination. AXPY and GEMM therefore kept scalar tails, the sole cause of the
+  bundle growth in R4.3 (+6%) and R4.4 (+2.4%).
+- **DESIGN — declarative, one emitter, no branching on kernel kind:**
+  `operands` = [`PeelArray` | `PeelScalar` | `PeelConst`] in ORIGINAL order, `op`
+  = (opcode, unsigned) or None, `dest` = PeelArray (indexed store) or PeelScalar
+  (accumulator slot), `dest_op` = None (assign) or (op, uns) (read-modify-write).
+  Expresses `Y[i]=X[i]`, `Y[i]=X[i]+Z[i]`, `Y[i]+=X[i]`, `Y[i]+=a*X[i]`,
+  `Y[i]+=3*X[i]` and `s+=A[i]*B[i]`.
+- **WHY DECLARATIVE, not a per-client emitter callback:** the tail must reproduce
+  the original loop's integer promotion and sub-word truncation EXACTLY. Clients
+  record the ORIGINAL instructions' `elem_bytes`/`unsigned`/opcodes and the
+  framework replays them; per-client emitters would re-open the class of bug that
+  made R4.1's narrow-accumulator dot diverge, and would be the duplicated scalar
+  lowering this milestone exists to prevent.
+- **THE ONE per-client concern IS a callback:** address formation.
+  `PeelArray.offset_at(idx)` — GEMM supplies `clone_offset(..., Const(idx))` for
+  row addressing (`C[i*N+j]`); the default base-relative form covers every other
+  client.
+- **EXACTLY ONE FRAMEWORK (asserted by tests):** `build_peeled_tail` defined once;
+  **no `*Peeler` class exists anywhere**; all four clients build a template and
+  NONE calls `build_peeled_tail` or emits tail code. Peeled variants are ordinary
+  candidates, inheriting the R4.2.6 post-optimizer gate, margin, validation and
+  rollback unchanged.
+- **MEASUREMENTS (post-optimizer bundles):** GEMM corpus bundles **535→548
+  (R4.4) → 535→541**, code 61852→61423 chars, dyn 1345 (−82.2%), 11/11, 0
+  mismatches, 0 rollbacks. AXPY corpus bundles **200→212 (R4.3) → 200→206**, code
+  17110→15830 chars, 10/10, 0 mismatches. Highlighted cases: AXPY vi16 N=30 →
+  `compact+peeled` (dyn 780→165); GEMM vi8 N=17 → `unrolled+peeled`
+  (dyn 561→**54**, was 67).
+- **CRITERION 6: REDUCED, NOT ELIMINATED** — GEMM +2.4%→+1.1%, AXPY +6.0%→+3.0%
+  (roughly halved on both). Scored as partial. Cause: **peeling is OFFERED, not
+  forced** — it competes under the R4.2.6 probe and 10% margin, so a kernel whose
+  peel does not clear the margin keeps its scalar tail (e.g. GEMM vi16 N=30 still
+  picks plain `compact`). That is the selector working as designed, since peeling
+  trades static size for dynamic speed.
+- **DEFECT FOUND AND FIXED IN BRING-UP:** the first GEMM wiring silently failed to
+  install the row-aware template (a `str.replace` whose anchor never matched, with
+  no assert), so GEMM peeled with BASE-RELATIVE addresses. **The differential
+  caught it and rolled back** — no wrong code was ever committed. Fix installs the
+  override with an assertion. Lesson: assert on every scripted source patch.
+- **Other limits:** AXPY dynamic ops rose slightly (1804→1859) as kernels changed
+  realisation, buying 1280 fewer characters; the framework handles at most two
+  operands and one combining op — an expression tree would need `op` to become a
+  small tree, which the descriptors already allow without touching clients.
+- 58/58 unit; 11 suites pass; all 6 corpora PASS; crosscheck 124/124; corpus
+  124/124 byte-identical.
