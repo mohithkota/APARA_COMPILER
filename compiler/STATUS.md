@@ -5776,3 +5776,45 @@ enough to unblock R6.3, so **no lowering is committed**. Report:
   lowering (one ArrayRef field, one emitter, three call sites, one legality
   relaxation), THEN re-check profitability. **The disambiguation defect is latent
   at HEAD only because convolution is declined — it is not convolution-specific.**
+
+---
+
+## R6.2E — Dependence Soundness Investigation  (2026-08-01) ⚠️ NO DEFECT FOUND
+
+**There is NO missing dependence edge, and R6.3's previous conclusion was WRONG.**
+Nothing changed; HEAD stays `c0330eb`, verification **38/38**. Report:
+`R6_2E_DEPENDENCE_SOUNDNESS.md`.
+
+- **CORRECTION TO R6.3:** it concluded "the reconstruction is correct, the blocker
+  is disambiguation" from kernels that read outputs SEQUENTIALLY. The failing
+  suite kernel reads them SPARSELY (`out[0]`, `out[11]`, `out[60]`). Sequential
+  passes, sparse fails. I generalised from the passing shape without testing the
+  failing one.
+- **MINIMAL REPRODUCER:** conv 3-tap, 56 iterations (7 chunks, **remainder 0**, so
+  no peeling), 3 sparse result reads. `out[0]` = 3 CORRECT; `out[11]` and
+  `out[55]` both **0**, as if never written.
+- **NOT A DEPENDENCE PROBLEM — two decisive results:** (1) it **fails with
+  `APARA_NO_MEMDISAMB=1` too**, so R6.2's model cannot be the cause; (2) an
+  **elementwise kernel with the IDENTICAL sparse-read structure PASSES** — a
+  dropped store->load edge would break that too. The defect is specific to the
+  sliding-window lowering.
+- **The old "sched alone PASS / pack alone PASS / both FAIL" clue was a red
+  herring:** disabling either consumer changes measured bundle counts, so
+  R4.2.5's size probe picks a DIFFERENT REALISATION (`compact` vs
+  `compact+peeled`). Never an interaction between the consumers.
+- **ELIMINATED:** wrong disjointness proof (enumerated every cleared same-block
+  pair with symbolic addresses — none wrong); bundler (one FIXED program bundled
+  both ways -> **both PASS**); realisation; tier (**identical**,
+  IVSR+LICM+loop-reg); R3.1 SWP (not applied).
+- **STILL UNEXPLAINED:** why the NUMBER of result reads changes the outcome when
+  tier, realisation, vectorization decision and fixed-program bundling are all
+  identical — and how reads in a block AFTER the loop can observe pre-store
+  memory when the scheduler is block-local.
+- **NO FIX APPLIED.** No dependence was restored because none was shown missing;
+  adding a conservative edge on suspicion would hide the symptom and cost
+  scheduling freedom everywhere for a defect that is not in the dependence graph.
+- **PROFITABILITY WARNING (settle this FIRST):** the reconstructed conv 3-tap vi8
+  ran **1888 ticks vs 1517 for the SCALAR form the compiler ships**. Even once
+  correct it is SLOWER (2 aligned loads + 3 ALU ops per shifted tap). If it
+  cannot beat scalar, the right outcome is to **close R6.3 and keep the R6.2C
+  decline**.
