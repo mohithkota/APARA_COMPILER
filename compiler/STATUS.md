@@ -5687,3 +5687,46 @@ RESULT: PASS**. Report: `R6_2C_CORRECTNESS_FIXES.md`.
   oracle gates all of them; (2) re-apply this milestone's small, localized diff;
   (3) verify and measure. Misaligned stores, column-strided accesses and
   runtime-variable misalignment remain out of scope regardless.
+
+---
+
+## R6.2D — Canonical Vector Lane Ordering Validation  (2026-08-01) ✅ DONE
+
+**Established by EXPERIMENT, not source reading. Oracle corrected; no lowering
+committed.** Report: `R6_2D_VECTOR_LANE_ORDER.md`.
+
+- **KEY INSIGHT — lane NUMBERING is not observable.** It appears on both operands
+  of every ISA vector op and cancels (`$dot` = sum of products, `$vreduce` = sum,
+  `$v` = per-lane). What IS observable, and what a sliding window depends on, is
+  the BYTE POSITION of element 0 in the 64-bit word. gcc cannot be the reference
+  (DMEM word layout is APARA-specific), so the probes are hand-written mcode
+  checked against DMEM PostConditions — `verification/probes/`.
+- **EXPERIMENT (word 0x0102030405060708):** `$ld ($i8)` of byte address 0 -> 0x1;
+  `$slice 63 56` -> 0x1; `$slice 7 0` -> 0x8. Store side: writing 0xFF to byte
+  address 3 yields `0x010203ff05060708`. **Byte address 0 IS the most significant
+  byte -> MSB-first, on both load and store.**
+- **VERDICT:** `Break_Vector` (MSB-first) and `build_data_map` (MSB-first) are
+  correct; the ORACLE was wrong — `vector_validation._lane` and
+  `PackedVectorInterp`'s packed load/store were LSB-first. They agreed with EACH
+  OTHER, so the mirror cancelled for every lane-order-INDEPENDENT kernel and was
+  never observable.
+- **FIXED (oracle only, 3 edits):** `_lane`, `_valu`'s output assembly, and
+  `PackedVectorInterp`'s packed load+store, all to `64 - (i+1)*bits`.
+  `Break_Vector` NOT touched. No lowering/legality/scheduler/bundler/memdep
+  change.
+- **REGRESSION — behaviour-neutral, as predicted:** verification **38/38 PASS**,
+  **0** tick changes and **0** vectorization-decision changes vs R6.2C, 124-corpus
+  **byte-identical**, crosscheck **124/124**, all 15 unit suites pass. Correcting
+  a mirror applied twice changes nothing.
+- **CAVEAT FOUND:** the R5 evaluation suite is **nondeterministic across runs with
+  IDENTICAL code** (confirmed at HEAD too, so it predates R6.2D) — R5.0's claim
+  that two consecutive runs match no longer holds. Likely R6.2 disambiguation
+  making R4.2.5's size probe sensitive to module-global counter state not reset
+  between benchmarks. It is no longer usable as an A/B instrument; the
+  deterministic checks above carry the regression claim.
+- **R6.3 RECOVERY CHECK (re-applied temporarily, then reverted — nothing
+  committed):** conv 3-tap now **commits** instead of rolling back, and emits
+  **0 unaligned loads** — so lane order WAS a real blocker and is gone. But the
+  simulator still FAILS: `Mem[0x81] = 0x0, expected 0xc`, with chunk 0 correct
+  and chunk 1 zero. **A second, independent blocker remains**, localised to the
+  reconstructed window's per-chunk advance. Documented, not pursued.

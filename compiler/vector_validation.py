@@ -36,7 +36,22 @@ def _vinfo(type_str):
 
 
 def _lane(packed, i, bits, mask):
-    return (packed >> (i * bits)) & mask
+    """Lane `i` of a packed 64-bit word, MSB-FIRST.
+
+    R6.2D established this experimentally on the simulator, not by reading
+    source: with word 0x0102030405060708 in DMEM, a sub-word `$ld ($i8)` of byte
+    address 0 returns 0x01 and `$slice 63 56` returns 0x01, while `$slice 7 0`
+    returns 0x08 -- so byte address 0 IS the most significant byte. The store
+    side agrees: writing 0xFF to byte address 3 yields 0x010203ff05060708.
+
+    This matches `McodeUtils.cpp Break_Vector`
+    (`vec >> ((nfields-(I+1))*nbits)`) and `compiler.py build_data_map`
+    (byte b at bits [63-8b : 56-8b]). Until R6.2D this function used
+    `packed >> (i*bits)` -- LSB-first, the mirror image. That was
+    self-consistent with the packed load/store below, so it cancelled for every
+    lane-order-INDEPENDENT kernel and was never observable; it made
+    order-dependent lowerings (a sliding window) report false mismatches."""
+    return (packed >> (64 - (i + 1) * bits)) & mask
 
 
 def _sext(e, bits):
@@ -82,7 +97,7 @@ class VectorInterp(ir_interp.Interp):
                 r = ea - eb
             else:
                 r = ea * eb
-            out |= (r & mask) << (i * bits)
+            out |= (r & mask) << (64 - (i + 1) * bits)   # MSB-first (R6.2D)
         return _sext(out, 64)                      # store as signed 64-bit word
 
     # ── DOT: sum of element-wise products (golden_stubs __dot_generic) ─────────

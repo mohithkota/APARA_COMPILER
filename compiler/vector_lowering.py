@@ -66,7 +66,9 @@ class PackedVectorInterp(_vv.VectorInterp):
             packed = 0
             for i in range(lanes):
                 e = mem.get(base + i * eb, 0) & emask
-                packed |= e << (i * eb * 8)
+                # MSB-first (R6.2D, established on the simulator): the element
+                # at byte offset i*eb occupies bits [63-8*i*eb : ...].
+                packed |= e << (64 - (i + 1) * eb * 8)
             regs[ins.dest.name] = _vv.ir_interp._to_signed(packed)
         elif c == 'IRStore' and pk is not None:
             # Scatter: unpack `lanes` fields out of the 64-bit value and write each
@@ -81,7 +83,8 @@ class PackedVectorInterp(_vv.VectorInterp):
             emask = (1 << bits) - 1
             for i in range(lanes):
                 mem[base + i * eb] = _vv.ir_interp._trunc(
-                    (packed >> (i * bits)) & emask, eb, unsigned=False)
+                    (packed >> (64 - (i + 1) * bits)) & emask, eb,
+                    unsigned=False)
         else:
             super()._exec_data(ins, c, mem, regs)
 
