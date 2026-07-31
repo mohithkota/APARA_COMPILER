@@ -417,14 +417,27 @@ def build_compact_elementwise_body(plan):
             # IV slot (iv_value=None) so it tracks the compact loop.
             from gemm_lowering import clone_offset as _co
 
-            def _ld(a, t):
-                pre, o = _co(plan._instrs, plan._defmap, plan._region,
-                             a.offset_expr, plan.iv_slot, None)
-                if pre is None:
-                    raise ValueError(o)
-                return list(pre) + _v.packed_window_load_at(
-                    t, a.slot, o, getattr(a, 'word_shift', 0), plan.lanes,
-                                                     a.elem_bytes, not a.unsigned)
+            # R6.3.2 Phase 1: share the aligned pair here too. Every tap that
+            # starts in the same aligned word reads exactly the same two words,
+            # so the pair (and its address computation) is emitted once per
+            # (array, word) per chunk instead of once per tap.
+            _pairs = {}
+
+            def _ld(a, t, _pairs=_pairs):
+                sh = getattr(a, 'word_shift', 0)
+                key = (a.slot, getattr(a, 'word_index', 0))
+                pre_all = []
+                if key not in _pairs:
+                    pre, o = _co(plan._instrs, plan._defmap, plan._region,
+                                 a.offset_expr, plan.iv_slot, None)
+                    if pre is None:
+                        raise ValueError(o)
+                    ld, w0, w1 = _v.aligned_pair_at(a.slot, o, sh, plan.lanes,
+                                                    a.elem_bytes)
+                    pre_all = list(pre) + ld
+                    _pairs[key] = (w0, w1)
+                w0, w1 = _pairs[key]
+                return pre_all + _v.window_from_pair(t, w0, w1, sh)
             ins, val, _sc = lower_vector(plan.expr, plan.vtype, _ld)
             if ins is None:
                 raise ValueError(val)
