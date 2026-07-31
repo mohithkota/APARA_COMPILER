@@ -54,11 +54,19 @@ def _build(code):
 
 
 def _measure(ir):
-    """(bundles, mcode_chars, vector_ops) through the real backend."""
+    """(post_optimizer_bundles, mcode_chars, vector_ops).
+
+    R4.2.6: the headline bundle count is the POST-OPTIMIZER one -- what actually
+    ships -- because the raw backend count measured before the scalar optimizer,
+    SWP and superblock run is a poor predictor of final size (that mismatch is
+    exactly what R4.2.6 fixed in the selector)."""
     try:
         body = CodeGen(global_base=_GB).generate(copy.deepcopy(ir), global_base=_GB)
-        _m, _n, b = bundle_mcode(body, schedule=True)
         vops = body.count('$dot') + body.count('$vreduce') + body.count('$v ')
+        from vector_size_probe import probe_bundles
+        b, spilled = probe_bundles(ir, _GB)
+        if b is None or spilled:
+            _m, _n, b = bundle_mcode(body, schedule=True)
         return b, len(body), vops
     except Exception:
         return -1, -1, -1

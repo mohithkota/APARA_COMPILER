@@ -64,7 +64,7 @@ class ElementwisePlan:
     __slots__ = ('ok', 'reason', 'op', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'dst_slot', 'src_slots', 'acc_unused',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
-                 'realisation', 'compact_per_iter')
+                 'realisation', 'compact_per_iter', 'peel', 'peel_len')
 
     def __init__(self):
         self.ok = False
@@ -73,6 +73,8 @@ class ElementwisePlan:
         self.body_len = 0
         self.realisation = None         # 'compact' | 'unrolled', set by lowering
         self.compact_per_iter = 0
+        self.peel = None                # R4.2.7 PeelTemplate, or None
+        self.peel_len = 0
 
     def __repr__(self):
         if not self.ok:
@@ -175,6 +177,7 @@ def plan_elementwise(desc, instrs, kernel, legality):
 
     # every operand must itself be a packed affine load of the SAME width
     p.src_slots = []
+    src_info = []                       # (slot, elem_bytes, unsigned) per operand
     for t in operand_temps:
         di = def_map.get(t.name)
         if di is None or _cname(instrs[di]) != 'IRLoad':
@@ -189,6 +192,8 @@ def plan_elementwise(desc, instrs, kernel, legality):
             p.reason = 'operand-width-mismatch'
             return p
         p.src_slots.append(slot)
+        src_info.append((slot, ld.elem_bytes,
+                         bool(getattr(ld, 'unsigned', False))))
 
     # no OTHER array traffic may hide in the body: every affine load must be one
     # we consume, or a lane could read data the vector form never gathers.
@@ -224,6 +229,15 @@ def plan_elementwise(desc, instrs, kernel, legality):
     if p.iv_init_site is None:
         p.reason = 'iv-init-not-found'
         return p
+
+    # R4.2.7 peel template: replay the ORIGINAL loads/binop/store attributes at a
+    # constant index rather than re-deriving the tail.
+    from vector_remainder_peel import PeelTemplate
+    p.peel = PeelTemplate(
+        loads=src_info,
+        value=(None if p.op is None
+               else (p.op, bool(getattr(vins, 'unsigned', False)))),
+        store=(p.dst_slot, st.elem_bytes))
 
     p.region_lo = hblk.lo
     p.region_hi = desc.cfg.blocks[desc.latches[0]].hi
@@ -330,10 +344,24 @@ def lower_elementwise(instrs, lo, hi, desc, kernel, legality, plan,
         return None, plan.reason
 
     import vector_compact_loop as _vcl
-    compact = _splice_compact(instrs, plan, build_compact_elementwise_body(plan))
-    unrolled = _splice_unrolled(instrs, plan, build_elementwise_body(plan))
-    best, name, _scores = _vcl.choose_smaller(
-        [('unrolled', unrolled), ('compact', compact)], global_base)
+    from vector_remainder_peel import splice_peeled
+    compact_body = build_compact_elementwise_body(plan)
+    unrolled_body = build_elementwise_body(plan)
+    plan.body_len = len(unrolled_body)
+    compact = _splice_compact(instrs, plan, compact_body)
+    unrolled = _splice_unrolled(instrs, plan, unrolled_body)
+    # R4.2.7: with a remainder, the scalar tail loop can be PEELED away instead of
+    # kept. Both realisations get a peeled variant; the selector decides. The
+    # unrolled body starts at chunks*lanes (it does not count), the compact loop
+    # counts up from 0 itself.
+    cands = [('unrolled', unrolled), ('compact', compact)]
+    if plan.remainder > 0:
+        cands.append(('unrolled+peeled',
+                      splice_peeled(instrs, plan, unrolled_body,
+                                    plan.chunks * plan.lanes)))
+        cands.append(('compact+peeled',
+                      splice_peeled(instrs, plan, compact_body, 0)))
+    best, name, _scores = _vcl.choose_smaller(cands, global_base)
     if best is None:
         return None, 'no-realisation-compiles'
     plan.realisation = name

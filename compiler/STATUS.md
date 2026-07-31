@@ -4816,3 +4816,65 @@ pipeline source never mentions a realisation). Full report: `R4_2_5_DELIVERY.md`
   peeling/predication is the real fix); validation remains the packed IR oracle.
 - **Not done (by mandate):** matrix multiplication, convolution, expression-tree
   vectorization, general loop vectorization.
+
+---
+
+## R4.2.6 — Post-Optimizer Size Gate & Remainder Peeling  (2026-07-31) ✅ DONE
+
+**Closes the two weaknesses R4.2.5 documented, before R4.3.** Only lowering and
+realisation SELECTION changed; `vector_pipeline.py` stays byte-for-byte untouched
+(asserted by test). Both fixes were driven by measurement — and one of them
+**refuted the hypothesis it started from**. Full report: `R4_2_6_DELIVERY.md`.
+
+- **Added** `vector_size_probe.py` (measures a candidate AS PRODUCTION WOULD BUILD
+  IT: tier-1 scalar optimizer + R3.2 superblock, then bundling; every pass
+  imported from the same module compiler.py imports it from so it cannot drift;
+  `APARA_VECTOR_FAST_PROBE=1` reverts), `vector_remainder_peel.py` (`PeelTemplate`
+  + `build_peeled_tail` + `splice_peeled`), `_r4_2_6_test.py`. **Modified**
+  `vector_compact_loop.py` (post-optimizer probe + acceptance MARGIN + peel-aware
+  `realisation_of`), both lowerings (capture a PeelTemplate; offer
+  `unrolled+peeled` and `compact+peeled` candidates), `vector_dynamic.py`
+  (peel-aware), `vector_compact_corpus.py` (post-optimizer headline).
+- **FIX A — the probe measures what actually ships.** R4.2.5 measured the
+  vectorized IR alone, before the scalar optimizer/SWP/superblock, so the ranking
+  could invert after lowering had committed. The documented case (4-loop program,
+  one 8-chunk vector loop) picked compact at 69 bundles when unrolled was 67; it
+  now picks **67**. Globally the post-optimizer view is very different: scalar
+  baseline **276** (not 336), R4.2 **319** (not 354), R4.2.6 **273** — the
+  vectorized code is now genuinely BELOW the scalar baseline.
+- **FIX B — an acceptance MARGIN.** The better probe immediately exposed
+  "smallest wins" as flawed: on `vector add vi8` (4 chunks) compact became smaller
+  by **1 bundle of 31 (−3%)** while costing **+47 executed ops (+168%)**. A
+  challenger must now beat the incumbent (always unrolled — dynamically fastest)
+  by **≥10%** (`APARA_VECTOR_COMPACT_MARGIN`). Keeps the −30% 8-chunk wins,
+  rejects the rounding-error ones, and restores dynamic reduction 87.1% → 89.6%.
+- **FIX C — remainder peeling, AND THE HYPOTHESIS IT REFUTED.** Expected: deleting
+  the tail loop removes compare+branch+IV so BOTH size and speed improve. Measured:
+  at remainder 4 the peeled tail is 4 body copies (~29 instrs) where the tail LOOP
+  was ~10 skeleton + one body — peeling is dynamically faster (~29 ops vs ~88) but
+  statically **LARGER**. It is the MIRROR IMAGE of compaction, not an exception,
+  so it clears the same margin. `add vi8 N=20` post-opt: scalar 19, unrolled 21,
+  unrolled+peeled 29, compact 30, compact+peeled 25 → unrolled correctly kept.
+  Peeling wins on **2 of 6** remainder kernels (reduction vi16 33→27 −18%,
+  mul vi16 29→22 −24%).
+- **CORRECTION TO THE R4.2.5 REPORT:** it called `add vi8 N=20` a weak case at
+  "30 bundles vs 23 scalar". Both were PRE-OPTIMIZER artifacts; post-optimizer it
+  is **21 vs 19** — vectorizing costs 2 bundles, not 7. Real, but far milder.
+- **WHY PEELING IS SAFE:** the tail is NOT re-derived from source (that would risk
+  integer-promotion / sub-word-truncation bugs — the class that made R4.1's
+  narrow accumulator diverge). Each planner records a `PeelTemplate` holding the
+  ORIGINAL instructions' `elem_bytes`/`unsigned`/opcode, and peeling replays those
+  at constant offsets; the differential validates it like any other lowering.
+- **CORPUS (post-optimizer):** coverage 14→14, bundles **319 → 273 (−14.4%)**,
+  code size 24201→19871 chars (−17.9%), 0 mismatches, 1 rollback, dynamic
+  reduction 89.6%. **END-TO-END (20 whole programs incl. 6 remainder): 698 → 639
+  (−8.5%)** — 6 programs improved (−7/−13/−13/−13 compaction, −7/−6 peeling), 14
+  unchanged. Full corpus **124/124 byte-identical**. 51/51 unit (32 realisations
+  validated, 0 mismatches); crosscheck 124/124; R3.1–R4.2.5 suites pass.
+- **Honest limitations:** the probe is a good predictor, NOT exact — it models
+  tier 1 + superblock but not R3.1 SWP, and production may pick another tier under
+  spill pressure; compile time +10% (1.40→1.53 s) since up to four candidates are
+  each fully optimized. Peeling helps a minority (2/6). Small-trip remainder
+  kernels remain a MILD static loss (21 vs 19) that no realisation fixes — with 2
+  chunks there is nothing to compact; declining to vectorize would fix size at the
+  cost of a 4.3× dynamic win, a policy call left open.

@@ -144,7 +144,7 @@ class LoweringPlan:
     __slots__ = ('ok', 'reason', 'kind', 'vtype', 'lanes', 'eb', 'signed',
                  'trip', 'chunks', 'remainder', 'array_slots', 'acc_slot',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi',
-                 'realisation', 'compact_per_iter', 'unrolled_len')
+                 'realisation', 'compact_per_iter', 'unrolled_len', 'peel', 'peel_len')
 
     def __init__(self):
         self.ok = False
@@ -152,6 +152,8 @@ class LoweringPlan:
         self.realisation = None         # 'compact' | 'unrolled', set by lowering
         self.compact_per_iter = 0
         self.unrolled_len = 0
+        self.peel = None                # R4.2.7 PeelTemplate, or None
+        self.peel_len = 0
 
 
 def plan_lowering(desc, instrs, kernel, legality):
@@ -182,6 +184,8 @@ def plan_lowering(desc, instrs, kernel, legality):
 
     # affine array loads: base must be a local IRLoadAddr slot; stride == elem_bytes
     array_slots = []
+    array_info = []                     # (slot, elem_bytes, unsigned) per load
+    load_temps = {}                     # temp name -> slot, for finding the mul
     for i in _region(desc):
         ins = instrs[i]
         if _cname(ins) != 'IRLoad':
@@ -198,6 +202,9 @@ def plan_lowering(desc, instrs, kernel, legality):
             p.reason = 'unpacked-array-stride'
             return p
         array_slots.append(addr_off[base.name])
+        array_info.append((addr_off[base.name], ins.elem_bytes,
+                           bool(getattr(ins, 'unsigned', False))))
+        load_temps[ins.dest.name] = addr_off[base.name]
 
     need = 2 if kernel.kind in ('dot-product',) else 1
     if len(array_slots) < need:
@@ -206,6 +213,25 @@ def plan_lowering(desc, instrs, kernel, legality):
     p.array_slots = array_slots[:need]
     p.acc_slot = kernel.reduction_slot
     p.iv_slot = desc.primary_iv
+
+    # R4.2.7 peel template: replay the ORIGINAL loads/arithmetic at a constant
+    # index rather than re-deriving the tail (which would risk getting integer
+    # promotion or sub-word truncation subtly wrong).
+    _value = None
+    if kernel.kind == 'dot-product':
+        for i in _region(desc):
+            m = instrs[i]
+            if (_cname(m) == 'IRBinOp' and m.op == '*'
+                    and isinstance(m.left, Temp) and isinstance(m.right, Temp)
+                    and m.left.name in load_temps and m.right.name in load_temps):
+                _value = ('*', bool(getattr(m, 'unsigned', False)))
+                break
+        if _value is None:
+            _value = ('*', False)
+    if p.acc_slot is not None:
+        from vector_remainder_peel import PeelTemplate
+        p.peel = PeelTemplate(loads=array_info[:need], value=_value,
+                              acc_slot=p.acc_slot)
 
     # locate the IV-init store (constant store to the IV slot before the header)
     hblk = desc.cfg.blocks[desc.header]
@@ -360,12 +386,24 @@ def lower_kernel(instrs, lo, hi, plan, global_base=0x400):
         return None, plan.reason
 
     import vector_compact_loop as _vcl
-    compact = _splice_compact(instrs, plan, build_compact_body(plan))
-    _unrolled_body = build_vector_body(plan)
-    plan.unrolled_len = len(_unrolled_body)
-    unrolled = _splice_unrolled(instrs, plan, _unrolled_body)
-    best, name, _scores = _vcl.choose_smaller(
-        [('unrolled', unrolled), ('compact', compact)], global_base)
+    from vector_remainder_peel import splice_peeled
+    compact_body = build_compact_body(plan)
+    unrolled_body = build_vector_body(plan)
+    plan.unrolled_len = len(unrolled_body)
+    compact = _splice_compact(instrs, plan, compact_body)
+    unrolled = _splice_unrolled(instrs, plan, unrolled_body)
+    # R4.2.7: with a remainder, the scalar tail loop can be PEELED away instead of
+    # kept. Both realisations get a peeled variant; the selector decides. The
+    # unrolled body starts at chunks*lanes (it does not count), the compact loop
+    # counts up from 0 itself.
+    cands = [('unrolled', unrolled), ('compact', compact)]
+    if plan.remainder > 0:
+        cands.append(('unrolled+peeled',
+                      splice_peeled(instrs, plan, unrolled_body,
+                                    plan.chunks * plan.lanes)))
+        cands.append(('compact+peeled',
+                      splice_peeled(instrs, plan, compact_body, 0)))
+    best, name, _scores = _vcl.choose_smaller(cands, global_base)
     if best is None:
         return None, 'no-realisation-compiles'
     plan.realisation = name

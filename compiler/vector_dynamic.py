@@ -33,9 +33,15 @@ def model_realisation(plan, desc):
     from vector_pipeline import DynamicModel
     body_ops = getattr(desc, 'body_inst_count', 0) or 1
     scalar_ops = body_ops * plan.trip
-    tail = body_ops * plan.remainder
+    real = plan.realisation or 'unrolled'
+    if real.endswith('+peeled'):
+        # the scalar tail LOOP is gone; the peeled straight-line tail executes
+        # exactly once and its length is known exactly
+        tail = getattr(plan, 'peel_len', 0) or 0
+    else:
+        tail = body_ops * plan.remainder
 
-    if plan.realisation == 'compact':
+    if real.startswith('compact'):
         vector_ops = plan.chunks * plan.compact_per_iter + _EXIT_TEST_OPS + tail
     else:
         vector_ops = _emitted_len(plan) + tail
