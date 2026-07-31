@@ -1,0 +1,27 @@
+benchmark,cause,lost_slots
+dot vi8,true data dependence,61.0
+dot vi16,true data dependence,65.2
+reduction vi8,true data dependence,63.3
+reduction vi32,true data dependence,86.0
+elementwise add,true data dependence,79.7
+elementwise mul,true data dependence,79.7
+elementwise copy,true data dependence,60.7
+expr a+b+c,true data dependence,58.0
+expr a*b+c,true data dependence,58.0
+expr (a+b)*c,true data dependence,58.0
+expr a+b+c+d,true data dependence,80.5
+axpy vi8,true data dependence,66.0
+axpy vi16,true data dependence,70.0
+axpy remainder,remainder handling,59.0
+gemm vi8 16^3,true data dependence,125.4
+gemm vi8 8x8x32,true data dependence,141.4
+gemm vi16,true data dependence,166.0
+conv 3-tap,true data dependence,72.5
+conv 5-tap,true data dependence,76.0
+conv 7-tap,true data dependence,112.0
+conv 3-tap vi16,true data dependence,104.7
+scalar bubblesort,memory dependence,200.0
+scalar gcd,non-vectorized loop,34.2
+scalar binsearch,non-vectorized loop,143.1
+scalar popcount,non-vectorized loop,44.0
+scalar divmod,non-vectorized loop,111.0

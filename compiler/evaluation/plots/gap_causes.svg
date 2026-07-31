@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="132" font-family="monospace" font-size="11">
+<text x="8" y="18" font-size="13">Lost issue slots by measured cause (%)</text>
+<text x="8" y="45">true data dependence</text>
+<rect x="130" y="36" width="530" height="12" fill="#4a7fb5"/>
+<text x="665" y="45">74.01</text>
+<text x="8" y="63">non-vectorized loop</text>
+<rect x="130" y="54" width="104" height="12" fill="#4a7fb5"/>
+<text x="239" y="63">14.61</text>
+<text x="8" y="81">memory dependence</text>
+<rect x="130" y="72" width="62" height="12" fill="#4a7fb5"/>
+<text x="197" y="81">8.79</text>
+<text x="8" y="99">remainder handling</text>
+<rect x="130" y="90" width="18" height="12" fill="#4a7fb5"/>
+<text x="153" y="99">2.59</text>
+</svg>

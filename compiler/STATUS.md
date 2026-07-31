@@ -5269,3 +5269,56 @@ profitability analysis, no new expression nodes. Full report: `R4_6_DELIVERY.md`
   not attempted without budget to verify broadly. Column-strided stencils remain
   correctly rejected. Three test expectations updated to new reason strings; no
   assertion removed.
+
+---
+
+## R4.6.5 — Vector Performance Characterization  (2026-07-31) ✅ DONE
+
+**Evaluation only — no optimization performed.** Scheduler, bundler, vectorizer,
+backend and IR untouched. Every number from the REAL production path (tier-1 +
+superblock + codegen + bundler). Full report: `R4_6_5_EVALUATION.md`.
+
+- **Added** `evaluation/` (`metrics.py`, `runner.py`, `compare.py`, `report.py`,
+  `plots.py`, `results/`, `plots/`) — reusable, dependency-free;
+  `python3 evaluation/__main__.py` regenerates everything.
+- **MEASUREMENT CAVEAT THAT SHAPES EVERY CONCLUSION:** IPB is a DENSITY metric,
+  not throughput. Vectorizing REMOVES instructions (one `$v` replaces 8 scalar
+  ops), so a kernel gets much faster while IPB barely moves. The R3.0 oracle's
+  `theoretical_ipb` is computed on the SCALAR IR, so "distance to oracle" compares
+  vector code against a scalar-derived ceiling. The honest throughput figure is
+  DYNAMIC OPERATIONS: **−85.2%**.
+- **HEADLINE (26 benchmarks, 7 families + 5 deliberately scalar):** IPB scalar
+  mean **1.873** → vector mean **2.462 (+31.5%)**, peak 3.667, median 2.48;
+  vectorized-only 2.598; non-vectorizable kernels 1.890 (unchanged — correct).
+  Oracle theoretical mean 5.438. **Utilization 45.3% of oracle, 30.8% of the
+  8-wide issue.** Dynamic ops **28544 → 4231 (−85.2%)**, per-kernel mean −84.6%
+  (range −56.1%..−97.4%). Static cost: bundles +12.1%, code size +57.4%.
+  Occupancy: bundle 0.325, memory-lane 0.193, vec-ops/bundle 0.104, branch density
+  0.016. Compile time mean 0.18 s, max 0.95 s.
+- **COVERAGE: 21 vectorized / 5 rejected / 0 ROLLED BACK.** Every benchmark that
+  can be vectorized is; all 5 rejections are the deliberate control group.
+- **GAP ANALYSIS (2276 lost slots, each attributed to a MEASURED cause):**
+  true data dependence **74.0%** (gemm/conv/reduction kernels ALREADY vectorized),
+  non-vectorized loop **14.6%** (binsearch 143, divmod 111, popcount 44, gcd 34),
+  memory dependence **8.8%** (bubblesort), remainder handling **2.6%** (axpy).
+  **Register pressure, branch overhead, unsupported pattern and hardware
+  restriction all measured ZERO** — nothing is lost to fixable compiler limits.
+- **DECISION — R4.7 (General Loop Vectorizer) is NOT justified.** It can only
+  attack the 14.6% non-vectorized bucket, and every kernel there was measured and
+  is fundamentally non-vectorizable: binary search = data-dependent control flow,
+  divmod = the single divide lane (hardware), popcount/gcd = sequential
+  recurrences, bubblesort = loop-carried swap. **Realistically addressable share
+  ≈ 0%.** Even recovering half that bucket would move mean IPB 2.462 → ~2.6
+  (+6%), against 74% of the gap it cannot touch.
+- **RECOMMENDATION: end feature development, proceed to R5.0 (final thesis
+  evaluation).** The only regressed metric is static size (+57.4% code, +12.1%
+  bundles) — a deliberate trade already attacked three times (R4.2.5/R4.2.6/
+  R4.4.5) with diminishing returns.
+- **ANSWERS:** *"How close to the issue-width limit?"* — **2.462 IPB on an 8-wide
+  machine = 30.8%** (45.3% of the 5.438 oracle). *"Largest remaining gain?"* —
+  **none worth building**; the largest addressable measured bucket is under 3%.
+- **Honest limits of the study:** the oracle ceiling is scalar-derived; dynamic
+  counts come from the vectorizer's model, not a simulator (IR-level policy); IPB
+  here is static density — a true dynamic IPB needs per-bundle execution counts
+  from a simulator run; 26 benchmarks is a characterization suite with a
+  deliberate control group, not a representative workload mix.

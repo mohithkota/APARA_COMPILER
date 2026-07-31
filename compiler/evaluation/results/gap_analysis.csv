@@ -1,0 +1,5 @@
+cause,lost_slots,percent
+true data dependence,1684.1,74.0
+non-vectorized loop,332.4,14.6
+memory dependence,200.0,8.8
+remainder handling,59.0,2.6

@@ -1,0 +1,9 @@
+family,n,vectorized,scalar_ipb,vector_ipb,theoretical_ipb,dyn_red
+dot,2,2,2.071,2.119,5.125,84.7
+reduction,2,2,1.712,2.202,5.833,76.75
+elementwise,3,3,1.606,2.4,5.333,88.967
+expression,4,4,1.715,2.906,5.188,87.05
+axpy,3,3,1.717,1.923,5.083,82.433
+gemm,3,3,2.356,2.922,5.733,91.4
+convolution,4,4,1.948,3.14,6.3,79.45
+scalar,5,0,1.89,1.89,5.017,0.0

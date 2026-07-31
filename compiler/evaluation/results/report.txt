@@ -1,0 +1,63 @@
+==============================================================================
+  R4.6.5 VECTOR PERFORMANCE CHARACTERIZATION
+==============================================================================
+
+  Per-benchmark measurements (production path: tier-1 + superblock)
+  benchmark           decision     realisation      scalar_ipb vector_ipb  theoretical_ipb  dynamic_reduction
+  dot vi8             vectorized   compact          2.0476     2.0952      5.0              89.8      
+  dot vi16            vectorized   compact          2.0952     2.1429      5.25             79.6      
+  reduction vi8       vectorized   unrolled         1.7273     2.5         5.6667           97.4      
+  reduction vi32      vectorized   compact          1.6957     1.9048      6.0              56.1      
+  elementwise add     vectorized   compact+peeled   1.6316     2.48        5.6667           88.0      
+  elementwise mul     vectorized   compact+peeled   1.6316     2.48        5.6667           88.0      
+  elementwise copy    vectorized   unrolled         1.5556     2.24        4.6667           90.9      
+  expr a+b+c          vectorized   compact+peeled   1.7        2.8519      5.0              87.2      
+  expr a*b+c          vectorized   compact+peeled   1.7        2.8519      5.0              87.2      
+  expr (a+b)*c        vectorized   compact+peeled   1.7        2.8519      5.0              87.2      
+  expr a+b+c+d        vectorized   compact+peeled   1.7619     3.0667      5.75             86.6      
+  axpy vi8            vectorized   compact          1.7        1.7         5.0              90.3      
+  axpy vi16           vectorized   compact          1.75       1.75        5.25             80.6      
+  axpy remainder      vectorized   unrolled         1.7        2.3182      5.0              76.4      
+  gemm vi8 16^3       vectorized   unrolled         2.3519     2.75        5.6              93.6      
+  gemm vi8 8x8x32     vectorized   unrolled         2.3519     2.9815      5.6              93.8      
+  gemm vi16           vectorized   unrolled         2.3636     3.0357      6.0              86.8      
+  conv 3-tap          vectorized   compact+peeled   1.7619     3.3333      5.75             82.8      
+  conv 5-tap          vectorized   compact+peeled   1.9565     3.6667      6.2              82.3      
+  conv 7-tap          vectorized   compact+peeled   2.12       3.0         6.5              83.0      
+  conv 3-tap vi16     vectorized   compact+peeled   1.9524     2.56        6.75             69.7      
+  scalar bubblesort   rejected     -                1.7755     1.7755      5.8571           0.0       
+  scalar gcd          rejected     -                1.9474     1.9474      3.75             0.0       
+  scalar binsearch    rejected     -                2.28       2.28        5.1429           0.0       
+  scalar popcount     rejected     -                1.8889     1.8889      4.3333           0.0       
+  scalar divmod       rejected     -                1.56       1.56        6.0              0.0       
+
+  IPB (static instructions / static bundle; 8 = issue-width ceiling)
+    scalar compiler (all)                mean 1.873  peak 2.364  min 1.556  median 1.762  n=26
+    vector compiler (all)                mean 2.462  peak 3.667  min 1.56   median 2.48   n=26
+    vector compiler (vectorized only)    mean 2.598  peak 3.667  min 1.7    median 2.56   n=21
+    non-vectorizable kernels             mean 1.89   peak 2.28   min 1.56   median 1.889  n=5
+    oracle theoretical                   mean 5.438  peak 6.75   min 3.75   median 5.6    n=26
+
+  Vector-compiler IPB distribution
+       0.0-1.0 |  0
+       1.0-1.5 |  0
+       1.5-2.0 | ####### 7
+       2.0-2.5 | ####### 7
+       2.5-3.0 | ####### 7
+       3.0-4.0 | ##### 5
+         >=4.0 |  0
+
+  Coverage
+    vectorized      : 21
+    rejected        : 5
+    rolled-back     : 0
+    accepted        : 21
+    scalar-family   : 5
+    total benchmarks: 26
+
+  Gap to oracle -- lost issue slots by measured cause
+    total lost slots (theoretical - achieved, weighted by bundles): 2276
+    true data dependence          1684   74.0%  #####################################
+    non-vectorized loop            332   14.6%  #######
+    memory dependence              200    8.8%  ####
+    remainder handling              59    2.6%  #
