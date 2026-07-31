@@ -5371,3 +5371,66 @@ performed (`evaluation/plots.py` gained three figures). Deliverables:
   **not** a compiler optimization but validation on hardware or a cycle-accurate
   simulator, which would replace the modelled dynamic counts and the
   scalar-derived ceiling with measured ones.
+
+---
+
+## R6.1 — Vector Backend ILP Analysis Framework  (2026-07-31) ✅ DONE
+
+**Measurement only — no optimization performed.** Branch `feature/vector-backend-r6`
+off `r5.0-final` (224d3e3). No scheduler, bundler, code generator, vectorizer, IR,
+legality, profitability or optimization-pass file was modified; `git status` shows
+only additions. Full report: `R6_1_VECTOR_ILP_ANALYSIS.md` (963 lines).
+
+- **Added** `compiler/vector_backend/` — `latency.py` (issue/lane model from the
+  R4.0 capability DB + the FROZEN R2.4 latency weights, no new hardware claim),
+  `dependency_graph.py` (vector-IR RAW/WAR/WAW/memory/loop-carried graph on top of
+  R2.1+R2.2, critical path, parallelism, ready-queue simulation),
+  `occupancy.py` (bundle occupancy + empty-slot causes), `ilp_analysis.py` (driver,
+  what-if experiments, report). Plus `_r6_1_test.py` (12 groups, all pass).
+- **FIDELITY, not a model of the bundler:** `pack_with_attribution` mirrors
+  `bundler._pack_bundles` and calls the bundler's own `_parse_deps` /
+  `_mem_may_alias` / `_bundle_capacity`; `analyze_mcode` ASSERTS its bundles are
+  identical to the real packer's — **verified 25/25 programs**. Kernels are
+  compiled through the real six-tier optimizer ladder from compiler.py (measuring
+  only tier 1 reported a bogus compile failure for the 3x3 stencil).
+- **DYNAMIC, not static:** every bundle carries an execution frequency (product of
+  proved trip counts; header = trip+1). Trip counts are read from the PRE-optimizer
+  vectorized IR — register promotion erases the memory-slot IV `analysis_iv` needs —
+  and attached to the mcode by label.
+- **HEADLINE (25 kernels, 8 families):** the shipped code issues **25.9%** of its
+  dynamic issue slots; **31.0%** inside the hot vector bodies. **62%** of dynamic
+  vector-body bundles issue ≤2 of 8 instructions.
+- **100% of empty slots classified**, each to the single reason its bundle closed
+  (the packer's cascade is mutually exclusive by construction; RAW refined by the
+  producer's kind). Hot bodies, dynamic: waiting-for-vector-alu 25.5%,
+  waiting-for-vector-load 22.2%, address/IV arithmetic 16.0%, memory-dependence
+  14.0%, region boundary 11.0%, vector-multiply 7.5%, store-ordering 1.6%.
+  Second, ORTHOGONAL split reported separately: encoded (aligner padding, costs
+  IMEM) vs issue-only.
+- **KEY MEASUREMENT — unrolling alone is worth 1.24x; unrolling + memory
+  disambiguation is worth 2.57x** (bundles/iteration, measured by repacking with
+  the production packer). `bundler._mem_may_alias` can prove disjointness ONLY for
+  the same base register with different constant offsets, so every unrolled store
+  serialises against the next copy's loads. axpy 5 → 1.25 bundles/iter at u=4.
+- **RANKED OPPORTUNITIES (measured, suite dynamic-IPB gain):** unroll+disambiguate
+  u=8 **+36.7%** / u=4 +34.4%; disambiguation alone +13.9%; multiple accumulators
+  +5.7%; unroll alone +3.3%; reduction-tree reassociation +0.3%; latency-aware /
+  bundle-aware scheduling **+0.1%**. SWP is listed as a BOUND (MII), not a measured
+  schedule.
+- **RULED OUT WITH EVIDENCE:** `pack_lower_bound` (issue width, memory lanes, and
+  the longest chain of pairs that can never share a bundle) EQUALS the shipped
+  bundle count on every kernel but one — no local scheduler can do better. 71% of
+  ideal scheduling steps have ≤2 ready operations. **The problem is the supply of
+  independent work, not the scheduling of it.**
+- **SECONDARY FINDINGS:** codegen materialises `FP+k` separately per array
+  reference (the vi8 reduction holds ONE address in eight registers), which both
+  wastes slots and destroys the only disjointness proof the packer has; several
+  kernels have ZERO free registers, so the transform must run before register
+  allocation, on the vector IR; the `$vreduce` partial sums are summed in a
+  SEVEN-STEP SERIAL CHAIN (SSA form after mem2reg) that nothing reassociates.
+- **VERIFICATION:** `_r6_1_test.py` all pass (incl. mcode byte-identical before vs
+  after the analysis, and no production file importing `vector_backend`);
+  `pipeline_crosscheck` PASS 124/124; R3.2 / R4.1 / R4.5 / R4.6 unit suites pass.
+- **RECOMMENDATION for R6.2: vector loop unrolling on the vector IR, paired with
+  distinct-object memory disambiguation carried through to the bundle packer.**
+  Neither half is worth much alone. Everything else measured is under 6%.
