@@ -63,13 +63,16 @@ class ElementwisePlan:
     """The extracted shape of one elementwise loop, or a rejection reason."""
     __slots__ = ('ok', 'reason', 'op', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'dst_slot', 'src_slots', 'acc_unused',
-                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len')
+                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'body_len',
+                 'realisation', 'compact_per_iter')
 
     def __init__(self):
         self.ok = False
         self.reason = None
         self.op = None                  # None = copy, else '+' / '-' / '*'
         self.body_len = 0
+        self.realisation = None         # 'compact' | 'unrolled', set by lowering
+        self.compact_per_iter = 0
 
     def __repr__(self):
         if not self.ok:
@@ -261,25 +264,77 @@ def build_elementwise_body(plan):
     return body
 
 
-def lower_elementwise(instrs, lo, hi, desc, kernel, legality, plan):
-    """Produce the vectorized function slice (list) or (None, reason). Proving
-    correctness is the pipeline's job (the differential oracle)."""
-    if not plan.ok:
-        return None, plan.reason
+def build_compact_elementwise_body(plan):
+    """R4.2.5: the body of ONE chunk of a compact vector loop, addressed by a
+    register offset instead of a constant. Elementwise has no loop-carried value
+    at all (each chunk is independent), so the compact form needs nothing beyond
+    the offset change."""
+    import vector_compact_loop as _vcl
 
-    vec_body = build_elementwise_body(plan)
+    def emit(off):
+        body = []
+        loaded = []
+        for slot in plan.src_slots:
+            t = _fresh('_vea')
+            body += _vcl.packed_load_at(t, slot, off, plan.lanes, plan.eb,
+                                        plan.signed)
+            loaded.append(t)
+        if plan.op is None:
+            result = loaded[0]                      # copy: store what we read
+        else:
+            result = _fresh('_ver')
+            body.append(IRVecArith(result, plan.op, loaded[0], loaded[1],
+                                   '$' + plan.vtype))
+        body += _vcl.packed_store_at(plan.dst_slot, off, result, plan.lanes,
+                                     plan.eb)
+        return body
+
+    loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
+                                                   plan.lanes, plan.chunks, emit)
+    plan.compact_per_iter = per_iter
+    return loop
+
+
+def _splice_unrolled(instrs, plan, vec_body):
+    """The R4.2 realisation: straight-line chunks, IV init rewritten to
+    chunks*lanes (where the scalar remainder resumes)."""
     new = list(instrs)
-    # Re-initialise the IV to chunks*lanes: where the scalar loop RESUMES, and the
-    # value the IV slot must hold on exit so the vectorized function leaves memory
-    # identical to the scalar one.
     iv_store = new[plan.iv_init_site]
     new[plan.iv_init_site] = IRStore(iv_store.base, iv_store.offset,
                                      Const(plan.chunks * plan.lanes),
                                      iv_store.elem_bytes)
     if plan.remainder == 0:
-        # no tail: the scalar loop is dead -> replace it with the vector body only
-        new = new[:plan.region_lo] + vec_body + new[plan.region_hi + 1:]
-    else:
-        # tail: keep the scalar loop; it now runs ONLY the remainder iterations
-        new = new[:plan.region_lo] + vec_body + new[plan.region_lo:]
-    return new, 'ok'
+        return new[:plan.region_lo] + vec_body + new[plan.region_hi + 1:]
+    return new[:plan.region_lo] + vec_body + new[plan.region_lo:]
+
+
+def _splice_compact(instrs, plan, vec_loop):
+    """The R4.2.5 realisation: a compact loop over the kernel's OWN IV slot, which
+    counts to chunks*lanes itself -- so the IV init store stays at 0 and the
+    scalar remainder resumes with no fix-up."""
+    new = list(instrs)
+    if plan.remainder == 0:
+        return new[:plan.region_lo] + vec_loop + new[plan.region_hi + 1:]
+    return new[:plan.region_lo] + vec_loop + new[plan.region_lo:]
+
+
+def lower_elementwise(instrs, lo, hi, desc, kernel, legality, plan,
+                      global_base=0x400):
+    """Produce the vectorized function slice (list) or (None, reason). Proving
+    correctness is the pipeline's job (the differential oracle).
+
+    R4.2.5: builds BOTH realisations and keeps whichever compiles to fewer
+    bundles (ties -> unrolled: at equal size the loop is strictly slower, so
+    compact must earn the switch)."""
+    if not plan.ok:
+        return None, plan.reason
+
+    import vector_compact_loop as _vcl
+    compact = _splice_compact(instrs, plan, build_compact_elementwise_body(plan))
+    unrolled = _splice_unrolled(instrs, plan, build_elementwise_body(plan))
+    best, name, _scores = _vcl.choose_smaller(
+        [('unrolled', unrolled), ('compact', compact)], global_base)
+    if best is None:
+        return None, 'no-realisation-compiles'
+    plan.realisation = name
+    return best, f'ok:{name}'

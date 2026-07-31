@@ -24,10 +24,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from vector_pipeline import (VectorTransform, DynamicModel, run_module,
-                             VectorizeReport, VectorizeStats, _bundles)
+from vector_pipeline import (VectorTransform, MatchResult, DynamicModel,
+                             run_module, VectorizeReport, VectorizeStats,
+                             _bundles)
 import vector_lowering as _vl
-from vector_lowering import lower_kernel, differential_packed
+import vector_compact_loop as _vcl
+from vector_lowering import lower_kernel, plan_lowering, differential_packed
+from vector_dynamic import model_realisation
 
 _SUPPORTED = ('dot-product', 'sum-reduction')
 
@@ -37,33 +40,38 @@ class DotReductionTransform(VectorTransform):
 
     name = 'dot-reduction'
 
-    def __init__(self, kinds=_SUPPORTED):
+    def __init__(self, kinds=_SUPPORTED, global_base=0x400):
         self.kinds = tuple(kinds)
+        # R4.2.5 needs the real backend to compare realisations. It is passed in
+        # by the entry point, so the PIPELINE is untouched -- clients are already
+        # constructed by the caller.
+        self.global_base = global_base
 
     def reset(self):
-        # shared fresh-temp counter: reset per module so repeated runs of the same
-        # program emit identical temp names (determinism).
+        # shared fresh-temp / label counters: reset per module so repeated runs of
+        # the same program emit identical names (determinism).
         _vl._vec_n[0] = 0
+        _vcl.reset_labels()
+
+    def match(self, desc, instrs, kernel, legality):
+        """Pattern matching lives here (symmetric with the elementwise client), so
+        the plan it produces is available to lower() and dynamic_model()."""
+        plan = plan_lowering(desc, instrs, kernel, legality)
+        if not plan.ok:
+            return MatchResult(False, plan.reason)
+        return MatchResult(True, info=plan)
 
     def lower(self, instrs, lo, hi, desc, kernel, legality, match):
-        return lower_kernel(instrs, lo, hi, desc, kernel, legality)
+        return lower_kernel(instrs, lo, hi, match.info, self.global_base)
 
     def dynamic_model(self, desc, kernel, legality, match):
-        """R4.1's model, moved here unchanged.
+        """Executed-operation accounting for whichever realisation lowering chose.
 
-        A loop's cost is per-iteration work x trip. Vectorization runs the packed
-        body once (chunks unrolled) + the scalar remainder, replacing `lanes`
-        scalar iterations with one vector op. Static code may grow -- the
-        code-size-for-speed trade -- so the gate is on DYNAMIC operations."""
-        body_ops = getattr(desc, 'body_inst_count', 0) or 1
-        lanes = max(1, legality.lanes)
-        chunks = kernel.trip // lanes
-        remainder = kernel.trip % lanes
-        per_chunk = 5 if kernel.kind == 'dot-product' else 4   # loads + $dot/$vreduce
-        scalar_ops = body_ops * kernel.trip
-        vector_ops = chunks * per_chunk + 4 + body_ops * remainder
-        return DynamicModel(scalar_ops, vector_ops, chunks=chunks,
-                            remainder=remainder)
+        Unrolled: the straight-line body runs once, so its exact emitted length IS
+        the executed count (this reproduces R4.1's hand-derived 5/chunk + 4 and
+        4/chunk + 4 constants exactly, now derived instead of hardcoded).
+        Compact: `chunks` iterations of the loop body plus the exit test."""
+        return model_realisation(match.info, desc)
 
 
 # ── entry points ────────────────────────────────────────────────────────────────
@@ -73,7 +81,7 @@ def vectorize_module(instrs, allowed=_SUPPORTED, global_base=0x400):
     (new_instrs, VectorizeStats, [VectorizeReport]).
 
     R4.1-compatible signature, now implemented on the generic pipeline."""
-    return run_module(instrs, [DotReductionTransform(allowed)],
+    return run_module(instrs, [DotReductionTransform(allowed, global_base)],
                       global_base=global_base)
 
 
@@ -88,5 +96,6 @@ def vectorize_all_module(instrs, global_base=0x400):
     pass over the module. Clients are tried in order per loop; each loop is
     claimed by whichever client recognises its kind."""
     from elementwise_vectorizer import ElementwiseTransform
-    return run_module(instrs, [DotReductionTransform(), ElementwiseTransform()],
+    return run_module(instrs, [DotReductionTransform(_SUPPORTED, global_base),
+                               ElementwiseTransform(global_base)],
                       global_base=global_base)

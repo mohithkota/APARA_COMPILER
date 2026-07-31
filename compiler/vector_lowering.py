@@ -143,11 +143,15 @@ def _region(desc):
 class LoweringPlan:
     __slots__ = ('ok', 'reason', 'kind', 'vtype', 'lanes', 'eb', 'signed',
                  'trip', 'chunks', 'remainder', 'array_slots', 'acc_slot',
-                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi')
+                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi',
+                 'realisation', 'compact_per_iter', 'unrolled_len')
 
     def __init__(self):
         self.ok = False
         self.reason = None
+        self.realisation = None         # 'compact' | 'unrolled', set by lowering
+        self.compact_per_iter = 0
+        self.unrolled_len = 0
 
 
 def plan_lowering(desc, instrs, kernel, legality):
@@ -277,28 +281,92 @@ def build_vector_body(plan):
     return body
 
 
-def lower_kernel(instrs, lo, hi, desc, kernel, legality):
-    """Produce the vectorized function slice (list) or (None, reason). Analysis of
-    correctness is the caller's job (differential_packed)."""
-    plan = plan_lowering(desc, instrs, kernel, legality)
-    if not plan.ok:
-        return None, plan.reason
+def build_compact_body(plan):
+    """R4.2.5: the body of ONE chunk of a compact vector loop, addressed by a
+    register offset instead of a constant. The accumulator lives in its memory
+    slot across the back edge (loaded at the top, stored at the bottom) exactly as
+    the scalar loop does -- so no loop-carried REGISTER is introduced and the
+    R2.8-class live-range hazard cannot arise."""
+    import vector_compact_loop as _vcl
 
-    vec_body = build_vector_body(plan)
+    def emit(off):
+        body = []
+        init, acc = _vcl.slot_load(plan.acc_slot, plan.signed)
+        body += init
+        if plan.kind == 'dot-product':
+            aT, bT = _fresh('_vpa'), _fresh('_vpb')
+            body += _vcl.packed_load_at(aT, plan.array_slots[0], off,
+                                        plan.lanes, plan.eb, plan.signed)
+            body += _vcl.packed_load_at(bT, plan.array_slots[1], off,
+                                        plan.lanes, plan.eb, plan.signed)
+            nxt = _fresh('_vacc')
+            body.append(IRVecDot(nxt, aT, bT, '$' + plan.vtype,
+                                 accumulate=True, accum=acc))
+        else:                                       # sum-reduction
+            aT = _fresh('_vpa')
+            body += _vcl.packed_load_at(aT, plan.array_slots[0], off,
+                                        plan.lanes, plan.eb, plan.signed)
+            partial = _fresh('_vred')
+            body.append(IRVecReduce(partial, aT, '$' + plan.vtype, '+'))
+            nxt = _fresh('_vacc')
+            from ir import IRBinOp
+            body.append(IRBinOp(nxt, '+', acc, partial))
+        body += _vcl.slot_store(plan.acc_slot, nxt)
+        return body
+
+    loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
+                                                   plan.lanes, plan.chunks, emit)
+    plan.compact_per_iter = per_iter
+    return loop
+
+
+def _splice_unrolled(instrs, plan, vec_body):
+    """The R4.1 realisation: straight-line chunks. The IV init store is REWRITTEN
+    to chunks*lanes -- where the scalar loop resumes, and the value the IV slot
+    must hold on exit so the vectorized function leaves memory identical."""
     new = list(instrs)
-    # Re-initialise the IV to chunks*lanes: it is where the scalar loop would
-    # RESUME, and (crucially) the value the IV slot must hold on exit so the
-    # vectorized function leaves memory identical to the scalar one.
     from ir import IRStore as _S
     iv_store = new[plan.iv_init_site]
     new[plan.iv_init_site] = _S(iv_store.base, iv_store.offset,
                                 Const(plan.chunks * plan.lanes),
                                 iv_store.elem_bytes)
     if plan.remainder == 0:
-        # no tail: the scalar loop is dead -> replace it with just the vector body
-        # (keeps static size small). The IV slot already holds N = chunks*lanes.
-        new = new[:plan.region_lo] + vec_body + new[plan.region_hi + 1:]
-    else:
-        # tail: keep the scalar loop; it now runs ONLY the remainder iterations.
-        new = new[:plan.region_lo] + vec_body + new[plan.region_lo:]
-    return new, 'ok'
+        return new[:plan.region_lo] + vec_body + new[plan.region_hi + 1:]
+    return new[:plan.region_lo] + vec_body + new[plan.region_lo:]
+
+
+def _splice_compact(instrs, plan, vec_loop):
+    """The R4.2.5 realisation: a compact loop over the kernel's OWN IV slot. The
+    IV init store is left at 0 -- the loop counts up to chunks*lanes itself, so
+    the scalar remainder resumes with no fix-up."""
+    new = list(instrs)
+    if plan.remainder == 0:
+        return new[:plan.region_lo] + vec_loop + new[plan.region_hi + 1:]
+    return new[:plan.region_lo] + vec_loop + new[plan.region_lo:]
+
+
+def lower_kernel(instrs, lo, hi, plan, global_base=0x400):
+    """Produce the vectorized function slice (list) or (None, reason). Analysis of
+    correctness is the caller's job (differential_packed).
+
+    Takes an already-matched LoweringPlan (the client builds it in match()).
+
+    R4.2.5: builds BOTH the compact-loop and the fully-unrolled realisation and
+    keeps whichever compiles to fewer bundles (ties -> unrolled: at equal size the
+    loop is strictly slower, so compact must earn the switch). Neither form is
+    assumed better: with few chunks the bundler packs the independent unrolled
+    chunks into wide bundles and beats a loop's per-chunk compare/branch/update."""
+    if not plan.ok:
+        return None, plan.reason
+
+    import vector_compact_loop as _vcl
+    compact = _splice_compact(instrs, plan, build_compact_body(plan))
+    _unrolled_body = build_vector_body(plan)
+    plan.unrolled_len = len(_unrolled_body)
+    unrolled = _splice_unrolled(instrs, plan, _unrolled_body)
+    best, name, _scores = _vcl.choose_smaller(
+        [('unrolled', unrolled), ('compact', compact)], global_base)
+    if best is None:
+        return None, 'no-realisation-compiles'
+    plan.realisation = name
+    return best, f'ok:{name}'

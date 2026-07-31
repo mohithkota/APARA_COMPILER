@@ -29,7 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vector_pipeline import (VectorTransform, MatchResult, DynamicModel,
                              run_module)
 import vector_lowering as _vl
+import vector_compact_loop as _vcl
 from vector_elementwise_lowering import plan_elementwise, lower_elementwise
+from vector_dynamic import model_realisation
 
 
 class ElementwiseTransform(VectorTransform):
@@ -38,10 +40,18 @@ class ElementwiseTransform(VectorTransform):
     name = 'elementwise'
     kinds = ('vector-add', 'saxpy')     # pre-filter; match() decides for real
 
+    def __init__(self, global_base=0x400):
+        # R4.2.5 needs the real backend to compare realisations. It is passed in
+        # by the entry point, so the PIPELINE is untouched -- clients are already
+        # constructed by the caller.
+        self.global_base = global_base
+
     def reset(self):
-        # shared fresh-temp counter: reset per module so two runs of the same
-        # program emit identical names (the determinism property R4.1 relies on)
+        # shared fresh-temp / label counters: reset per module so two runs of the
+        # same program emit identical names (the determinism property R4.1 relies
+        # on)
         _vl._vec_n[0] = 0
+        _vcl.reset_labels()
 
     def match(self, desc, instrs, kernel, legality):
         plan = plan_elementwise(desc, instrs, kernel, legality)
@@ -51,25 +61,17 @@ class ElementwiseTransform(VectorTransform):
 
     def lower(self, instrs, lo, hi, desc, kernel, legality, match):
         return lower_elementwise(instrs, lo, hi, desc, kernel, legality,
-                                 match.info)
+                                 match.info, self.global_base)
 
     def dynamic_model(self, desc, kernel, legality, match):
-        """Executed-operation accounting.
-
-        The scalar loop runs `body_ops` instructions `trip` times. The vector form
-        runs the emitted straight-line body ONCE (its length is exact -- the
-        chunks are unrolled, so there is no loop overhead to estimate) plus the
-        scalar remainder iterations. Static size may GROW; what must fall is this
-        dynamic count, which is what the pipeline gates on."""
-        plan = match.info
-        body_ops = getattr(desc, 'body_inst_count', 0) or 1
-        scalar_ops = body_ops * plan.trip
-        vector_ops = plan.body_len + body_ops * plan.remainder
-        return DynamicModel(scalar_ops, vector_ops,
-                            chunks=plan.chunks, remainder=plan.remainder)
+        """Executed-operation accounting for whichever realisation lowering chose
+        (see vector_dynamic). Static size may GROW; what must fall is this dynamic
+        count, which is what the pipeline gates on."""
+        return model_realisation(match.info, desc)
 
 
 def vectorize_elementwise_module(instrs, global_base=0x400):
     """Vectorize ONLY elementwise loops. (The production compiler runs the full
     client set; this entry point exists for testing and corpus measurement.)"""
-    return run_module(instrs, [ElementwiseTransform()], global_base=global_base)
+    return run_module(instrs, [ElementwiseTransform(global_base)],
+                      global_base=global_base)

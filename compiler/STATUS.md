@@ -4744,3 +4744,75 @@ vectorization pipeline. `APARA_NO_VECTORIZE` disables all of it. Full report:
   (no hardware sim, per policy).
 - **Not done (by mandate):** matrix multiplication (R4.3), convolution, general
   loop vectorization (R4.4).
+
+---
+
+## R4.2.5 — Compact Vector Loop Generation  (2026-07-31) ✅ DONE
+
+**The vector analogue of R2.8: replace fully-unrolled vector chunks with a compact
+vector loop wherever that is actually smaller.** A code-generation QUALITY
+milestone — not matmul, not a general vectorizer. **ONLY LOWERING CHANGED**:
+`vector_pipeline.py` is byte-for-byte untouched and the client contract is
+unchanged (a test asserts the interface, the `lower()` signature, and that the
+pipeline source never mentions a realisation). Full report: `R4_2_5_DELIVERY.md`.
+
+- **Added** `vector_compact_loop.py` (packed load/store at a REGISTER offset,
+  `build_compact_chunk_loop`, the selector `choose_smaller`, `realisation_of`),
+  `vector_dynamic.py` (the realisation-aware dynamic model, shared so the two
+  clients cannot drift), `vector_compact_corpus.py`, `_r4_2_5_test.py`.
+  **Modified** `vector_lowering.py` + `vector_elementwise_lowering.py` (build BOTH
+  realisations, keep the smaller), both clients (`match()` now builds the plan;
+  `global_base` arrives via the CONSTRUCTOR — which is why the pipeline needed no
+  new parameter).
+- **THE COMPACT FORM:** `for (i=0; i<chunks*lanes; i+=lanes) <packed body at
+  register offset i*eb>` then the original scalar loop for the remainder. Static
+  size becomes **O(1) in the trip count** instead of O(chunks).
+- **THREE DESIGN DECISIONS, each reusing machinery instead of adding any:**
+  (1) the loop reuses the kernel's OWN IV slot and exits with it holding exactly
+  `chunks*lanes`, so **the scalar remainder needs NO modification** — it just
+  resumes (the unrolled form must rewrite the IV init to `chunks*lanes`; compact
+  leaves it at 0). (2) emitted in the front end's CANONICAL counted-loop shape
+  with a MEMORY-slot IV — not cosmetic, because M1 IV analysis is memory-based
+  (R2.7's hard-won lesson) and a register counter would be invisible; it works —
+  in production **R3.2 superblock merges 5 regions inside the compact-loop program
+  and still cuts bundles 71→66, 0 spills**. (3) loop-carried values stay in
+  MEMORY, never in a register across the back edge, which sidesteps the entire
+  R2.8 `_codegen_keeps_alive` class of bug; R2.6 can promote later.
+- **CHOICE IS MEASURED, NOT ASSUMED** — both candidates compile through the real
+  backend (`vector_pipeline._bundles`, the same probe the pipeline's compile gate
+  uses) and the smaller wins. **Ties go to UNROLLED**: at equal IMEM the loop is
+  strictly slower, so compact must EARN the switch.
+  `APARA_VECTOR_REALISATION=compact|unrolled` forces either form.
+  **Assuming "compact is always better" would have been WRONG** — measured
+  crossover: 4 chunks → unrolled, 6 chunks → unrolled, **8 chunks → compact**.
+- **CORPUS (20-case suite), R4.2 forced-unrolled → R4.2.5 measured choice:**
+  coverage **14 → 14** (preserved), static bundles **354 → 320 (−9.6%)**, code
+  size **24201 → 19871 chars (−17.9%)**, mismatches 0, rollbacks 1 (narrow acc,
+  still caught), pipeline time 1.35→1.46 s. Scalar baseline on these kernels is
+  336 — R4.2 sat ABOVE it (354), R4.2.5 sits BELOW it (320).
+- **END-TO-END (14 whole kernel programs, full production optimizer): 473 → 427
+  bundles (−9.7%)**, wins of −7/−13/−13/−13 on the four compacted kernels and 0
+  elsewhere. Full corpus **124/124 scalar byte-identical**. 79/79 unit;
+  crosscheck 124/124; R3.1–R4.2 suites pass.
+- **HONEST TRADE (criterion 3 is only PARTLY met, say so):** a compact loop pays a
+  compare + branch + IV update on EVERY chunk. Corpus dynamic reduction falls
+  **94.1% → 89.6%**; on a compacted kernel individually it is much larger
+  (`add vi16` 736→56 unrolled vs 736→155 compact). R4.2.5 buys −9.6% static for
+  +76% dynamic ops ON THE KERNELS IT COMPACTS. Right trade for this machine —
+  IMEM overflow is a real failure mode here (577 bundles > 0x800 words) — but it
+  IS a trade, reversible with the env knob.
+- **KNOWN GATE WEAKNESS (measured, not hypothetical):** the selector measures the
+  vectorized IR ALONE, before the scalar optimizer / SWP / superblock run, and
+  those favour straight-line code. The ranking can flip afterwards — a 4-loop
+  program with one 8-chunk vectorized loop ends at **67 bundles unrolled vs 69
+  compact**, even though compact has 34 FEWER instructions (119 vs 153). Net
+  across the suite is still clearly positive (−46). An exact gate would need the
+  production optimizer inside lowering (circular); the honest fix is a
+  post-optimizer re-check, deferred.
+- **Other limitations:** the crossover is EMPIRICAL (this ISA, this bundler — a
+  different lane/issue width moves it), which is why it is measured per kernel
+  and not hardcoded; remainder-heavy kernels stay the weak case (N=20 at 8 lanes
+  = 2 chunks + 4-iteration tail, 30 bundles vs 23 scalar — nothing to compact,
+  peeling/predication is the real fix); validation remains the packed IR oracle.
+- **Not done (by mandate):** matrix multiplication, convolution, expression-tree
+  vectorization, general loop vectorization.
