@@ -92,11 +92,18 @@ def aligned_pair_at(slot, off_temp, shift_bytes, lanes, eb):
     Shared across taps (R6.3 Phase 2): every tap that starts in the same 64-bit
     word reads exactly these two words, so they are loaded once per word per
     chunk instead of once per tap."""
-    base = _fresh('_vwb'); aoff = _fresh('_vwa'); aoff2 = _fresh('_vwc')
+    base = _fresh('_vwb'); aoff2 = _fresh('_vwc')
     w0 = _fresh('_vw0'); w1 = _fresh('_vw1')
-    out = [IRLoadAddr(base, slot),
-           IRBinOp(aoff, '-', off_temp, Const(shift_bytes)),
-           IRBinOp(aoff2, '+', aoff, Const(8))]
+    out = [IRLoadAddr(base, slot)]
+    # R6.3.2 Phase 3: emit the final affine address directly. When the pair is
+    # keyed on a tap that already starts at the word boundary the correction is
+    # zero, and `off - 0` is a wasted instruction in the steady-state body.
+    if shift_bytes:
+        aoff = _fresh('_vwa')
+        out.append(IRBinOp(aoff, '-', off_temp, Const(shift_bytes)))
+    else:
+        aoff = off_temp
+    out.append(IRBinOp(aoff2, '+', aoff, Const(8)))
     ld0 = IRLoad(w0, base, aoff, elem_bytes=8, unsigned=True)
     ld1 = IRLoad(w1, base, aoff2, elem_bytes=8, unsigned=True)
     ld0._vec_pack = (lanes, eb); ld1._vec_pack = (lanes, eb)
