@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="544" font-family="monospace" font-size="10">
+<text x="8" y="16" font-size="13">Achieved vector IPB vs oracle theoretical ceiling</text>
+<rect x="8" y="24" width="10" height="9" fill="#4a7fb5"/>
+<text x="22" y="33">vector</text>
+<rect x="138" y="24" width="10" height="9" fill="#c9a227"/>
+<text x="152" y="33">oracle</text>
+<text x="8" y="53">dot vi8</text>
+<rect x="150" y="46" width="145" height="6" fill="#4a7fb5"/>
+<text x="299" y="52">2.10</text>
+<rect x="150" y="53" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="59">5.00</text>
+<text x="8" y="71">dot vi16</text>
+<rect x="150" y="64" width="148" height="6" fill="#4a7fb5"/>
+<text x="302" y="70">2.14</text>
+<rect x="150" y="71" width="364" height="6" fill="#c9a227"/>
+<text x="518" y="77">5.25</text>
+<text x="8" y="89">reduction vi8</text>
+<rect x="150" y="82" width="173" height="6" fill="#4a7fb5"/>
+<text x="327" y="88">2.50</text>
+<rect x="150" y="89" width="393" height="6" fill="#c9a227"/>
+<text x="547" y="95">5.67</text>
+<text x="8" y="107">reduction vi32</text>
+<rect x="150" y="100" width="132" height="6" fill="#4a7fb5"/>
+<text x="286" y="106">1.90</text>
+<rect x="150" y="107" width="416" height="6" fill="#c9a227"/>
+<text x="570" y="113">6.00</text>
+<text x="8" y="125">elementwise add</text>
+<rect x="150" y="118" width="172" height="6" fill="#4a7fb5"/>
+<text x="326" y="124">2.48</text>
+<rect x="150" y="125" width="393" height="6" fill="#c9a227"/>
+<text x="547" y="131">5.67</text>
+<text x="8" y="143">elementwise mul</text>
+<rect x="150" y="136" width="172" height="6" fill="#4a7fb5"/>
+<text x="326" y="142">2.48</text>
+<rect x="150" y="143" width="393" height="6" fill="#c9a227"/>
+<text x="547" y="149">5.67</text>
+<text x="8" y="161">elementwise copy</text>
+<rect x="150" y="154" width="155" height="6" fill="#4a7fb5"/>
+<text x="309" y="160">2.24</text>
+<rect x="150" y="161" width="323" height="6" fill="#c9a227"/>
+<text x="477" y="167">4.67</text>
+<text x="8" y="179">expr a+b+c</text>
+<rect x="150" y="172" width="197" height="6" fill="#4a7fb5"/>
+<text x="351" y="178">2.85</text>
+<rect x="150" y="179" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="185">5.00</text>
+<text x="8" y="197">expr a*b+c</text>
+<rect x="150" y="190" width="197" height="6" fill="#4a7fb5"/>
+<text x="351" y="196">2.85</text>
+<rect x="150" y="197" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="203">5.00</text>
+<text x="8" y="215">expr (a+b)*c</text>
+<rect x="150" y="208" width="197" height="6" fill="#4a7fb5"/>
+<text x="351" y="214">2.85</text>
+<rect x="150" y="215" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="221">5.00</text>
+<text x="8" y="233">expr a+b+c+d</text>
+<rect x="150" y="226" width="212" height="6" fill="#4a7fb5"/>
+<text x="366" y="232">3.07</text>
+<rect x="150" y="233" width="398" height="6" fill="#c9a227"/>
+<text x="552" y="239">5.75</text>
+<text x="8" y="251">axpy vi8</text>
+<rect x="150" y="244" width="117" height="6" fill="#4a7fb5"/>
+<text x="271" y="250">1.70</text>
+<rect x="150" y="251" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="257">5.00</text>
+<text x="8" y="269">axpy vi16</text>
+<rect x="150" y="262" width="121" height="6" fill="#4a7fb5"/>
+<text x="275" y="268">1.75</text>
+<rect x="150" y="269" width="364" height="6" fill="#c9a227"/>
+<text x="518" y="275">5.25</text>
+<text x="8" y="287">axpy remainder</text>
+<rect x="150" y="280" width="160" height="6" fill="#4a7fb5"/>
+<text x="314" y="286">2.32</text>
+<rect x="150" y="287" width="346" height="6" fill="#c9a227"/>
+<text x="500" y="293">5.00</text>
+<text x="8" y="305">gemm vi8 16^3</text>
+<rect x="150" y="298" width="190" height="6" fill="#4a7fb5"/>
+<text x="344" y="304">2.75</text>
+<rect x="150" y="305" width="388" height="6" fill="#c9a227"/>
+<text x="542" y="311">5.60</text>
+<text x="8" y="323">gemm vi8 8x8x32</text>
+<rect x="150" y="316" width="206" height="6" fill="#4a7fb5"/>
+<text x="360" y="322">2.98</text>
+<rect x="150" y="323" width="388" height="6" fill="#c9a227"/>
+<text x="542" y="329">5.60</text>
+<text x="8" y="341">gemm vi16</text>
+<rect x="150" y="334" width="210" height="6" fill="#4a7fb5"/>
+<text x="364" y="340">3.04</text>
+<rect x="150" y="341" width="416" height="6" fill="#c9a227"/>
+<text x="570" y="347">6.00</text>
+<text x="8" y="359">conv 3-tap</text>
+<rect x="150" y="352" width="231" height="6" fill="#4a7fb5"/>
+<text x="385" y="358">3.33</text>
+<rect x="150" y="359" width="398" height="6" fill="#c9a227"/>
+<text x="552" y="365">5.75</text>
+<text x="8" y="377">conv 5-tap</text>
+<rect x="150" y="370" width="254" height="6" fill="#4a7fb5"/>
+<text x="408" y="376">3.67</text>
+<rect x="150" y="377" width="430" height="6" fill="#c9a227"/>
+<text x="584" y="383">6.20</text>
+<text x="8" y="395">conv 7-tap</text>
+<rect x="150" y="388" width="208" height="6" fill="#4a7fb5"/>
+<text x="362" y="394">3.00</text>
+<rect x="150" y="395" width="450" height="6" fill="#c9a227"/>
+<text x="604" y="401">6.50</text>
+<text x="8" y="413">conv 3-tap vi16</text>
+<rect x="150" y="406" width="177" height="6" fill="#4a7fb5"/>
+<text x="331" y="412">2.56</text>
+<rect x="150" y="413" width="468" height="6" fill="#c9a227"/>
+<text x="622" y="419">6.75</text>
+<text x="8" y="431">scalar bubblesort</text>
+<rect x="150" y="424" width="123" height="6" fill="#4a7fb5"/>
+<text x="277" y="430">1.78</text>
+<rect x="150" y="431" width="406" height="6" fill="#c9a227"/>
+<text x="560" y="437">5.86</text>
+<text x="8" y="449">scalar gcd</text>
+<rect x="150" y="442" width="135" height="6" fill="#4a7fb5"/>
+<text x="289" y="448">1.95</text>
+<rect x="150" y="449" width="260" height="6" fill="#c9a227"/>
+<text x="414" y="455">3.75</text>
+<text x="8" y="467">scalar binsearch</text>
+<rect x="150" y="460" width="158" height="6" fill="#4a7fb5"/>
+<text x="312" y="466">2.28</text>
+<rect x="150" y="467" width="356" height="6" fill="#c9a227"/>
+<text x="510" y="473">5.14</text>
+<text x="8" y="485">scalar popcount</text>
+<rect x="150" y="478" width="131" height="6" fill="#4a7fb5"/>
+<text x="285" y="484">1.89</text>
+<rect x="150" y="485" width="300" height="6" fill="#c9a227"/>
+<text x="454" y="491">4.33</text>
+<text x="8" y="503">scalar divmod</text>
+<rect x="150" y="496" width="108" height="6" fill="#4a7fb5"/>
+<text x="262" y="502">1.56</text>
+<rect x="150" y="503" width="416" height="6" fill="#c9a227"/>
+<text x="570" y="509">6.00</text>
+<line x1="705" y1="40" x2="705" y2="526" stroke="#c33" stroke-dasharray="4,3"/>
+<text x="709" y="538" fill="#c33">issue width 8.0</text>
+</svg>

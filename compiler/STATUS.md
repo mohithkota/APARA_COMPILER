@@ -5322,3 +5322,52 @@ superblock + codegen + bundler). Full report: `R4_6_5_EVALUATION.md`.
   here is static density — a true dynamic IPB needs per-bundle execution counts
   from a simulator run; 26 benchmarks is a characterization suite with a
   deliberate control group, not a representative workload mix.
+
+---
+
+## R5.0 — Final Thesis Evaluation and Artifact Freeze  (2026-07-31) ✅ DONE
+
+**The compiler is FROZEN.** No scheduler, bundler, vectorizer, backend, IR,
+legality, profitability, expression-tree, remainder-framework or optimization-pass
+file was modified. Only documentation, reporting and reproducibility work was
+performed (`evaluation/plots.py` gained three figures). Deliverables:
+`R5_0_FINAL_EVALUATION.md`, `ARTIFACT.md`, `REPRODUCIBILITY.md`.
+
+- **ARTIFACT:** base commit `cf33ad4` (tag `r4.6.5-evaluated`), branch
+  `feature/vector-compiler`, LOCAL-ONLY. Python 3.12.3, pycparser 3.00, git 2.43.0,
+  Linux 6.8.0-136. **pycparser is the only third-party dependency** — no numpy,
+  no matplotlib; figures are hand-written SVG + ASCII.
+- **VERIFICATION AT FREEZE — all green:** 13 unit suites pass; 8 corpora PASS;
+  `pipeline_crosscheck` PASS 124/124 identical; 124-program corpus byte-identical
+  with vectorization on/off; **0 differential mismatches, 0 rollbacks**; two
+  consecutive evaluation runs produce identical numbers.
+- **FINAL RESULTS:** coverage **21/21 vectorizable kernels, 0 rollbacks**;
+  dynamic operations **28544 → 4231 (−85.2%)**; IPB **1.873 → 2.462 (+31.5%)** =
+  **30.8% of the 8-wide issue width**, 45.3% of the 5.438 scalar-derived oracle;
+  static cost bundles +12.1%, code +57.4%. Per-family vector IPB: convolution
+  3.140, gemm 2.922, expression 2.906, elementwise 2.400, reduction 2.202, dot
+  2.119, axpy 1.923.
+- **GAP:** 2276 lost slots — true data dependence **74.0%**, non-vectorized loop
+  14.6%, memory dependence 8.8%, remainder 2.6%; **register pressure, branch
+  overhead, unsupported pattern and hardware restriction all ZERO**. No
+  compiler-fixable cause remains.
+- **R4.7 NOT PURSUED, with evidence:** a general loop vectorizer reaches only the
+  14.6% bucket, every member of which (binsearch, divmod, popcount, gcd) is
+  fundamentally non-vectorizable — data-dependent control flow, the single divide
+  lane, and sequential recurrences. Addressable share ≈ 0%; even a generous half
+  of that bucket is ≈ +6% IPB against 74% it cannot touch.
+- **THREATS TO VALIDITY DOCUMENTED, NOTHING HIDDEN:** the oracle ceiling is
+  SCALAR-DERIVED (overstates the gap for vector code); dynamic counts come from
+  the vectorizer's MODEL, not a simulator; **no hardware simulation was run**; IPB
+  is static density, not dynamic IPB; 26 hand-written benchmarks are a
+  characterization suite with a deliberate 5-kernel control group, not a workload
+  mix; 2-D arrays are never packed; canonical i-j-k matmul unsupported; IV must
+  start at zero; expression depth ≤ 8; `scalar − vector` refused; tap-innermost
+  convolution unrecognised; single machine and toolchain version.
+- **REPRODUCIBILITY:** `python3 compiler/evaluation/__main__.py` from the repo
+  root regenerates every CSV, figure and table in ~5 s with no manual
+  intervention; every reported number derives from `results/benchmarks.csv`.
+- **CONCLUSION: feature development is complete.** The most valuable next step is
+  **not** a compiler optimization but validation on hardware or a cycle-accurate
+  simulator, which would replace the modelled dynamic counts and the
+  scalar-derived ceiling with measured ones.

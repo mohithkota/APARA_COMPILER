@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="438" font-family="monospace" font-size="11">
+<text x="8" y="18" font-size="13">Dynamic operation reduction (%) -- vectorized kernels</text>
+<text x="8" y="45">dot vi8</text>
+<rect x="130" y="36" width="475" height="12" fill="#4a7fb5"/>
+<text x="610" y="45">89.80</text>
+<text x="8" y="63">dot vi16</text>
+<rect x="130" y="54" width="421" height="12" fill="#4a7fb5"/>
+<text x="556" y="63">79.60</text>
+<text x="8" y="81">reduction vi8</text>
+<rect x="130" y="72" width="516" height="12" fill="#4a7fb5"/>
+<text x="651" y="81">97.40</text>
+<text x="8" y="99">reduction vi32</text>
+<rect x="130" y="90" width="297" height="12" fill="#4a7fb5"/>
+<text x="432" y="99">56.10</text>
+<text x="8" y="117">elementwise add</text>
+<rect x="130" y="108" width="466" height="12" fill="#4a7fb5"/>
+<text x="601" y="117">88.00</text>
+<text x="8" y="135">elementwise mul</text>
+<rect x="130" y="126" width="466" height="12" fill="#4a7fb5"/>
+<text x="601" y="135">88.00</text>
+<text x="8" y="153">elementwise copy</text>
+<rect x="130" y="144" width="481" height="12" fill="#4a7fb5"/>
+<text x="616" y="153">90.90</text>
+<text x="8" y="171">expr a+b+c</text>
+<rect x="130" y="162" width="462" height="12" fill="#4a7fb5"/>
+<text x="597" y="171">87.20</text>
+<text x="8" y="189">expr a*b+c</text>
+<rect x="130" y="180" width="462" height="12" fill="#4a7fb5"/>
+<text x="597" y="189">87.20</text>
+<text x="8" y="207">expr (a+b)*c</text>
+<rect x="130" y="198" width="462" height="12" fill="#4a7fb5"/>
+<text x="597" y="207">87.20</text>
+<text x="8" y="225">expr a+b+c+d</text>
+<rect x="130" y="216" width="458" height="12" fill="#4a7fb5"/>
+<text x="593" y="225">86.60</text>
+<text x="8" y="243">axpy vi8</text>
+<rect x="130" y="234" width="478" height="12" fill="#4a7fb5"/>
+<text x="613" y="243">90.30</text>
+<text x="8" y="261">axpy vi16</text>
+<rect x="130" y="252" width="427" height="12" fill="#4a7fb5"/>
+<text x="562" y="261">80.60</text>
+<text x="8" y="279">axpy remainder</text>
+<rect x="130" y="270" width="404" height="12" fill="#4a7fb5"/>
+<text x="539" y="279">76.40</text>
+<text x="8" y="297">gemm vi8 16^3</text>
+<rect x="130" y="288" width="496" height="12" fill="#4a7fb5"/>
+<text x="631" y="297">93.60</text>
+<text x="8" y="315">gemm vi8 8x8x32</text>
+<rect x="130" y="306" width="497" height="12" fill="#4a7fb5"/>
+<text x="632" y="315">93.80</text>
+<text x="8" y="333">gemm vi16</text>
+<rect x="130" y="324" width="460" height="12" fill="#4a7fb5"/>
+<text x="595" y="333">86.80</text>
+<text x="8" y="351">conv 3-tap</text>
+<rect x="130" y="342" width="438" height="12" fill="#4a7fb5"/>
+<text x="573" y="351">82.80</text>
+<text x="8" y="369">conv 5-tap</text>
+<rect x="130" y="360" width="436" height="12" fill="#4a7fb5"/>
+<text x="571" y="369">82.30</text>
+<text x="8" y="387">conv 7-tap</text>
+<rect x="130" y="378" width="439" height="12" fill="#4a7fb5"/>
+<text x="574" y="387">83.00</text>
+<text x="8" y="405">conv 3-tap vi16</text>
+<rect x="130" y="396" width="369" height="12" fill="#4a7fb5"/>
+<text x="504" y="405">69.70</text>
+<line x1="660" y1="28" x2="660" y2="422" stroke="#c33" stroke-dasharray="4,3"/>
+<text x="664" y="434" fill="#c33">ceiling 100.0</text>
+</svg>

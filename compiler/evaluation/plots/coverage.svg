@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="132" font-family="monospace" font-size="11">
+<text x="8" y="18" font-size="13">Coverage (26 benchmarks)</text>
+<text x="8" y="45">vectorized</text>
+<rect x="130" y="36" width="530" height="12" fill="#4a7fb5"/>
+<text x="665" y="45">21.00</text>
+<text x="8" y="63">rejected</text>
+<rect x="130" y="54" width="126" height="12" fill="#4a7fb5"/>
+<text x="261" y="63">5.00</text>
+<text x="8" y="81">rolled-back</text>
+<rect x="130" y="72" width="0" height="12" fill="#4a7fb5"/>
+<text x="135" y="81">0.00</text>
+<text x="8" y="99">scalar-family</text>
+<rect x="130" y="90" width="126" height="12" fill="#4a7fb5"/>
+<text x="261" y="99">5.00</text>
+</svg>
