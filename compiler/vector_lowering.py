@@ -143,7 +143,8 @@ def _region(desc):
 class LoweringPlan:
     __slots__ = ('ok', 'reason', 'kind', 'vtype', 'lanes', 'eb', 'signed',
                  'trip', 'chunks', 'remainder', 'array_slots', 'acc_slot',
-                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi',
+                 'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'iv_bytes',
+                 'acc_bytes',
                  'realisation', 'compact_per_iter', 'unrolled_len', 'peel', 'peel_len')
 
     def __init__(self):
@@ -213,6 +214,17 @@ def plan_lowering(desc, instrs, kernel, legality):
     p.array_slots = array_slots[:need]
     p.acc_slot = kernel.reduction_slot
     p.iv_slot = desc.primary_iv
+    # R6.2C / defect D2: the compact chunk loop REUSES this slot, so it must
+    # access it at exactly the width the scalar code does. A width mismatch on a
+    # 64-bit DMEM word reads the wrong half (and yields 0), which is what broke
+    # packed GEMM wherever the compact realisation was selected.
+    import vector_compact_loop as _vcl_w     # local: _vcl imports this module
+    p.iv_bytes = _vcl_w.slot_width(instrs, lo, hi, p.iv_slot)
+    # Same rule for the reduction accumulator: it is ALSO a slot shared with the
+    # scalar code (`long long s` is 8 bytes, but `int s` is 4), so the compact
+    # loop must read and write it at the width the rest of the program uses.
+    p.acc_bytes = (_vcl_w.slot_width(instrs, lo, hi, p.acc_slot)
+                   if p.acc_slot is not None else None)
 
     # R4.2.7 peel template: replay the ORIGINAL loads/arithmetic at a constant
     # index rather than re-deriving the tail (which would risk getting integer
@@ -233,7 +245,7 @@ def plan_lowering(desc, instrs, kernel, legality):
         p.peel = PeelTemplate(
             operands=[PeelArray(sl, eb_, un_) for (sl, eb_, un_) in array_info[:need]],
             op=_value,
-            dest=PeelScalar(p.acc_slot, 8, False),
+            dest=PeelScalar(p.acc_slot, p.acc_bytes, False),
             dest_op=('+', False))
 
     # locate the IV-init store (constant store to the IV slot before the header)
@@ -268,17 +280,24 @@ def _packed_load(dest, slot, chunk, lanes, eb, signed):
     return [la, ld]
 
 
-def _acc_addr_load(slot, signed):
-    """Load the current accumulator value from its slot -> (instrs, value_temp)."""
+def _acc_addr_load(slot, signed, elem_bytes=8):
+    """Load the current accumulator value from its slot -> (instrs, value_temp).
+
+    `elem_bytes` MUST be the width the scalar code uses for this slot (R6.2C /
+    defect D2): the accumulator slot is SHARED with the scalar remainder and
+    with the code that reads the result, and a 4-byte and an 8-byte access to
+    one 64-bit DMEM word do not see the same bits."""
     base = _fresh('_vaa')
     val = _fresh('_vac')
     return [IRLoadAddr(base, slot),
-            IRLoad(val, base, Const(0), elem_bytes=8, unsigned=(not signed))], val
+            IRLoad(val, base, Const(0), elem_bytes=elem_bytes,
+                   unsigned=(not signed))], val
 
 
-def _acc_store(slot, value_temp):
+def _acc_store(slot, value_temp, elem_bytes=8):
     base = _fresh('_vas')
-    return [IRLoadAddr(base, slot), IRStore(base, Const(0), value_temp, 8)]
+    return [IRLoadAddr(base, slot),
+            IRStore(base, Const(0), value_temp, elem_bytes)]
 
 
 def build_vector_body(plan):
@@ -286,7 +305,8 @@ def build_vector_body(plan):
     `chunks*lanes` elements and store the partial accumulator. The kept scalar
     loop (with IV re-initialised to chunks*lanes) handles the remainder."""
     body = []
-    init, acc = _acc_addr_load(plan.acc_slot, plan.signed)
+    init, acc = _acc_addr_load(plan.acc_slot, plan.signed,
+                               elem_bytes=plan.acc_bytes)
     body += init
     for c in range(plan.chunks):
         if plan.kind == 'dot-product':
@@ -306,7 +326,7 @@ def build_vector_body(plan):
             from ir import IRBinOp
             body.append(IRBinOp(nxt, '+', acc, partial))
             acc = nxt
-    body += _acc_store(plan.acc_slot, acc)
+    body += _acc_store(plan.acc_slot, acc, elem_bytes=plan.acc_bytes)
     return body
 
 
@@ -320,7 +340,8 @@ def build_compact_body(plan):
 
     def emit(off):
         body = []
-        init, acc = _vcl.slot_load(plan.acc_slot, plan.signed)
+        init, acc = _vcl.slot_load(plan.acc_slot, plan.signed,
+                                   elem_bytes=plan.acc_bytes)
         body += init
         if plan.kind == 'dot-product':
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
@@ -340,11 +361,13 @@ def build_compact_body(plan):
             nxt = _fresh('_vacc')
             from ir import IRBinOp
             body.append(IRBinOp(nxt, '+', acc, partial))
-        body += _vcl.slot_store(plan.acc_slot, nxt)
+        body += _vcl.slot_store(plan.acc_slot, nxt,
+                                elem_bytes=plan.acc_bytes)
         return body
 
     loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
-                                                   plan.lanes, plan.chunks, emit)
+                                                   plan.lanes, plan.chunks, emit,
+                                                   iv_bytes=plan.iv_bytes)
     plan.compact_per_iter = per_iter
     return loop
 

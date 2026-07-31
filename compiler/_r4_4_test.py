@@ -45,7 +45,10 @@ G8REM= gemm('vi8_t', 4, 4, 20)
 G16  = gemm('vi16_t', 8, 8, 16)
 G16R = gemm('vi16_t', 4, 4, 30)
 G32  = gemm('vi32_t', 8, 8, 8)
-_GOOD = [G8, G8R, G8REM, G16, G16R, G32]
+# R6.2C: G8REM/G16R have row strides of 20B/60B -- not multiples of the
+# 8-byte packed word, so they are ILLEGAL to lower and are declined.
+_GOOD = [G8, G8R, G16, G32]
+_UNALIGNED_ROWS = [G8REM, G16R]
 
 IJK = ("long long f(){vi8_t A[256],B[256],C[256];int i,j,k;for(i=0;i<16;i++)for(j=0;j<16;j++)"
        "for(k=0;k<16;k++)C[i*16+j]+=A[i*16+k]*B[k*16+j];return C[0];}")
@@ -57,12 +60,32 @@ DOT = "long long f(){vi8_t a[32],b[32];int i;long long s=0;for(i=0;i<32;i++)s+=a
 NOK = "long long f(int n){int i;long long s=0;for(i=0;i<n;i++)s+=i*3;return s;}"
 
 def test_recognition():
+    """R6.2C: the two REMAINDER shapes are now declined, and that is correct.
+
+    In an i-k-j GEMM the inner trip IS the row stride N, so row k begins at byte
+    `k*N*elem_bytes`. A packed load of `B[k*N+j]` is 8-byte aligned only when
+    `N*elem_bytes` is a multiple of 8 -- otherwise every odd row is misaligned.
+    G8REM (N=20, stride 20B) and G16R (N=30, stride 60B) both violate that and
+    were emitting illegal addresses; measured directly on the simulator, a
+    17x17 vi8 GEMM produced 1428 `Unaligned address in load` errors before this
+    milestone and passes after.
+
+    Note the structural consequence: `N*elem_bytes % 8 == 0` forces
+    `N % lanes == 0` at every width, so an ALIGNED 2-D GEMM cannot have an inner
+    remainder at all. The remainder shapes are not merely untested here -- they
+    are unreachable for legal code."""
     print("packed GEMM (i-k-j) is recognised across shapes and widths")
-    for n, c in (('vi8 square', G8), ('vi8 rect', G8R), ('vi8 remainder', G8REM),
-                 ('vi16', G16), ('vi16 remainder', G16R), ('vi32', G32)):
+    for n, c in (('vi8 square', G8), ('vi8 rect', G8R),
+                 ('vi16', G16), ('vi32', G32)):
         out, st, reps = vectorize_all_module(_ir(c))
         check(f"{n}: vectorized by the gemm client",
               st.vectorized == 1 and reps[0].transform == 'gemm')
+    for n, c in (('vi8 remainder (row stride 20B)', G8REM),
+                 ('vi16 remainder (row stride 60B)', G16R)):
+        out, st, reps = vectorize_all_module(_ir(c))
+        check(f"{n}: declined -- unaligned row stride",
+              st.vectorized == 0 and bool(reps)
+              and 'unaligned-packed-access' in reps[0].reason)
 
 def test_row_aware_lowering():
     """The decisive test. R4.3 addresses a chunk as slot + chunk*lanes*eb, which

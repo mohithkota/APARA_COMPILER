@@ -290,8 +290,14 @@ def build_compact(plan, instrs, def_map, region):
     err_box = [None]
 
     def emit(_off):
-        # the address comes from the cloned expression, which re-loads the IV
-        # slot, so `build_compact_chunk_loop`'s own scaled offset is unused here
+        # The address comes from the cloned expression, which RE-LOADS the IV
+        # slot, so `build_compact_chunk_loop`'s own scaled offset is unused here.
+        # That re-read is why GEMM was the client that exposed defect D2: the
+        # compact loop wrote the slot 8 bytes wide while the cloned `int j`
+        # access read it 4 bytes wide, and a 4-byte read of a 64-bit DMEM word
+        # takes the wrong half -- so the row index was always 0. `iv_bytes`
+        # (from plan_axpy, via vector_compact_loop.slot_width) keeps every
+        # access to the slot at the one width the scalar code uses.
         body, err = _row_body(plan, instrs, def_map, region, a_val, None)
         if body is None:
             err_box[0] = err
@@ -299,7 +305,8 @@ def build_compact(plan, instrs, def_map, region):
         return body
 
     loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
-                                                   plan.lanes, plan.chunks, emit)
+                                                   plan.lanes, plan.chunks, emit,
+                                                   iv_bytes=plan.iv_bytes)
     if err_box[0]:
         return None, err_box[0]
     plan.compact_per_iter = per_iter

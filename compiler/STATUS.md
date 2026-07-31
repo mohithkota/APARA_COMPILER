@@ -5585,3 +5585,62 @@ Report: `R6_2_MEMORY_DISAMBIGUATION.md`.
   swap, uninitialised cast output; one already lost in a revert once), the
   `AddrIsAligned` case-32 defect still in the prof's master (`0x1` should be
   `0x1f`), and the unadopted `$dot $replicate` feature.
+
+---
+
+## R6.2C — Remaining Correctness Defects D1 + D2  (2026-08-01) ✅ DONE
+
+**Correctness only, no performance work.** Verification suite **27/38 → 38/38
+RESULT: PASS**. Report: `R6_2C_CORRECTNESS_FIXES.md`.
+
+- **D1 ROOT CAUSE — the legality layer had no ISA alignment rule**, so the
+  compiler emitted illegal addresses (conv taps at byte offsets 0,**1**,8,**9**,…;
+  2 of every 3 unaligned). Structural, not a simulator nicety: a scalar load does
+  ONE `Read_Data_Dword(base & ~7)`, so a wide access spanning two words is not
+  expressible. `McodeExecute` reports the error and then reads the CONTAINING
+  word — which is why it produced plausible wrong numbers for milestones.
+- **D1 FIX (stage: `vector_legality`):** `vector_affine` now also reports the
+  invariant's `const_off` + `sym_div` (a provable divisor of the symbolic part)
+  and exposes `word_aligned()`. Legality rejects any contiguous access not
+  PROVABLY 8-byte aligned, for every client. Not a blanket ban — a word-multiple
+  shift (`vi32 +2` = 8B, `vi8 +8`) stays legal, and a 2-D row base `i*32` is
+  proved aligned (sym_div 32).
+- **D1 ALSO CAUGHT A MISSED DEFECT:** GEMM with a row stride that is not a
+  multiple of the packed word is misaligned on every odd row — a 17x17 vi8 GEMM
+  emitted **1428** alignment errors before, passes now. Structural consequence:
+  `N*eb % 8 == 0` forces `N % lanes == 0`, so **an aligned 2-D GEMM can never
+  have an inner remainder** (those R4.4/R4.4.5 shapes are unreachable, not
+  merely untested).
+- **D2 ROOT CAUSE — NOT element width.** A shape sweep separated it cleanly:
+  every UNROLLED GEMM passes, every COMPACT one fails; vi8 at N=16 has 2 chunks
+  so it is realised unrolled, which is the only reason it looked like a 16/32-bit
+  bug. The compact chunk loop REUSES the scalar loop's IV slot (deliberately) but
+  accessed it **8 bytes wide while the scalar `int` code uses 4**. The scalar
+  `j=0` init writes the high half; the 8-byte guard read high|stale-low, so
+  `iv < 16` failed and **the vector loop body never executed** — C kept its
+  zeros. Corrected code runs ~3x MORE instructions (9103 -> 26154) because the
+  broken one skipped the loop.
+- **D2 FIX (stage: `vector_compact_loop.slot_load/slot_store`):** new
+  `slot_width()` reports the one width the scalar code uses; plans record
+  `iv_bytes`/`acc_bytes` and thread them through. Fixed in the SHARED builder and
+  the 4 accumulator sites (`_acc_addr_load`, `_acc_store`, `PeelScalar` template,
+  compact acc path) — no GEMM-specific logic.
+- **TWO MORE DEFECTS OF THE SAME CAUSE:** a reduction with an `int` accumulator
+  was wrong (0 instead of 0x60) — now passes. And R4.1's "narrow accumulator
+  differential rollback" was never a real rollback: the accumulator was never
+  truncated because it was written 8 bytes wide. Truncation mod 2^32 commutes
+  with the accumulated adds/multiplies, so chunk-wise == element-wise; verified
+  on the simulator vs gcc with inputs that genuinely overflow 32 bits. That
+  kernel now vectorizes correctly.
+- **REGRESSION:** 124-corpus **byte-identical**; crosscheck **124/124**; all 15
+  unit suites pass; kernel suite **0** realisation/bundle changes apart from the
+  declines; **simulator: NO program's ticks changed without a correctness
+  change**.
+- **MEASURED COST OF D1 (the only metric movement):** 8 convolution/2-D kernels
+  no longer vectorize. Static bundles 329 -> 249 (−24%, they were large unrolled
+  windows); `conv3` simulator ticks 5854 -> 9895 (**+69%**). The "before" column
+  is code that computed WRONG answers, so this is the price of correct code, not
+  a slowdown against a working baseline. `APARA_R62C_NO_ALIGN_GATE=1` reproduces
+  it (generates illegal addresses — never set it for code that will run).
+- **REMAINING:** convolution needs an aligned load+shift-merge lowering to return;
+  D4 (casts to markers do not narrow) still open; `vf32_t` untested.

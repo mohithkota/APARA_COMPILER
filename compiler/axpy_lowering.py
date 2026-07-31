@@ -58,7 +58,7 @@ def _region(desc):
 class AxpyPlan:
     __slots__ = ('ok', 'reason', 'vtype', 'lanes', 'eb', 'signed', 'trip',
                  'chunks', 'remainder', 'y_slot', 'x_slot', 'a_slot',
-                 'a_eb', 'a_unsigned', 'a_const', 'iv_slot', 'iv_init_site',
+                 'a_eb', 'a_unsigned', 'a_const', 'iv_slot', 'iv_init_site', 'iv_bytes',
                  'region_lo', 'region_hi', 'realisation', 'compact_per_iter',
                  'y_off', 'x_off', 'row_based',
                  'unrolled_len', 'peel', 'peel_len')
@@ -228,6 +228,11 @@ def plan_axpy(desc, instrs, kernel, legality):
 
     # ── IV init site (same requirement and reasoning as R4.1/R4.2) ────────────
     p.iv_slot = desc.primary_iv
+    # R6.2C / defect D2: the compact chunk loop REUSES this slot, so it must
+    # access it at exactly the width the scalar code does. A width mismatch on a
+    # 64-bit DMEM word reads the wrong half (and yields 0), which is what broke
+    # packed GEMM wherever the compact realisation was selected.
+    p.iv_bytes = _vcl.slot_width(instrs, lo, hi, p.iv_slot)
     hblk = desc.cfg.blocks[desc.header]
     p.iv_init_site = None
     for k in range(hblk.lo - 1, lo - 1, -1):
@@ -327,7 +332,8 @@ def build_compact(plan):
                                            plan.eb))
 
     loop, per_iter = _vcl.build_compact_chunk_loop(plan.iv_slot, plan.eb,
-                                                   plan.lanes, plan.chunks, emit)
+                                                   plan.lanes, plan.chunks, emit,
+                                                   iv_bytes=plan.iv_bytes)
     plan.compact_per_iter = per_iter
     return pre + loop
 

@@ -27,41 +27,95 @@ def tap(n,N=64,T='vi8_t',w=None):
     return f"long long f(){{{T} in[{N+8}],out[{N+8}];int i;for(i=0;i<{N-n};i++)out[i]={e};return out[0];}}"
 
 def test_taps():
-    print("1-D convolutions vectorize at common stencil widths")
+    """R6.2C: these kernels are now DECLINED, and that is the correct answer.
+
+    A tap `in[i+k]` lowers to a packed load at `base + k*elem_bytes`. APARA
+    requires an 8-byte load to be 8-byte aligned (`AddrIsAligned`, and the
+    datapath reads one aligned dword), so every tap whose byte shift is not a
+    multiple of 8 is an ILLEGAL address. R4.6 emitted them: the simulator
+    reported `Unaligned address in load` and returned the containing word, so
+    `out[0]` came out 0 instead of 3 (R6.2A defect D1).
+
+    The IR-level differential oracle these assertions used cannot see this --
+    it models memory as a flat byte dict with no alignment rule -- which is why
+    it reported `match` for code that is wrong on hardware. The assertions are
+    therefore inverted rather than deleted: what is verified now is that the
+    illegal kernels are declined WITH THE ALIGNMENT REASON, and that a tap
+    shift which IS a multiple of the word still vectorizes."""
+    print("1-D convolutions: sub-word tap shifts are declined as unaligned")
     for n,c in (('3-tap',tap(3)),('5-tap',tap(5)),('7-tap',tap(7)),
                 ('3-tap weighted',tap(3,w=[1,2,3])),('5-tap weighted',tap(5,w=[1,2,3,2,1])),
                 ('vi16',tap(3,32,'vi16_t')),('vi32',tap(3,32,'vi32_t')),
                 ('remainder',tap(3,28))):
+        ir=_ir(c); out,st,reps=vectorize_conv_module(ir)
+        check(f"{n}: declined (unaligned packed access)",
+              st.vectorized==0 and bool(reps)
+              and 'unaligned-packed-access' in reps[0].reason)
+        check(f"{n}: IR left untouched", [repr(x) for x in out]==[repr(x) for x in ir])
+    # a tap shift that IS a whole packed word stays legal and still vectorizes
+    for n,c in (('vi8 +8 elems = 8B',
+                 "long long f(){vi8_t in[80],out[80];int i;"
+                 "for(i=0;i<64;i++)out[i]=in[i]+in[i+8];return out[0];}"),
+                ('vi32 +2 elems = 8B',
+                 "long long f(){vi32_t in[72],out[72];int i;"
+                 "for(i=0;i<61;i++)out[i]=in[i]+in[i+2];return out[0];}")):
         ir=_ir(c); out,st,_=vectorize_conv_module(ir)
-        check(f"{n}: vectorized", st.vectorized==1)
+        check(f"{n}: still vectorized", st.vectorized==1)
         check(f"{n}: correct", _ok(ir,out))
 
 def test_shifted_addressing():
     """The defect R4.6 fixed: a shifted access is contiguous but its address is
     not base + idx*eb. Before, every such kernel rolled back."""
-    print("shifted accesses are addressed correctly")
+    print("shifted accesses are addressed correctly (sub-word shifts declined)")
+    # R6.2C: a ONE-ELEMENT shift on vi8 is a one-BYTE shift, i.e. an unaligned
+    # packed load, so these are now declined. The addressing mechanism R4.6 built
+    # (clone_offset) is still exercised -- by the word-multiple shift below,
+    # which uses exactly the same path and still vectorizes.
     for n,c in (('pure shift',"long long f(){vi8_t in[72],out[72];int i;for(i=0;i<56;i++)out[i]=in[i+1];return out[0];}"),
                 ('two shifts',"long long f(){vi8_t in[72],out[72];int i;for(i=0;i<56;i++)out[i]=in[i]+in[i+1];return out[0];}")):
+        ir=_ir(c); out,st,reps=vectorize_conv_module(ir)
+        check(f"{n}: declined as unaligned",
+              st.vectorized==0 and bool(reps)
+              and 'unaligned-packed-access' in reps[0].reason)
+    for n,c in (('word-multiple shift',
+                 "long long f(){vi8_t in[80],out[80];int i;"
+                 "for(i=0;i<64;i++)out[i]=in[i+8];return out[0];}"),):
         ir=_ir(c); out,st,_=vectorize_conv_module(ir)
-        check(f"{n}: vectorized", st.vectorized==1)
+        check(f"{n}: vectorized (clone_offset path still exercised)", st.vectorized==1)
         lo,hi=next(iter(func_slices(ir)))
         v,d=differential_packed(ir,out,lo,hi)
         check(f"{n}: full-memory differential is a definite match ({d})", v=='match')
 
 def test_2d_stencils():
-    print("2-D stencils vectorize (inner row contiguous)")
+    """R6.2C: every stencil here shifts by ONE ELEMENT along the contiguous
+    dimension, which on vi8/vi16 is a sub-word byte shift and therefore an
+    unaligned packed load. They are declined now. Note the ROW base `i*32` is
+    NOT the problem -- `vector_affine.word_aligned` proves 32-byte rows aligned,
+    so a 2-D stencil with word-multiple shifts remains legal."""
+    print("2-D stencils: sub-word inner shifts are declined as unaligned")
     for n, c in (('3-point row', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
                  ('3x3 stencil', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<6;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2]+in[(i+1)*32+j]+in[(i+1)*32+j+1]+in[(i+1)*32+j+2];return out[0];}'),
                  ('3-point weighted', 'long long f(){vi8_t in[320],out[320];int i,j;int a=1,b=2,c=3;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=a*in[i*32+j]+b*in[i*32+j+1]+c*in[i*32+j+2];return out[0];}'),
                  ('3-point vi16', 'long long f(){vi16_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}'),
                  ('3-point remainder', 'long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)for(j=0;j<20;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j+2];return out[0];}')):
-        ir = _ir(c); out, st, _ = vectorize_conv_module(ir)
-        check(f"{n}: vectorized", st.vectorized == 1)
-        check(f"{n}: correct", _ok(ir, out))
+        ir = _ir(c); out, st, reps = vectorize_conv_module(ir)
+        check(f"{n}: declined as unaligned",
+              st.vectorized == 0 and bool(reps)
+              and 'unaligned-packed-access' in reps[0].reason)
+    # the 2-D row base itself stays provably aligned: a word-multiple inner
+    # shift over the same i*32 rows is still vectorized
+    ir = _ir('long long f(){vi8_t in[320],out[320];int i,j;for(i=0;i<8;i++)'
+             'for(j=0;j<24;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+8];return out[0];}')
+    out, st, _ = vectorize_conv_module(ir)
+    check("2-D with a word-multiple shift still vectorizes", st.vectorized == 1)
+    check("  ... and is correct", _ok(ir, out))
     ir = _ir('long long f(){vi8_t in[320],out[320];int i,j;for(i=1;i<6;i++)for(j=1;j<28;j++)out[i*32+j]=in[i*32+j]+in[i*32+j+1]+in[i*32+j-1];return out[0];}'); out, st, reps = vectorize_conv_module(copy.deepcopy(ir))
-    check("IV not starting at 0 is declined at match time",
+    # (this kernel also has a sub-word shift, so either reason is a correct
+    #  decline; both are legality/match refusals with the IR left untouched)
+    check("IV not starting at 0 is declined before lowering",
           st.vectorized == 0 and bool(reps)
-          and 'iv-does-not-start-at-zero' in reps[0].reason)
+          and ('iv-does-not-start-at-zero' in reps[0].reason
+               or 'unaligned-packed-access' in reps[0].reason))
     check("  ... and the IR is untouched",
           [repr(x) for x in out] == [repr(x) for x in ir])
 

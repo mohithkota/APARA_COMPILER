@@ -113,16 +113,34 @@ def test_axpy_uses_the_framework():
 
 
 def test_gemm_uses_the_framework():
-    print("GEMM obtains peeled remainders from the shared framework")
-    peeled = 0
+    """R6.2C: a GEMM inner remainder is UNREACHABLE for legal code.
+
+    In an i-k-j GEMM the inner trip IS the row stride N, so row k starts at byte
+    `k*N*elem_bytes` and a packed access is 8-byte aligned only when
+    `N*elem_bytes % 8 == 0`. That condition forces `N % lanes == 0` at every
+    element width -- so an aligned GEMM has NO inner remainder, and every shape
+    that does have one is illegal to lower. Measured on the simulator: a 17x17
+    vi8 GEMM emitted 1428 `Unaligned address in load` errors before this
+    milestone.
+
+    These three shapes are therefore declined now. The peeling FRAMEWORK itself
+    is unaffected and is still covered by the AXPY case above, which is where a
+    remainder can legally occur (a 1-D kernel's trip is independent of any row
+    stride)."""
+    print("GEMM inner remainders are unreachable for aligned code")
     for n, c in (('vi8 N=17', gemm('vi8_t', 4, 4, 17)),
                  ('vi8 N=20', gemm('vi8_t', 4, 4, 20)),
                  ('vi16 N=30', gemm('vi16_t', 4, 4, 30))):
-        ir = _ir(c); out, st, _ = vectorize_all_module(ir)
-        check(f"{n}: vectorized", st.vectorized == 1)
-        check(f"{n}: correct", _ok(ir, out))
-        if 'peeled' in _vcl.realisation_of(out): peeled += 1
-    check(f"peeling is used on at least one GEMM remainder ({peeled})", peeled >= 1)
+        ir = _ir(c); out, st, reps = vectorize_all_module(ir)
+        check(f"{n}: declined -- unaligned row stride",
+              st.vectorized == 0 and bool(reps)
+              and 'unaligned-packed-access' in reps[0].reason)
+        check(f"{n}: IR left untouched",
+              [repr(x) for x in out] == [repr(x) for x in ir])
+    # an ALIGNED GEMM still vectorizes through the same framework
+    ir = _ir(gemm('vi8_t', 4, 4, 16)); out, st, _ = vectorize_all_module(ir)
+    check("aligned GEMM (N=16) still vectorizes", st.vectorized == 1)
+    check("  ... and is correct", _ok(ir, out))
 
 
 def test_remainder_sizes():

@@ -33,6 +33,7 @@ from loopopt.analysis_mem import annotate_memory_effects
 from loopopt.depgraph import (DependenceGraph, MEM_RAW, MEM_WAR, MEM_WAW)
 from loopopt.depgraph_disambig import MemoryDisambiguator
 from vector_capability import VectorCapability
+import vector_capability_db as _vdb
 from kernel_detector import _detect_loop, KernelCandidate
 
 _cap = VectorCapability()
@@ -135,6 +136,14 @@ def analyze_legality_loop(desc, instrs, graph):
         res.reason = 'unproven-aliasing'
         return res
 
+    # ── ISA alignment of every packed access (R6.2C / defect D1) ──────────────
+    aligned, bad = _packed_accesses_aligned(desc, instrs)
+    if not aligned:
+        off = getattr(bad, 'const_off', None)
+        res.reason = ('unaligned-packed-access'
+                      + (f':byte-offset-{off}' if off is not None else ''))
+        return res
+
     # ── remainder (scalar tail) ───────────────────────────────────────────────
     if kernel.trip is not None:
         res.remainder = kernel.trip % res.lanes
@@ -216,6 +225,60 @@ def _lane_disjoint(desc, graph, e):
                 and oa.name == ob.name)             # identical address
     except Exception:
         return False
+
+
+# ── R6.2C: ISA alignment of the addresses the packed lowering will emit ───────
+#
+# The APARA datapath reads exactly ONE aligned DMEM word per access
+# (`McodeExecute.cpp`: `Read_Data_Dword(base & 0xfffffff8, ...)`), and
+# `AddrIsAligned` requires (addr & 7) == 0 for an 8-byte transfer. A wide access
+# spanning two words is not expressible, so an unaligned one is an ILLEGAL
+# instruction -- the simulator prints an error and then reads the CONTAINING
+# word, silently producing wrong data.
+#
+# Nothing in the legality layer used to say so, which is R6.2A defect D1: a
+# shifted stencil window `in[i+1]` lowers to a packed load at `base + 1`, and two
+# of every three convolution loads were unaligned by construction.
+#
+# The rule is a property of the ACCESS, not of any kernel: the lowering
+# substitutes the induction variable with a multiple of the packed word, so
+# alignment reduces to the invariant part of the offset (vector_affine's
+# `word_aligned`). It is applied to every contiguous access of every client.
+
+_WORD_BYTES = _vdb.WORD_BITS // 8
+
+
+def _packed_accesses_aligned(desc, instrs):
+    """(ok, offending access). Every access the packed lowering turns into a
+    wide memory operation must be PROVABLY word-aligned; anything unproven is
+    rejected, because an unproven address is exactly the one that must not be
+    lowered to a wide access."""
+    if os.environ.get('APARA_R62C_NO_ALIGN_GATE'):
+        # DANGEROUS, measurement only. Setting this re-enables generation of
+        # packed accesses at addresses the ISA cannot perform -- the simulator
+        # reports `Unaligned address in load` and silently returns the
+        # CONTAINING word, so results are wrong. It exists solely to reproduce
+        # the before/after evidence in R6_2C_CORRECTNESS_FIXES.md. Never set it
+        # for code that will be run.
+        return True, None
+    try:
+        from vector_affine import (LoopAffineContext, classify_access,
+                                   word_aligned, CONTIGUOUS)
+        ctx = LoopAffineContext(instrs, desc)
+        for b in sorted(desc.body_blocks):
+            blk = desc.cfg.blocks[b]
+            for k in range(blk.lo, blk.hi + 1):
+                ins = instrs[k]
+                if type(ins).__name__ not in ('IRLoad', 'IRStore'):
+                    continue
+                acc = classify_access(ins, ctx)
+                if acc.kind != CONTIGUOUS:
+                    continue                     # scalar or already rejected
+                if not word_aligned(acc, _WORD_BYTES):
+                    return False, acc
+        return True, None
+    except Exception:
+        return False, None                       # unprovable => not legal
 
 
 def analyze_legality_function(instrs, lo, hi):

@@ -261,8 +261,14 @@ def test_r45_newly_accepted():
     print("shapes R4.2 rejected are ACCEPTED since R4.5 expression trees")
     for n, c in (('a[i]*3 (const scalar)',
                   "long long f(){vi8_t a[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i]*3;return c[0];}"),
-                 ('a[i+1]+b[i] (shifted access, R4.6)',
-                  "long long f(){vi8_t a[33],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+1]+b[i];return c[0];}"),
+                 # R6.2C: the shift moved from +1 to +8 elements. A one-element
+                 # shift on vi8 is a one-BYTE shift, i.e. an unaligned packed
+                 # load, which the ISA cannot perform and legality now declines.
+                 # The SHAPE under test here -- a shifted access inside an
+                 # expression tree -- is unchanged, and it still vectorizes at a
+                 # word-multiple shift.
+                 ('a[i+8]+b[i] (shifted access, R4.6)',
+                  "long long f(){vi8_t a[40],b[32],c[32];int i;for(i=0;i<32;i++)c[i]=a[i+8]+b[i];return c[0];}"),
                  ('a[i]+b[i]+c[i] (3 operands)',
                   "long long f(){vi8_t a[32],b[32],c[32],d[32];int i;for(i=0;i<32;i++)d[i]=a[i]+b[i]+c[i];return d[0];}")):
         ir = _ir(c)

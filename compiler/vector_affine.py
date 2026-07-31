@@ -57,6 +57,7 @@ normalizer folds into the same answer.
 
 import os
 import sys
+from math import gcd as _gcd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,15 +78,32 @@ def _cname(x):
 
 
 class AffineAccess:
-    """`offset == coeff*IV + invariant`, or a rejection reason."""
-    __slots__ = ('ok', 'coeff', 'reason', 'kind', 'elem_bytes')
+    """`offset == coeff*IV + const + symbolic`, or a rejection reason.
 
-    def __init__(self, ok, coeff=None, reason=None, kind=UNKNOWN, elem_bytes=None):
+    R6.2C additions (`const_off`, `sym_div`) decompose the INVARIANT part that
+    R4.2.8 deliberately left opaque. They are needed for exactly one question,
+    which cannot be asked without them: is the address this access lowers to
+    8-byte ALIGNED? The lowering substitutes the IV with a multiple of the
+    packed word, so alignment depends entirely on the invariant:
+
+        const_off   the compile-time constant part, in BYTES
+        sym_div     a positive integer that provably DIVIDES every symbolic
+                    (non-constant, non-IV) term; 0 means there is no symbolic
+                    part at all, and 1 means "present but nothing proven"
+
+    `coeff` and `kind` are computed exactly as before -- this is additive."""
+    __slots__ = ('ok', 'coeff', 'reason', 'kind', 'elem_bytes',
+                 'const_off', 'sym_div')
+
+    def __init__(self, ok, coeff=None, reason=None, kind=UNKNOWN, elem_bytes=None,
+                 const_off=None, sym_div=None):
         self.ok = ok
         self.coeff = coeff
         self.reason = reason
         self.kind = kind
         self.elem_bytes = elem_bytes
+        self.const_off = const_off
+        self.sym_div = sym_div
 
     def __repr__(self):
         if not self.ok:
@@ -185,62 +203,97 @@ def _const_value(expr, ctx):
     return None
 
 
+def _merge_div(a, b):
+    """Divisor of a SUM of two symbolic parts. 0 means "no symbolic part", so it
+    is the identity; otherwise the sum is divisible only by their gcd."""
+    if a == 0:
+        return b
+    if b == 0:
+        return a
+    return _gcd(a, b)
+
+
 def _resolve(expr, ctx, depth=0):
-    """(coeff, ok) -- the coefficient of the IV in `expr`, or (None, False)."""
+    """(coeff, const, div, ok) for `expr` == coeff*IV + const + symbolic.
+
+    `coeff` is exactly what R4.2.8 computed. `const` and `div` additionally
+    decompose the invariant remainder (see AffineAccess) so the alignment of the
+    lowered address can be decided; they never influence `coeff` or `ok`."""
     if depth > _MAX_DEPTH:
-        return None, False
+        return None, None, None, False
     if isinstance(expr, Const):
-        return 0, True
+        return 0, expr.value, 0, True
     if not isinstance(expr, Temp):
-        return None, False
+        return None, None, None, False
     if ctx.is_the_iv(expr.name):
-        return 1, True
+        return 1, 0, 0, True
     d = ctx.def_map.get(expr.name)
     if d is None or d not in ctx.region:
-        return (0, True) if not ctx.varies(expr.name) else (None, False)
+        return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
     ins = ctx.instrs[d]
     c = _cname(ins)
     if c == 'IRAssign':
         return _resolve(ins.src, ctx, depth + 1)
     if c in ('IRLoadAddr', 'IRGlobalAddrOf'):
-        return 0, True
+        return 0, 0, 1, True
     if c == 'IRLoad':
         # not the IV (checked above): invariant iff its slot is never written here
-        return (0, True) if not ctx.varies(expr.name) else (None, False)
+        return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
     if c == 'IRBinOp':
-        lc, lok = _resolve(ins.left, ctx, depth + 1)
-        rc, rok = _resolve(ins.right, ctx, depth + 1)
+        lc, lk, ld, lok = _resolve(ins.left, ctx, depth + 1)
+        rc, rk, rd, rok = _resolve(ins.right, ctx, depth + 1)
         if not (lok and rok):
-            return None, False
+            return None, None, None, False
         if ins.op == '+':
-            return lc + rc, True
+            return lc + rc, lk + rk, _merge_div(ld, rd), True
         if ins.op == '-':
-            return lc - rc, True
+            return lc - rc, lk - rk, _merge_div(ld, rd), True
         if ins.op == '*':
-            if lc == 0 and rc == 0:
-                return 0, True
             # affine x affine is affine only when the IV-bearing side is scaled by
             # a COMPILE-TIME constant. A symbolic scale (a runtime row stride) is
-            # exactly the column-strided case we must reject.
+            # exactly the column-strided case we must reject. Scaling multiplies
+            # the constant part and the symbolic divisor by the same literal.
             k = _const_value(ins.left, ctx)
-            if lc == 0 and k is not None:
-                return k * rc, True
+            if k is not None:
+                return k * rc, k * rk, (k * rd if rd else 0), True
             k = _const_value(ins.right, ctx)
-            if rc == 0 and k is not None:
-                return k * lc, True
-            return None, False
-        return None, False                   # '/', '%', shifts, ...: rejected
-    return (0, True) if not ctx.varies(expr.name) else (None, False)
+            if k is not None:
+                return k * lc, k * lk, (k * ld if ld else 0), True
+            if lc == 0 and rc == 0:
+                return 0, 0, 1, True         # invariant x invariant: no divisor
+            return None, None, None, False
+        return None, None, None, False       # '/', '%', shifts, ...: rejected
+    return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
 
 
 def resolve_offset(offset, ctx):
     """Resolve one access offset. Returns AffineAccess (without an elem_bytes
     judgement -- use `classify_access` for that)."""
-    coeff, ok = _resolve(offset, ctx)
+    coeff, const, div, ok = _resolve(offset, ctx)
     if not ok:
         return AffineAccess(False, reason='not-affine-in-the-loop-iv')
     kind = INVARIANT if coeff == 0 else STRIDED
-    return AffineAccess(True, coeff=coeff, kind=kind)
+    return AffineAccess(True, coeff=coeff, kind=kind,
+                        const_off=const, sym_div=div)
+
+
+def word_aligned(acc, word=8):
+    """Is the lowered address of `acc` provably a multiple of `word` bytes?
+
+    The packed lowering substitutes the induction variable with a multiple of
+    the packed word, so the IV term is aligned by construction and alignment
+    reduces to the INVARIANT part:
+
+        aligned  <=>  const_off % word == 0  AND  (no symbolic part, or its
+                      proven divisor is itself a multiple of word)
+
+    Returns False when alignment cannot be PROVEN -- an unproven address is
+    exactly the case that must not be lowered to a wide access."""
+    if not acc.ok or acc.const_off is None:
+        return False
+    if acc.const_off % word:
+        return False
+    return acc.sym_div == 0 or acc.sym_div % word == 0
 
 
 def classify_access(ins, ctx):

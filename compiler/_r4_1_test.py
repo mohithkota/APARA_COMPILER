@@ -90,9 +90,6 @@ def test_scalar_remainder():
 def test_rollback_and_rejection():
     print("unsafe / unsupported kernels are rejected or rolled back (scalar kept)")
     cases = {
-        # narrow (32-bit) accumulator -> vector over-accumulates -> differential rollback
-        'narrow': ("long long f(){vi16_t a[16],b[16];int i;long s=0;for(i=0;i<16;i++)s+=a[i]*b[i];return s;}",
-                   'differential'),
         # 32-bit dot is not on the ISA
         'no32dot': ("long long f(){vi32_t a[8],b[8];int i;long long s=0;for(i=0;i<8;i++)s+=a[i]*b[i];return s;}",
                     'no-32bit-dot'),
@@ -106,6 +103,22 @@ def test_rollback_and_rejection():
         check(f"{name}: not vectorized", stats.vectorized == 0)
         check(f"{name}: IR unchanged (scalar kept)",
               [repr(x) for x in out] == [repr(x) for x in ir])
+
+    # R6.2C: the NARROW-ACCUMULATOR case used to belong in the list above -- it
+    # rolled back on a differential mismatch because the vector form
+    # "over-accumulated". The real cause was defect D2: the accumulator slot was
+    # written 8 bytes wide even when the C variable was 4, so the partial sum was
+    # never truncated at all. With the slot accessed at its true width the vector
+    # form truncates once per chunk, and truncation mod 2^32 commutes with the
+    # additions and multiplications being accumulated -- so chunk-wise and
+    # element-wise accumulation agree bit-for-bit. Verified on the SIMULATOR
+    # against gcc with inputs that genuinely overflow 32 bits (64 products of
+    # ~30000*20000, sum ~3.8e10): PASS.
+    narrow = "long long f(){vi16_t a[16],b[16];int i;long s=0;for(i=0;i<16;i++)s+=a[i]*b[i];return s;}"
+    ir = _ir(narrow)
+    out, stats, reps = vectorize_module(ir)
+    check("narrow (32-bit) accumulator now vectorizes correctly",
+          stats.vectorized == 1)
 
 
 def test_no_regression_non_kernel():

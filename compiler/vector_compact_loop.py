@@ -58,6 +58,10 @@ from ir import (Const, Temp, IRLoad, IRStore, IRLoadAddr, IRLabel, IRJump,
                 IRCondJump, IRBinOp)
 from vector_lowering import _fresh
 
+
+def _cname(x):
+    return type(x).__name__
+
 _lbl_n = [0]
 
 
@@ -91,22 +95,64 @@ def packed_store_at(slot, off_temp, value, lanes, eb):
     return [la, st]
 
 
-def slot_load(slot, signed=True):
-    """(instrs, value_temp) -- load a scalar stack slot."""
+def slot_load(slot, signed=True, elem_bytes=8):
+    """(instrs, value_temp) -- load a scalar stack slot.
+
+    `elem_bytes` MUST match the width every other access to this slot uses. A
+    DMEM word is 64 bits and a sub-word access lands in a specific part of it,
+    so an 8-byte store followed by a 4-byte load of the same slot reads the
+    wrong half and yields 0 -- see `slot_width`."""
     base = _fresh('_vcl')
     val = _fresh('_vcv')
     return [IRLoadAddr(base, slot),
-            IRLoad(val, base, Const(0), elem_bytes=8, unsigned=(not signed))], val
+            IRLoad(val, base, Const(0), elem_bytes=elem_bytes,
+                   unsigned=(not signed))], val
 
 
-def slot_store(slot, value):
+def slot_store(slot, value, elem_bytes=8):
     base = _fresh('_vct')
-    return [IRLoadAddr(base, slot), IRStore(base, Const(0), value, 8)]
+    return [IRLoadAddr(base, slot), IRStore(base, Const(0), value, elem_bytes)]
+
+
+def slot_width(instrs, lo, hi, slot):
+    """The element width the surrounding SCALAR code uses for `slot`, or None if
+    it is unused or the accesses disagree.
+
+    R6.2C / defect D2. `build_compact_chunk_loop` REUSES the scalar loop's own
+    induction-variable slot -- that is deliberate, and is what lets a scalar
+    remainder loop resume over the same slot with no fix-up. But the slot
+    belongs to an `int`, which the scalar code reads and writes 4 bytes at a
+    time, while this module used to access it 8 bytes at a time. Both are
+    correct in isolation; together they are a miscompile, because APARA places a
+    4-byte access in one half of the 64-bit DMEM word and an 8-byte access
+    across the whole of it.
+
+    The mismatch was invisible to the IR differential oracle, which models
+    memory as a flat byte dict with no word structure, and it only became
+    OBSERVABLE when a client re-read the slot through `clone_offset` (GEMM)
+    rather than using the loop's own value temp."""
+    addr = {}
+    for k in range(lo, hi + 1):
+        ins = instrs[k]
+        if _cname(ins) == 'IRLoadAddr':
+            addr[ins.dest.name] = ins.fp_offset
+    widths = set()
+    for k in range(lo, hi + 1):
+        ins = instrs[k]
+        if _cname(ins) not in ('IRLoad', 'IRStore'):
+            continue
+        b = getattr(ins, 'base', None)
+        if isinstance(b, Temp) and addr.get(b.name) == slot:
+            widths.add(ins.elem_bytes)
+    if len(widths) != 1:
+        return None
+    return widths.pop()
 
 
 # ── the compact chunk loop ──────────────────────────────────────────────────────
 
-def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body):
+def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body,
+                            iv_bytes=8):
     """Emit `for (i = iv_slot; i < chunks*lanes; i += lanes) emit_body(i*eb)`.
 
     `emit_body(off_temp)` returns the instruction list for ONE chunk, addressing
@@ -127,13 +173,13 @@ def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body):
 
     # cond:  if (i < chunks*lanes) goto body else end
     out.append(IRLabel(cond_l))
-    ld, i_cur = slot_load(iv_slot)
+    ld, i_cur = slot_load(iv_slot, elem_bytes=iv_bytes)
     out += ld
     out.append(IRCondJump(i_cur, '<', Const(chunks * lanes), body_l, end_l))
 
     # body:  off = i * eb ; <packed work>
     out.append(IRLabel(body_l))
-    ld, i_body = slot_load(iv_slot)
+    ld, i_body = slot_load(iv_slot, elem_bytes=iv_bytes)
     out += ld
     if eb == 1:
         off = i_body                            # byte offset == element index
@@ -144,11 +190,11 @@ def build_compact_chunk_loop(iv_slot, eb, lanes, chunks, emit_body):
 
     # incr:  i += lanes ; goto cond
     out.append(IRLabel(incr_l))
-    ld, i_inc = slot_load(iv_slot)
+    ld, i_inc = slot_load(iv_slot, elem_bytes=iv_bytes)
     out += ld
     nxt = _fresh('_vcn')
     out.append(IRBinOp(nxt, '+', i_inc, Const(lanes)))
-    out += slot_store(iv_slot, nxt)
+    out += slot_store(iv_slot, nxt, elem_bytes=iv_bytes)
     out.append(IRJump(cond_l))
 
     out.append(IRLabel(end_l))
