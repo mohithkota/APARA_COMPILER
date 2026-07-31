@@ -57,12 +57,25 @@
 #ifndef GOLDEN_STUBS_H
 #define GOLDEN_STUBS_H
 
-/* vu8_t is one of compiler.py's _FAKE_TYPEDEFS (an opt-in marker requesting
+/* vu8_t and friends are compiler.py's _FAKE_TYPEDEFS (opt-in markers requesting
  * natural/packed array stride on the APARA side -- a DMEM-layout detail
- * with no bearing on native memory layout or values). For gcc, it is
- * simply unsigned char; test sources never redefine it themselves so
- * there's no conflict either way. */
-typedef unsigned char vu8_t;
+ * with no bearing on native memory layout or values). For gcc, they are
+ * simply the underlying scalar types; test sources never redefine them
+ * themselves so there's no conflict either way.
+ *
+ * Only vu8_t was declared here until 2026-07-31. The effect was silent and
+ * worth recording: a test written with any OTHER marker (vi8_t, vi16_t, ...)
+ * failed to compile in the native reference build, so try_golden_verify fell
+ * back to a PLACEHOLDER .result -- and a placeholder gives mcode_run nothing
+ * to compare against, so the simulator run passed vacuously. Every packed
+ * marker is declared now so that a vector test is actually verified. */
+typedef unsigned char  vu8_t;
+typedef signed char    vi8_t;
+typedef unsigned short vu16_t;
+typedef short          vi16_t;
+typedef unsigned int   vu32_t;
+typedef int            vi32_t;
+typedef float          vf32_t;
 
 /* ---- scalar ALU: nand/nor/xnor (no C operator reaches these) ---- */
 long long __nand(long long a, long long b) { return ~(a & b); }

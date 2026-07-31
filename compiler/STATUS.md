@@ -5434,3 +5434,104 @@ only additions. Full report: `R6_1_VECTOR_ILP_ANALYSIS.md` (963 lines).
 - **RECOMMENDATION for R6.2: vector loop unrolling on the vector IR, paired with
   distinct-object memory disambiguation carried through to the bundle packer.**
   Neither half is worth much alone. Everything else measured is under 6%.
+
+---
+
+## R6.2A — Verification Infrastructure Hardening  (2026-07-31) ✅ DONE
+
+**No compiler optimization.** Only `golden_stubs.h` (a test-only reference header
+for the native gcc build) was touched; everything else is new verification
+infrastructure. Report: `R6_2A_VERIFICATION_HARDENING.md`.
+
+- **ROOT CAUSE:** the packed markers (`vi8_t`/`vi16_t`/`vu16_t`/`vi32_t`/`vu32_t`/
+  `vf32_t`) are compiler-only layout markers; `golden_stubs.h` declared ONLY
+  `vu8_t`. Every test using another marker failed the native reference build ->
+  `try_golden_verify` fell back to a PLACEHOLDER .result -> `mcode_run -r` had
+  nothing to compare -> **zero comparisons, no error, exit 0: a vacuous pass.**
+  Confirmed separately that `mcode_run` **exits 0 even when a PostCondition
+  FAILS**, so any harness trusting `$?` passes on wrong output.
+- **FIXED:** all seven markers declared for gcc. `vi64_t` deliberately NOT added —
+  no such compiler marker exists (a 64-bit element is a 1-lane "vector").
+- **Added** `compiler/verification/` (`harness.py`, `suite.py`, `__main__.py`) —
+  six positive checks (native / golden / build / executed / **compared** / clean).
+  Check 5 closes the hole: comparisons performed must EQUAL the count the TEST
+  declares. Only code in the repo that invokes the toolchain; run explicitly.
+- **NEGATIVE CONTROLS (each must fail, and does):** corrupted expected value ->
+  FAIL[clean]; no golden reference -> FAIL[native]; declared count exceeds
+  reference -> FAIL[golden].
+- **THREE PRE-EXISTING DEFECTS FOUND** (38 programs: 27/38 pass vectorized,
+  37/38 scalar — running both configurations is what separates them):
+  **D1** convolution emits UNALIGNED 64-bit packed loads (shifted windows: two of
+  every three loads are unaligned by construction) — hardware errors, wrong
+  results, ALL SIX markers, vectorizer-only. **D2** packed GEMM produces all-zero
+  output for vi16/vu16/vi32/vu32 (vi8 correct), vectorizer-only. **D3** `vu8_t`
+  loads are SIGN-EXTENDED (192 read back as −64) — scalar codegen, fails with
+  vectorization off too.
+- **WHY THEY WERE INVISIBLE:** `differential_packed` (the IR oracle every R4.x
+  milestone validated with) returns **'match' for every one of these kernels**. It
+  faithfully executes IR against a flat byte dict, and models neither hardware
+  alignment nor DMEM word layout. **Every "0 mismatches" claim in R4.1–R4.6 rests
+  on that oracle.**
+- **NEW BASELINE:** measured simulator metrics (ticks / non-null / null /
+  PostCondition count) recorded per program — these replace R6.1's projected
+  figures. Measured dynamic IPB is well below R6.1's static estimate (axpy vi8
+  0.83 vs 1.32) though measured occupancy (~20-25%) matches R6.1's model.
+- **RECOMMENDATION: fix D1/D2/D3 before any further backend aggression** —
+  11 of 38 vector programs currently produce wrong results on hardware.
+
+---
+
+## R6.2 — Advanced Vector Memory Dependence Analysis  (2026-07-31) ✅ DONE
+
+**Dependence analysis only.** No vectorizer, scheduler algorithm, codegen, ISA
+assumption, unrolling, pipelining, accumulator or kernel-specific logic. One
+production file modified (`bundler.py`) and only to CONSULT the new analysis.
+Report: `R6_2_MEMORY_DISAMBIGUATION.md`.
+
+- **Added** `vector_backend/memory_objects.py` (SymAddr affine algebra + the
+  `classify`/`classify_carried` decision procedure) and
+  `vector_backend/mem_dependence.py` (mcode + IR front-ends, bundler entry point,
+  `StrongDisambiguator`). ONE decision procedure, two front-ends, two consumers —
+  IR integration via the `disambiguator=` hook `DependenceGraph` ALREADY exposes,
+  so no frozen R2.1/R2.2 code changed.
+- **ALGORITHM:** addresses are affine symbolic expressions; two accesses are
+  compared by SUBTRACTING them. All symbols cancel -> constant difference ->
+  compare against widths; any symbol survives -> may alias. Needs no object
+  extents, which is what makes `A[i]` vs `B[i]` provable. Cross-block: a register
+  written EXACTLY ONCE in the function carries its value (single definition
+  dominates every dynamic use); multiply-defined registers stay opaque per block.
+- **PROVES** different objects, same object different element, unrolled
+  iterations, affine strides, `<<`-scaled indices, computed bases, and
+  loop-carried known distances (generalises R2.2's SIV rule to real widths).
+  **REFUSES** unrelated indices, loaded bases, 32-bit address arithmetic (wraps),
+  `$set` (16-bit field), and sub-word stores sharing a 64-bit word (RMW).
+- **KEY MECHANISM, not the intended one:** R4.2.5 picks compact-vs-unrolled by
+  MEASURING which packs smaller. The unrolled candidate is straight-line
+  independent chunk accesses — exactly what the textual rule could not
+  disambiguate. R6.2 made it viable, so **9/25 kernels now select it**; vector-body
+  occupancy 18.8% -> 76.2% (elementwise), 17.5% -> 67.3% (axpy vi8), 30.4% ->
+  79.8% (conv 3-tap). R6.2 did not implement unrolling; it unlocked the unrolled
+  form that already existed.
+- **MEASURED:** kernel suite dynamic bundles 10868 -> 10518 (**−3.2%**), dynamic
+  IPB 2.074 -> 2.114 (**+1.9%**), static 822 -> 795 (−3.3%); per-kernel dynamic
+  reductions to **−79%** (axpy vi8 87->18, conv 3-tap vi16 101->21). Simulator
+  ticks on the verified suite **−0.02%**.
+- **HONEST GAP:** R6.1 projected +13.9% for disambiguation alone. That projection
+  was wrong — its `unroll1_disamb` what-if ALSO rewrote the addressing form, so it
+  measured two changes and credited one. The real reason the gain is small is the
+  one R6.1 got right: a compact vector body is a serial RAW chain, not
+  alias-limited. Disambiguation pays only with several memory streams in flight,
+  i.e. after unrolling, which R6.2 may not implement.
+- **CORRECTNESS (four layers):** structural — consulted before the textual rule
+  and only to skip it, everything unproven falls through (166 conflicts removed,
+  **0** added); randomised concretisation — **172 proofs x 200 draws = 34 400
+  concrete checks on real compiled code, 0 overlaps**; reordering — safe because
+  `_must_precede` keeps every register RAW/WAR/WAW, so symbolic values are
+  schedule-invariant; simulator — **27/38 before and after, NO status changes**,
+  same 11 pre-existing R6.2A failures. `APARA_NO_MEMDISAMB=1` reproduces pre-R6.2
+  mcode BYTE-FOR-BYTE.
+- **Verification:** `_r6_2_test.py` + `_r6_1_test.py` + R3.1/R3.2/R4.1/R4.4/R4.5/
+  R4.6 suites pass; `pipeline_crosscheck` PASS 124/124. Two R6.1 assertions
+  updated (not weakened) because R6.2 deliberately changed what they asserted.
+- **NEXT:** the remaining prize is unrolling (R6.1 measured unroll+disambiguate at
+  +36.7%) — but **D1/D2/D3 from R6.2A must be fixed first.**

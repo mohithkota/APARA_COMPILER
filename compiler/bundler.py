@@ -59,6 +59,45 @@ def _mem_may_alias(acc, writes):
     return False
 
 
+# ── R6.2: symbolic memory dependence interface ────────────────────────────────
+#
+# `_mem_may_alias` above is a purely TEXTUAL rule: it proves independence only
+# for one base register with different constant offsets. R6.1 measured what that
+# costs -- an unrolled vector loop's stores serialise the next copy's loads even
+# when the objects are provably distinct -- so R6.2 adds a symbolic address model
+# (vector_backend/memory_objects.py) and consults it FIRST.
+#
+# The scheduling algorithm is unchanged. Only the answer to "can these two
+# accesses touch the same memory?" got sharper, and only in the safe direction:
+# `_proved_independent` returns True only for a proof, so every unproven pair
+# falls through to exactly the behaviour this file had before. Set
+# APARA_NO_MEMDISAMB=1 to restore the textual rule alone.
+
+def _proved_independent(a, b):
+    """True only when the symbolic model PROVES the two accesses disjoint."""
+    if a is None or b is None:
+        return False
+    if a.get('mem_ref') is None or b.get('mem_ref') is None:
+        return False
+    try:
+        from vector_backend.mem_dependence import independent
+        return independent(a, b)
+    except Exception:
+        return False            # analysis must never break a build
+
+
+def _annotate_memrefs(flat):
+    """Attach symbolic memory references to a parsed instruction list. A failure
+    leaves the list untouched, which simply restores the pre-R6.2 behaviour."""
+    if os.environ.get('APARA_NO_MEMDISAMB'):
+        return flat
+    try:
+        from vector_backend.mem_dependence import annotate
+        return annotate(flat)
+    except Exception:
+        return flat
+
+
 def _is_div_sqrt(t):
     """Occupies the single divide/sqrt lane: scalar '/', $fsqrt, vector '/'."""
     return t.startswith(('/', '$fsqrt')) or bool(re.match(r'\$v\s*/', t))
@@ -369,7 +408,9 @@ def _pack_bundles(flat):
     c_labels   = []
     c_instrs   = []
     c_writes   = set()
-    c_mem_writes = set()   # (base, offset) addresses stored-to in this bundle
+    c_mem_writes = []      # store INSTRUCTIONS already in this bundle (R6.2:
+                           # the whole instruction, so its symbolic memory
+                           # reference is available, not just its (base,offset))
     c_mem_reads  = set()   # registers read by $ld/$st instructions in this bundle
     c_ctrl     = False
     c_ls       = 0         # load/store count (hardware lane limit: 4 per bundle)
@@ -428,7 +469,7 @@ def _pack_bundles(flat):
             elif instr['reads']  & c_writes:           split = True; reason = 'RAW'      # RAW hazard
             elif instr['writes'] & c_writes:           split = True; reason = 'WAW'      # WAW hazard
             elif (instr['mem_access'] is not None
-                  and _mem_may_alias(instr['mem_access'], c_mem_writes)):
+                  and _conflicts_with_stores(instr, c_mem_writes)):
                                                         split = True; reason = 'MemAlias'  # memory RAW/WAW hazard
             # Phase hazard: the aligner places $ld/$st in LATER slots than ALU/$set
             # instructions within a bundle, regardless of textual order — confirmed
@@ -468,7 +509,7 @@ def _pack_bundles(flat):
         c_instrs.append(instr['text'])
         c_writes |= instr['writes']
         if instr['mem_write'] is not None:
-            c_mem_writes.add(instr['mem_write'])
+            c_mem_writes.append(instr)
         if is_mem:
             c_mem_reads |= instr['reads']
         c_ctrl    = c_ctrl or instr['is_ctrl']
@@ -483,6 +524,19 @@ def _pack_bundles(flat):
     if _stats_env:
         _report_bundle_stats(stats, gstats, blk_instrs, show_all=(_stats_env == 'all'))
     return bundles
+
+
+def _conflicts_with_stores(acc, store_instrs):
+    """May `acc` touch memory any already-bundled store writes?
+
+    Per store: the R6.2 symbolic proof first, then the original textual rule.
+    Identical to the pre-R6.2 answer whenever nothing is proved."""
+    for st in store_instrs:
+        if _proved_independent(acc, st):
+            continue
+        if _mem_may_alias(acc['mem_access'], (st['mem_write'],)):
+            return True
+    return False
 
 
 def _merge_duplicate_labels(bundles):
@@ -554,6 +608,8 @@ def _mem_pair_conflict(a, b):
     """
     if a['mem_access'] is None or b['mem_access'] is None:
         return False
+    if _proved_independent(a, b):
+        return False            # R6.2: provably distinct memory, free to reorder
     if a['mem_write'] is not None and _mem_may_alias(b['mem_access'], (a['mem_write'],)):
         return True
     if b['mem_write'] is not None and _mem_may_alias(a['mem_access'], (b['mem_write'],)):
@@ -600,13 +656,14 @@ def _schedule_block(block):
     sched = []
     # mirror of the open bundle, used only as a clustering heuristic (the real
     # packing + hazard checks are redone by _pack_bundles afterwards)
-    cw, cmw, cmr = set(), set(), set()
+    cw, cmr = set(), set()
+    cmw = []                       # store instructions in the mirrored bundle
     cctrl = [False]; csize = [0]; cls = [0]; cds = [0]
     def can_join(ins):
         if cctrl[0] or csize[0] >= 8:                     return False
         if ins['reads']  & cw:                            return False
         if ins['writes'] & cw:                            return False
-        if ins['mem_access'] is not None and _mem_may_alias(ins['mem_access'], cmw): return False
+        if ins['mem_access'] is not None and _conflicts_with_stores(ins, cmw): return False
         if ins['mem_access'] is None and (ins['writes'] & cmr):        return False
         if ins['text'].startswith('$call') and _SP_REG in cw:         return False
         # hardware lane limits (mirrors _pack_bundles): 4 ld/st, 1 div/sqrt
@@ -615,13 +672,13 @@ def _schedule_block(block):
         return True
     def open_with(ins):
         cw.update(ins['writes'])
-        if ins['mem_write'] is not None: cmw.add(ins['mem_write'])
+        if ins['mem_write'] is not None: cmw.append(ins)
         if ins['mem_access'] is not None: cmr.update(ins['reads'])
         cctrl[0] = cctrl[0] or ins['is_ctrl']; csize[0] += 1
         if ins['text'].startswith(('$ld', '$st')): cls[0] += 1
         if _is_div_sqrt(ins['text']): cds[0] += 1
     def reset():
-        cw.clear(); cmw.clear(); cmr.clear(); cctrl[0] = False; csize[0] = 0
+        cw.clear(); del cmw[:]; cmr.clear(); cctrl[0] = False; csize[0] = 0
         cls[0] = 0; cds[0] = 0
     def is_ready(k):
         return not done[k] and all(done[p] for p in preds[k])
@@ -657,15 +714,21 @@ def _schedule_within_blocks(flat):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def bundle_mcode(mcode_text, schedule=True):
+def bundle_mcode(mcode_text, schedule=True, disambiguate=True):
     """
     Repack mcode from 1-instruction bundles into VLIW bundles (max 8).
+
+    `disambiguate` attaches R6.2 symbolic memory references before scheduling,
+    so the packer and the list scheduler can tell provably-distinct accesses
+    apart. Pass False (or set APARA_NO_MEMDISAMB) for the pre-R6.2 textual rule.
 
     Returns:
         (new_mcode_text: str, n_before: int, n_after: int)
     """
     header, flat  = _parse_flat(mcode_text)
     n_before      = sum(1 for x in flat if x['text'] != '$null')
+    if disambiguate:
+        flat      = _annotate_memrefs(flat)
     if schedule:
         flat      = _schedule_within_blocks(flat)
     bundles       = _pack_bundles(flat)

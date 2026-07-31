@@ -239,7 +239,9 @@ def pack_with_attribution(flat):
     that equality."""
     bundles = []
     c_labels, c_instrs, c_classes, c_idx = [], [], [], []
-    c_writes, c_mem_writes, c_mem_reads = set(), set(), set()
+    c_writes, c_mem_reads = set(), set()
+    c_mem_writes = []                  # store INSTRUCTIONS (R6.2: their symbolic
+                                       # memory references must stay reachable)
     c_ctrl, c_ls, c_divsqrt = False, 0, 0
     c_parsed = []                                  # parsed deps of bundled instrs
     # `blk_key` is the block of the instruction being examined; `cur_blk` is the
@@ -287,9 +289,11 @@ def pack_with_attribution(flat):
                 blocking = instr['writes'] & c_writes
                 producer = next((p for p in c_parsed if p['writes'] & blocking), None)
             elif (instr['mem_access'] is not None
-                  and _b._mem_may_alias(instr['mem_access'], c_mem_writes)):
+                  and _b._conflicts_with_stores(instr, c_mem_writes)):
                 split, reason = True, 'MemAlias'
-                producer = next((p for p in c_parsed if p['mem_write'] is not None), None)
+                producer = next((p for p in c_parsed
+                                 if p['mem_write'] is not None
+                                 and not _b._proved_independent(instr, p)), None)
             elif not is_mem and (instr['writes'] & c_mem_reads):
                 split, reason = True, 'MemPhase'
                 producer = next((p for p in c_parsed
@@ -308,7 +312,7 @@ def pack_with_attribution(flat):
             close(reason, instr, producer)
             c_labels.clear(); c_instrs.clear(); c_classes.clear(); c_idx.clear()
             c_writes.clear()
-            c_mem_writes.clear(); c_mem_reads.clear(); c_parsed.clear()
+            del c_mem_writes[:]; c_mem_reads.clear(); c_parsed.clear()
             c_ctrl, c_ls, c_divsqrt = False, 0, 0
 
         if not c_instrs:                 # this instruction opens the bundle
@@ -320,7 +324,7 @@ def pack_with_attribution(flat):
         c_parsed.append(instr)
         c_writes |= instr['writes']
         if instr['mem_write'] is not None:
-            c_mem_writes.add(instr['mem_write'])
+            c_mem_writes.append(instr)
         if is_mem:
             c_mem_reads |= instr['reads']
         c_ctrl = c_ctrl or instr['is_ctrl']
@@ -438,6 +442,9 @@ def analyze_mcode(mcode_text, label_freq=None, schedule=True):
     in the map are treated as executing once, and reported).  Pass None for a
     purely static analysis."""
     _header, flat = _b._parse_flat(mcode_text)
+    # R6.2: attach symbolic memory references exactly as `bundle_mcode` does, so
+    # this analysis keeps measuring what production actually packs.
+    flat = _b._annotate_memrefs(flat)
     if schedule:
         flat = _b._schedule_within_blocks(flat)
     flat = refine_vector_classes(flat)

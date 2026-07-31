@@ -472,8 +472,13 @@ def _entry(text, labels=()):
 
 
 def _pack_block(entries):
-    """Schedule + pack a synthesised block with the production code path."""
-    sched = _b._schedule_within_blocks([dict(e) for e in entries])
+    """Schedule + pack a synthesised block with the production code path.
+
+    R6.2: the synthesised stream is annotated with symbolic memory references
+    first, exactly as `bundle_mcode` does, so a what-if is packed under the same
+    dependence information production uses."""
+    sched = _b._annotate_memrefs([dict(e) for e in entries])
+    sched = _b._schedule_within_blocks(sched)
     sched = occ.refine_vector_classes(sched)
     return occ.pack_with_attribution(sched)
 
@@ -628,6 +633,11 @@ def _forces_separate_bundle(a, b):
     packer knowingly allows it."""
     if a['writes'] & b['reads']:
         return True
+    # R6.2: a pair the symbolic model PROVES disjoint can share a bundle, so it
+    # must not be counted as a forced separation -- otherwise this stops being a
+    # lower bound and starts exceeding the schedule the packer actually reaches.
+    if _b._proved_independent(a, b):
+        return a['is_ctrl']
     if a['writes'] & b['writes']:
         return True
     if a['mem_write'] is not None and b['mem_access'] is not None \
