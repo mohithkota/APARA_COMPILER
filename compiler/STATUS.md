@@ -4358,3 +4358,308 @@ pipeline crosscheck 124/124 identical). Full report: `loopopt/R2_7_DELIVERY.md`.
 - **Not done (by design):** full-unroll only (compact kernel loop needs MVE, out
   of scope), symbolic-trip declined, no prior-pass/scheduler/regalloc/bundler
   redesign, no production integration.
+
+---
+
+## R2.8 — Modulo Variable Expansion / Compact Rotating Kernel  (2026-07-26) ✅ DONE
+
+**Replaces ONLY the realisation strategy of R2.5/R2.7: the O(T) full unroll becomes
+a compact prologue → kernel-loop → epilogue of O(S).** The modulo scheduler,
+register promotion, the dependence graph, the recurrence abstraction, the bundler,
+register allocation and LoopInfo are all consumed UNCHANGED — no hardware rotating
+registers. Standalone (not production-wired; pipeline crosscheck 124/124 identical,
+0 rollbacks). Full report: `loopopt/R2_8_DELIVERY.md`.
+
+- **Added** `loopopt/pipeline_mve.py` (window emission with the MVE rename,
+  `realize_mve_kernel`, the codegen live-range invariant, the
+  register→memory / compact→full-unroll driver, `MVEStats`/`MVEReport`).
+  `loopopt/__init__.py` additive exports only.
+- **MVE algorithm:** the linearised R2.5/R2.7 schedule places instance
+  *(iteration `it`, op `o`)* in window `W = it + stage(o)`,
+  `stage(o) = cycle(o)//II ∈ [0,S-1]`; in steady state S iterations are in flight.
+  Rolling the windows into one loop would make a value live across back-edges, so
+  every per-iteration temp is renamed into bank `b = it mod U` with **`U = S`**.
+  Max live span `≤ S-1 < S = U` → the rename is CONFLICT-FREE, and the S in-flight
+  iterations occupy S distinct banks = a rotating register file of constant
+  footprint, entirely in IR. Loop-carried recurrence registers are the one thing
+  kept **SHARED** across banks (exactly as R2.5 keeps a memory slot shared).
+- **Kernel generation (known trip T):** `prologue = windows [0..S-2]` (seeds every
+  rotating reg) → `kernel loop = windows [S-1..S-2+U]` emitted ONCE and run
+  `K = (T-S+1)//U` times → `remainder` → `epilogue = windows [T..T+S-2]`. The loop
+  is a do-while over a fresh counter (`_mvk = K; … if _mvk>0 goto head`). Static
+  size is O(S), independent of T — a 64-iteration reduction (II=3, S=2, U=2) goes
+  **640 → 44 instructions**, K=31, 5 rotating regs.
+- **KEY correctness (the one thing the IR differential CANNOT see):** register
+  allocation. Certified by an explicit invariant computed with codegen's OWN
+  `_compute_last_uses` — every rotating register the body reads-before-writes must
+  have its live range extended to the back-edge (true iff defined before the
+  header, which the prologue guarantees). If not, the compact form is DECLINED.
+- **Gate:** structural + clean-slot multiseed differential + compile + the codegen
+  live-range invariant. Requires `T ≥ 2S-1` and that the compact form is actually
+  smaller; otherwise falls back to R2.7's proven full unroll, so **coverage never
+  regresses**.
+- **CORPUS:** coverage **17 = R2.7** (10 compact kernel + 7 full-unroll fallback),
+  0 rollbacks, 5 declined, **0 mismatches**; avg II/stages 4.24/2.35; compact avg
+  bank size/rotating regs 2.20/4.10; static IR on compacted loops **1038 → 474
+  (−54.3%)**. `_r2_8_test.py` 32/32.
+- **PERF (baseline→R2.4→R2.5→R2.7→R2.8):** static 11885→11889→13188→13651→**12661**,
+  bundles 6498→6188→6759→6894→**6583**, IPB 1.829→1.921→1.951→1.980→**1.923**,
+  spills 0→0→2→3→**1**. vs R2.7: static **−990 (−7.3%)**, bundles −311, spills −2.
+- **IPB (honest):** dips 1.980 → 1.923 — the INVERSE of R2.7's trade. R2.7 spent
+  code size to raise static density; a real kernel loop cannot expose the same flat
+  ILP (loop-carried deps + counter/branch), so some density is given back. The
+  **schedule and II are identical**, so DYNAMIC per-iteration throughput and memory
+  ops are unchanged from R2.7 — only the static footprint (and the pressure/spills
+  it caused) shrinks. Still above baseline 1.829 and R2.4 1.921.
+- **Not done (by design):** known trip counts only (symbolic declined cleanly);
+  `U = S` banks, not the minimal `MaxLive+1`; IR-level validation (no hardware
+  sim), mitigated by the codegen invariant; no redesign of scheduler / promotion /
+  depgraph / bundler / allocator; no production integration.
+
+---
+
+## R3.0 — Oracle ILP Bound Analyzer  (2026-07-26) ✅ DONE
+
+**ANALYSIS ONLY — the decision tool for every future optimization.** Computes the
+theoretical ILP of every innermost loop and quantifies WHY the scheduler cannot
+reach it. Mutates no IR; changes no scheduling, bundling, allocation or generated
+code: proven **byte-identical 124/124**. Full report: `loopopt/R3_0_DELIVERY.md`.
+
+- **Added** `loopopt/oracle_ilp.py` (oracle DAG, critical-path/MII metrics,
+  ready-set simulation, the three IPB numbers, limiter classification, opportunity
+  ranking, `LoopILP`), `oracle_report.py` (per-loop + per-module view, CLI),
+  `oracle_corpus.py`. `__init__.py` additive exports only.
+- **Reused (no analysis duplicated):** R2.1 DependenceGraph + R2.2
+  MemoryDisambiguator (the typed DAG); `analysis_profile` (M3 / the M11 statistics
+  framework), which itself reuses `parallelism_profile`'s `_critical_path` /
+  `_rec_mii` / `_res_mii_detail` / `_reg_pressure`; `schedule.py`
+  `_latency`/`_iclass`/`_CAP`/`_BUNDLE_MAX` and `modulo.py` `_edge_latency`. The
+  ONLY new code is the ready-set list-scheduling simulation (a measurement, not a
+  transform) plus the classification/opportunity logic.
+- **The analytical core — three IPB numbers:**
+  `theoretical_ipb = min(N/MII, 8)`, `MII = max(RecMII, ResMII)` — the ceiling no
+  scheduler can beat (perfect SWP + infinite regs, but REAL caps 8/4/1/1 and REAL
+  recurrence latency); `local_ideal_ipb` — best LOCAL schedule of one iteration,
+  true-deps only, infinite regs; `achieved_ipb` — the current in-order greedy pack
+  with ALL deps. `utilization = achieved/theoretical`, and
+  `total gap = pipelining_gap (theo−local) + scheduler/renaming_gap (local−ach)`.
+- **CORPUS (124 programs, 65 innermost loops):** theoretical **5.22**, local-ideal
+  3.70, achieved **1.64**, mean utilization **32%** (real measured aggregate IPB
+  1.83, cross-checks the 1.64 model). Bottlenecks: resource/issue-width-bound 48
+  (74%), control-bound 14 (22%), recurrence-bound (memory) 3 (5%). RecMII is 3 on
+  61 of 65 loops. Ready-set: **70 cycles expose 8+ ready instructions**, 106 expose
+  only 1. Ranked opportunity: software-pipelining 74%, vectorization 17%,
+  register-renaming 6%, reassociation 2%, register-promotion 2%.
+- **THE VERDICT (drives R3.1 and R4.x):** the gap is NOT the dependence structure
+  (ceiling averages 5.22; 74% of loops are merely issue-width-bound) and NOT the
+  register file (pressure never binding, RecMII ~3 everywhere). It IS
+  **exposed-but-unexploited ILP** — 1.64 achieved against a 5.22 ceiling, with 70
+  cycles' worth of 8+ ready instructions left on the table. Highest-value lever =
+  **software pipelining wired into production** (74%), then **vectorization** (17%).
+  The machine has 8 lanes, the loops contain ~5 IPB, the compiler manufactures ~1.6.
+- **Validation:** the corpus harness snapshots, runs the oracle and re-generates —
+  byte-identical 124/124 (IR repr and mcode); ceiling contract asserted per loop
+  (`theoretical == min(N/MII,8)`, `MII == max(RecMII,ResMII)`, `theoretical ≥
+  achieved`, `utilization ≤ 1`). `_r3_0_test.py` 31/31.
+
+---
+
+## R3.1 — Production Software Pipelining Integration  (2026-07-26) ✅ DONE
+
+**FIRST wiring of the frozen R2.5–R2.8 pipeline into production
+`compile_c_to_mcode()`.** No new scheduler — pure integration + profitability +
+validation + rollback; the depgraph, disambiguator, R2.5–R2.8, the oracle, the
+bundler, the allocator and the spill-tier fallback are all CONSUMED unmodified.
+`APARA_NO_SWP=1` reverts instantly. Full report: `R3_1_DELIVERY.md`.
+
+- **Added** `production_swp.py` (oracle-gated candidate selection, invoke R2.8,
+  per-function differential + zero-spill validation, splice into the production IR,
+  per-function rollback; `ProfitabilityRecord`, `SWPSummary`,
+  `apply_production_swp`, `format_profitability`), `swp_prod_corpus.py`.
+  **Modified** `compiler.py`: capture the selected production IR (`_sel_ir`), then
+  ONE guarded SWP block — ~20 lines, additive.
+- **Where it sits:** the production optimizer picks the best non-spilling tier →
+  `_sel_ir` (today's output). Then `oracle profitability → R2.8 pipeline →
+  per-function differential ('match') → splice into _sel_ir → whole-program
+  ZERO-spill check → accept | rollback`. SWP runs on the raw memory-backed `_ir0`
+  (R2.5/R2.6 need memory-slot IVs, exactly as validated standalone) and each
+  committed function slice REPLACES that function in `_sel_ir`.
+- **Profitability = the R3.0 oracle, no new cost model:** keep a function when an
+  innermost loop's top opportunity is software-pipelining with estimated IPB gain
+  **≥ 0.5** (`APARA_SWP_THRESHOLD`).
+- **Gate (all must hold, else rollback to the proven slice):** R2.8 commits a
+  validated pipeline; the clean-slot multiseed differential returns a **definite
+  'match'** — STRICTER than the standalone gate, which also accepts a clean-slot
+  `unsupported` proof, so a function the interpreter cannot execute is
+  conservatively left un-pipelined; and the whole spliced program still compiles
+  with `cg.spilled == False`. Candidates are applied greedily, highest expected
+  gain first, each re-checked, so one spilling function never blocks another. The
+  whole block is wrapped so any unexpected error keeps the proven `body`
+  byte-for-byte — correctness preserved BY CONSTRUCTION.
+- **CORPUS (124 programs):** oracle SWP recommendations 48 loops; standalone R2.8
+  coverage 17; **PRODUCTION pipelined 10**; rollbacks 4 (ALL
+  differential-unsupported, **0 spill-driven**); utilization 10/17 of R2.8-eligible
+  (**59%**); **0 behaviour mismatches**; 1.21 s total = **9.8 ms/program**.
+- **PERF (production SWP off → on):** static 11139→11678 (+539, +4.8%), bundles
+  5986→6075 (+89, +1.5%), IPB **1.861 → 1.922 (+3.3%)**, programs that spill 0→0.
+  The added bundles are DENSER — IPB rises even though bundle count rises slightly.
+  All 6 success criteria met. `_r3_1_test.py` 16/16; `pipeline_crosscheck` 124/124.
+- **Status:** DEFAULT-ON but **IR-verified only** — a simulator pass is recommended
+  before hardware deployment; the kill-switch is ready.
+- **Not done (by design):** no new scheduler, no pass/bundler/allocator changes.
+
+---
+
+## R3.2 — Superblock / Trace Scheduling  (2026-07-27) ✅ DONE
+
+**A region-FORMATION pass, not a new scheduler:** it enlarges scheduling regions
+beyond basic blocks so the existing R2.4 scheduler and the bundler pack across
+them. Trace scheduling **without speculation and without duplication**. The CFG,
+LoopInfo, Dominators, DependenceGraph, disambiguator, `loopopt/schedule.py`, the
+bundler, the oracle and the existing validator/rollback are all CONSUMED
+unmodified. `APARA_NO_SUPERBLOCK=1` disables it. Full report: `R3_2_DELIVERY.md`.
+
+- **Added** `superblock.py` (CFG-based merging of single-entry/single-exit
+  straight-line chains; `RegionStats`, `form_superblocks`, `superblock_module`),
+  `trace_scheduler.py` (driver + oracle gate + spill/bundle-safe acceptance;
+  `apply_superblock_scheduling`, `format_superblock`), `superblock_corpus.py`.
+  **Modified** `compiler.py`: a guarded block after the R3.1 SWP block, tracking
+  `_prod_ir` — ~20 lines, additive.
+- **What the merge is:** block `B` merges into layout-predecessor `P` iff `B` has
+  exactly one predecessor (`P`), `P` has exactly one successor (`B`), `B` is
+  adjacent, and the `P→B` edge is a fall-through or a redundant `goto B`. Dropping
+  that boundary (the now-single-predecessor label + any redundant goto) is a **PURE
+  NO-OP** — control already flowed `P→B` unconditionally. Nothing is hoisted above
+  a branch, nothing is copied onto an off-trace path. Multi-entry regions,
+  conditional side exits and irreducible control flow are left unmerged.
+- **PRIME TARGET:** a counted loop whose body and IV-increment the front end split
+  with a **DEAD label** (nothing branches to it — the back-edge targets the
+  header). Merging lets the scheduler overlap body with increment and lets the
+  bundler pack across what was a hard label barrier. No compensation code is ever
+  needed because control flow is preserved exactly.
+- **Gate:** attempted only when the R3.0 oracle reports scheduling headroom
+  (theoretical − achieved ≥ 0.5, `APARA_SUPERBLOCK_THRESHOLD`); region formation is
+  semantics-preserving by construction (non-control instruction multiset unchanged
+  = no duplication); the scheduler self-validates each function with the
+  differential and rolls back; **production acceptance requires ZERO spills AND the
+  bundle count NOT to increase**, else the proven R3.1 `body` is kept.
+- **GOTCHA (important, cost real debugging time):** 5 apparent mismatches were
+  **PRE-EXISTING ir0-vs-optimized gaps in the ir_interp oracle** (division /
+  sub-word / bit-manipulation), present in R3.1 and earlier and unrelated to region
+  enlargement. R3.2 is correctly validated against **its input** (the R3.1 output)
+  at the same optimization level → **0 mismatches**.
+- **CORPUS (124 programs, R3.1 → R3.2):** oracle attempted 33, accepted 33,
+  rollbacks 1, **0 behaviour mismatches vs R3.1**; avg scheduling region **7.18 →
+  8.36 blocks (+17%)**; 5.0 ms/program.
+- **PERF (R3.1 → R3.2):** static 11678→11686 (flat), bundles 6075→**5916 (−159)**,
+  IPB 1.922→**1.975 (+2.8%)** — denser packing at flat static size. Cumulative
+  production IPB: **baseline 1.861 → R3.1 1.922 → R3.2 1.975**. All 6 criteria met.
+  `_r3_2_test.py` 23/23; `pipeline_crosscheck` 124/124.
+- **Not done (by design):** straight-line region enlargement only — no speculation,
+  no duplication, no scheduler/bundler/allocator/SWP/oracle changes.
+
+---
+
+## R4.0 — APARA Vector Infrastructure & Capability Framework  (2026-07-27) ✅ DONE
+
+**The vector equivalent of R3.0: the production FOUNDATION for all future vector
+optimization.** NOT a vectorizer — emits no vector instructions and changes no
+scalar code (byte-identical **124/124**). Every ISA fact is determined DIRECTLY
+from the production implementation, never assumed. Full report: `R4_0_DELIVERY.md`.
+
+- **Added** `vector_capability_db.py` (the ground-truth ISA database),
+  `vector_capability.py` (the reusable query layer — the single API future passes
+  consult), `vector_legality.py`, `vector_profitability.py`, `kernel_detector.py`
+  (6 idiom classes, structure only), `vector_validation.py` (the vector
+  differential oracle), `vector_corpus.py`. **Modified** `compiler.py`: ONE opt-in,
+  print-only diagnostic block (`APARA_VECTOR_REPORT` + verbose) that never touches
+  `body`/`mcode`.
+- **CAPABILITY MAP — extracted from codegen's emitters + ir_gen's intrinsic
+  lowering + the no-bias `golden_stubs.h` reference, NOT from the ISA document:**
+  lane model = `64/element_bits` packed lanes per 64-bit register (vi8 = 8 lanes,
+  vi16 = 4, vi32 = 2); `$v` (VALU) element-wise `+ - *` plus `$replicate`;
+  **`$dot` / `$dot $accumulate` for vi8/vu8/vi16/vu16 only — NO 32-bit dot**;
+  `$dot128` = 16×vu8; **`$vreduce +` SIGNED ONLY** (unsigned sign-extends — a
+  confirmed simulator bug), `$vreduce $max` all types, other reduce ops return 0;
+  wide `$ld/$st` (`$u128`/`$u256`) aligned contiguous 2/4-word moves;
+  `$slice`/`$pack`/`$fsqrt`.
+  **CONFIRMED BROKEN, never to be emitted:** 4-bit lanes (vi4/vu4), unsigned
+  `$vreduce` sum, `$vreduce` min/mul/or/xor/and, native `$abs/$max/$min`, 32-bit dot.
+- **THE KEY METHODOLOGY PIECE:** `ir_interp` raises `Unsupported` on vector IR, so
+  `vector_validation.py` **EXTENDS it without modifying it** with a `VectorInterp`
+  executing `IRVecArith/Dot/Dot128/Reduce/LoadWide/StoreWide` per `golden_stubs.h`
+  — **faithful to the hardware INCLUDING ITS BUGS**, so the oracle would catch a
+  pass that wrongly used an unreliable op. `differential_vector(scalar, vector, …)`
+  is the vector equivalent of the scalar differential that gated R2/R3, and is
+  validated against real intrinsic-produced programs (reproduces `__dot_vi8` → 36
+  exactly, and catches an injected mismatch).
+- **Legality** grounds every decision in the capability layer: innermost counted
+  loop, single exit, no calls, supported+reliable element type, ISA-supported
+  operation, affine accesses, and — via the R2.2 disambiguator — no loop-carried
+  memory dependence except the clean scalar IV/accumulator slots.
+- **CORPUS (124 programs):** scalar code UNCHANGED 124/124. Detected 40 kernels
+  (sum-reduction 28, vector-add 7, dot-product 2, matmul 2, saxpy 1); **legal 12**;
+  **profitable 6** (avg 2.0 lanes / 2.0× / 47%). Rejections: unsupported element
+  type 11, unproven aliasing 5, call in body 5, trip-count unknown 4, no-32bit-dot
+  2, unsigned-vreduce-buggy 1. Oracle executes 6/6 real vector-intrinsic programs.
+- **HEADLINE VALUE = the REJECTIONS.** The framework refuses the unsigned-byte-sum
+  and 32-bit-dot kernels **the hardware cannot do correctly**, while accepting the
+  8-lane signed-byte kernels (8×) — no assumptions, all traceable to
+  `golden_stubs.h`/STATUS.md. All 8 success criteria met. `_r4_0_test.py` 30/30;
+  `pipeline_crosscheck` 124/124.
+- **Not done (by mandate):** no automatic vectorization, no vector emission, no
+  scalar redesign. matmul/convolution are recognised structurally but their 2-D
+  compound indices are not yet proven affine (reported, not vectorized); symbolic
+  trips, non-unit strides and pointer-aliased arrays rejected pending later
+  milestones. R4.1 (dot/reduction), R4.2 (elementwise), R4.3 (matmul), R4.4
+  (general) build on this foundation.
+
+---
+
+## R4.1 — Automatic Dot & Reduction Vectorization  (2026-07-27) ✅ DONE
+
+**The FIRST production vector transform — real `$dot` and `$vreduce` instructions
+now appear in generated mcode.** Two kernels only: dot product and sum reduction.
+Vectorization runs FIRST, so the vectorized IR flows through the existing scalar
+optimizer, scheduler, bundler, allocator and backend UNCHANGED; a function with no
+committed kernel is byte-identical to today. `APARA_NO_VECTORIZE` disables it.
+Full report: `R4_1_DELIVERY.md`.
+
+- **Added** `dot_vectorizer.py`, `reduction_vectorizer.py`, `vector_lowering.py`
+  (whose `PackedVectorInterp` subclasses the R4.0 validator), `vectorize_corpus.py`.
+  **Modified** `compiler.py`: the vectorize-first block ahead of scalar opt.
+- **THE CRUX:** APARA stores ordinary arrays **one element per 8-byte word (stride
+  8)**, so ONLY the packed typedef markers (`vu8_t`/`vi8_t`/`vu16_t`/`vi16_t`/
+  `vu32_t`/`vi32_t`) are vectorizable at all — anything else would need an
+  expensive gather. This single fact bounds the whole milestone's coverage.
+- **Lowering:** chunks unrolled as packed 64-bit loads (a marker gather) feeding
+  `$dot` accumulation, or `$vreduce` + a scalar accumulator, followed by a scalar
+  remainder loop — and the remainder loop is **dropped entirely when rem = 0** by
+  setting the IV slot to N.
+- **Gate (any failure → rollback to scalar):** legality (packed + reliable type +
+  ISA-supported op + no alias) + profitability (lanes ≥ 2, trip ≥ 2·lanes, counted
+  on **DYNAMIC not static** ops) + lowering + `differential_packed` (6 seeds over
+  the **FULL byte/half-word range**, so sign/zero-extension and overflow divergence
+  surface) + spill-free compile + a dynamic-operation reduction.
+- **GOTCHA that makes the oracle LOAD-BEARING:** a dot with a **narrow 32-bit
+  accumulator DIVERGES** — the vector form accumulates 8 lanes in 64 bits while the
+  scalar form wraps per iteration — and the differential **automatically rolls it
+  back**. Caught, not mis-compiled. The differential is not ceremony here.
+- **CORPUS — dedicated packed-kernel suite (10 kernels):** vectorized **7/10** (dot
+  vi8/vu8/vi16, reduction vi8/vi16/vi32, + remainder), **0 behaviour mismatches**
+  (100% differential validation), dynamic operations **5892 → 326 (−94%)**, real
+  `$dot`/`$vreduce` in the mcode (2–8 per kernel). Correctly rejected: vi32-dot (no
+  ISA support), narrow-accumulator (rollback), unpacked arrays.
+- **CORPUS — full 124 programs:** vectorized 0 (the general corpus has no packed
+  arrays) and scalar output **BYTE-IDENTICAL on/off 124/124 — no regression**. All
+  7 success criteria met. `_r4_1_test.py` 28/28; `pipeline_crosscheck` 124/124;
+  R2.5–R4.0 suites all pass.
+- **Honest limitations:** packed arrays only, so general-corpus coverage is ~0 —
+  the value is demonstrated on the dedicated suite. **Wide accumulator required**
+  (narrow ones are rolled back — correct, if conservative). **Static size may
+  grow** (chunks are unrolled); the win is dynamic (−94% ops), and large N would
+  benefit from a compact vector loop. Validation is the packed IR oracle modelling
+  `golden_stubs.h` semantics (no hardware simulation, per policy); a
+  simulator-backed gate remains available.
+- **Not done (by mandate):** R4.2 elementwise, R4.3 matmul, R4.4 general
+  vectorization, convolution.
