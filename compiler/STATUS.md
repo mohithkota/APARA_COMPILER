@@ -4663,3 +4663,84 @@ Full report: `R4_1_DELIVERY.md`.
   simulator-backed gate remains available.
 - **Not done (by mandate):** R4.2 elementwise, R4.3 matmul, R4.4 general
   vectorization, convolution.
+
+---
+
+## R4.2 — Generic Vectorization Framework & Elementwise Vectorization  (2026-07-31) ✅ DONE
+
+**Two deliverables: the R4.1 driver becomes reusable production infrastructure,
+and elementwise vectorization becomes its first new client.** The framework half
+is a REFACTOR — R4.1's dot/reduction output is proven byte-identical through it —
+and the elementwise half adds ZERO pipeline logic. There is exactly ONE production
+vectorization pipeline. `APARA_NO_VECTORIZE` disables all of it. Full report:
+`R4_2_DELIVERY.md`.
+
+- **Added** `vector_pipeline.py` (the generic pipeline: `VectorTransform`,
+  `MatchResult`, `DynamicModel`, `run_module`, `format_reports`),
+  `elementwise_vectorizer.py` (the client), `vector_elementwise_lowering.py`
+  (pattern match + lowering), `vector_elementwise_corpus.py`, `_r4_2_test.py`.
+  **Modified** `dot_vectorizer.py` (driver REMOVED — now just
+  `DotReductionTransform` + the unchanged entry points + `vectorize_all_module`;
+  205→92 lines), `vector_lowering.py` (`PackedVectorInterp` gains the packed
+  STORE — additive, inert for R4.1), `compiler.py` (the hook now calls
+  `vectorize_all_module`; same guard, same kill-switch, same position).
+- **THE FRAMEWORK CONTRACT:** a client supplies `kinds` + `match()` + `lower()` +
+  `dynamic_model()` (+ an optional `validate()`, defaulting to the packed
+  differential). EVERYTHING else is shared and unskippable — function slicing with
+  globals preserved, loop discovery + M1/M2/M3 annotation, the R2.1/R2.2 graph,
+  the R4.0 legality/profitability calls, **the gate ORDER**, the real-backend
+  spill/bundle probe, reporting, statistics, determinism resets, rollback.
+  **A client cannot skip a gate because it never sees the pipeline.**
+- **That genericity is TESTED, not asserted:** `_ToyTransform` is a client the
+  framework has never seen; the suite drives it through every hook, then forces it
+  to fail at match / lower / validate / dynamic_model in turn and checks each time
+  that nothing commits and the scalar IR comes back untouched.
+- **REUSE (headline):** 217 lines of shared pipeline serve clients of 58
+  (dot-reduction) and 50 (elementwise) lines. Adding a vectorizer adds no pipeline
+  logic.
+- **Elementwise scope — exactly four shapes, everything else rejected:**
+  `A[i]=B[i]`, `A[i]=B[i]+C[i]`, `A[i]=B[i]-C[i]`, `A[i]=B[i]*C[i]`. Enforced:
+  packed arrays (stride == elem size), affine accesses, one known trip count,
+  contiguous access, exactly one array store, no other array traffic. The `$v` op
+  must be supported+reliable for the type — asked of the R4.0 capability layer,
+  never hardcoded.
+- **GOTCHA the detector forces:** `kernel_detector` calls a stored value with a
+  multiply 'saxpy', so `A[i]=B[i]*C[i]` arrives as saxpy. The client claims BOTH
+  'vector-add' and 'saxpy' as a PRE-FILTER and then does its own exact analysis —
+  a real saxpy (`a*x[i]`) fails because its operand is not an array load. R4.0's
+  detector is consumed unchanged.
+- **CHECKED, NOT ASSUMED:** a displaced index cannot masquerade as contiguous.
+  `analysis_iv.iv_terms` only recognises `IV` or `IV*const` — a constant
+  displacement is not representable — so `a[i+1]` is not an affine term and is
+  rejected at match time. A wrong answer here would have read the wrong elements.
+- **WHAT ELEMENTWISE ADDS OVER R4.1 = the packed STORE.** R4.1 only ever READ
+  packed data and reduced it to a scalar; elementwise writes `lanes` results back
+  contiguously. On hardware an ordinary 64-bit store; the `_vec_pack` marker exists
+  only so the oracle models the scatter, truncating each lane EXACTLY as the scalar
+  store would (`_trunc(v, eb, unsigned=False)`) — so the two forms must leave
+  byte-identical memory, which is what the differential checks.
+- **Lowering:** per chunk `packed load(s) → $v <op> → packed store`, then a scalar
+  remainder loop (dropped when rem == 0). A COPY needs no VALU at all — the loaded
+  packed register is stored straight back and zero `$v` are emitted.
+- **CORPUS (20-case suite, one pipeline, both clients):** vectorized **14/14
+  expected**, **0 mismatches**, 1 rollback (narrow accumulator — the R4.1 oracle
+  still bites), dynamic ops **9464 → 558 (−94.1%)**, static bundles 336→354 (+18,
+  the unroll trade), 71.8 ms/kernel. Committed via dot-reduction 4, via elementwise
+  10. Correctly rejected: unpacked, saxpy `a*x`, divide, `a[i+1]`, trip<2·lanes,
+  narrow acc.
+- **COVERAGE vs R4.1 on the same suite:** R4.1 client set alone **4/20** → R4.2
+  full client set **14/20**. Conversion check: dot/reduction IDENTICAL 4/4.
+- **PRODUCTION:** verified end-to-end — the elementwise kernel vectorizes, flows
+  through the scalar optimizer + R3.1 SWP + R3.2 superblock unchanged, and reaches
+  the mcode as 4 real `$v + $rN ($vi8) $rX $rY` (one per chunk); 0 with the
+  kill-switch. Full corpus **124/124 scalar BYTE-IDENTICAL**. All 7 criteria met.
+  `_r4_2_test.py` 79/79; `pipeline_crosscheck` 124/124; R3.1–R4.1 suites pass.
+- **Honest limitations:** packed arrays only (general coverage 0, same binding
+  constraint as R4.1); static size GROWS (+18 bundles — narrow types at 8 chunks
+  pay most; a compact vector loop is the natural follow-on, as R2.8 was to R2.5);
+  the remainder can dominate a small trip (N=20 at 8 lanes = 440→102, far weaker
+  than a clean multiple); two operands max (`d[i]=a[i]+b[i]+c[i]` rejected, not
+  decomposed); a copy emits no `$v` at all; validation is the packed IR oracle
+  (no hardware sim, per policy).
+- **Not done (by mandate):** matrix multiplication (R4.3), convolution, general
+  loop vectorization (R4.4).

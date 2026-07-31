@@ -48,10 +48,14 @@ def _fresh(prefix='_vk'):
 # ── packed-array-aware interpreter (extends the frozen VectorInterp) ─────────────
 
 class PackedVectorInterp(_vv.VectorInterp):
-    """VectorInterp + the packed 64-bit load: a load marked `_vec_pack=(lanes,
-    elem_bytes)` gathers `lanes` contiguous packed elements into one register,
-    modelling the hardware's contiguous packed DMEM (the interpreter stores each
-    element at its own byte address)."""
+    """VectorInterp + the packed 64-bit load AND store: an access marked
+    `_vec_pack=(lanes, elem_bytes)` gathers/scatters `lanes` contiguous packed
+    elements through one register, modelling the hardware's contiguous packed DMEM
+    (the interpreter stores each element at its own byte address).
+
+    The load is R4.1's (dot/reduction only ever READ packed data). R4.2's
+    elementwise kernels also WRITE, so the symmetric scatter lives here too --
+    additive, and inert for R4.1 because dot/reduction never mark a store."""
 
     def _exec_data(self, ins, c, mem, regs):
         pk = getattr(ins, '_vec_pack', None)
@@ -64,6 +68,20 @@ class PackedVectorInterp(_vv.VectorInterp):
                 e = mem.get(base + i * eb, 0) & emask
                 packed |= e << (i * eb * 8)
             regs[ins.dest.name] = _vv.ir_interp._to_signed(packed)
+        elif c == 'IRStore' and pk is not None:
+            # Scatter: unpack `lanes` fields out of the 64-bit value and write each
+            # to its own element address. Each lane is truncated EXACTLY as the
+            # scalar store would be (`_trunc(v, eb, unsigned=False)`), so the
+            # vector and scalar forms leave byte-identical memory -- which is what
+            # the differential then checks.
+            lanes, eb = pk
+            base = self._val(mem, regs, ins.base) + self._val(mem, regs, ins.offset)
+            packed = self._val(mem, regs, ins.src) & _vv._MASK64
+            bits = 8 * eb
+            emask = (1 << bits) - 1
+            for i in range(lanes):
+                mem[base + i * eb] = _vv.ir_interp._trunc(
+                    (packed >> (i * bits)) & emask, eb, unsigned=False)
         else:
             super()._exec_data(ins, c, mem, regs)
 

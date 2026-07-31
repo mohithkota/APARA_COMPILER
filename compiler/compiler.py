@@ -580,26 +580,31 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
     from loopopt.pipeline import loop_invariant_code_motion   # M10: framework LICM (see above)
     _ir0   = list(ir_gen.instructions)
 
-    # ── R4.1: automatic dot-product / sum-reduction vectorization ───────────────
-    # Runs FIRST (Loop Analysis -> Kernel Detection -> Vector Legality ->
-    # Profitability -> Vectorization), so the vectorized IR then flows through the
-    # existing scalar optimizer / scheduler / bundler / backend unchanged. Each
-    # kernel is committed only after the packed differential oracle proves it
-    # behaviour-identical and it compiles spill-free; otherwise that loop stays
-    # scalar. A function with no committed kernel is byte-identical to today, so
-    # scalar compilation is unchanged whenever vectorization is rejected.
+    # ── R4.1/R4.2: automatic vectorization (ONE pipeline, several clients) ─────
+    # `vectorize_all_module` runs the generic vector pipeline (vector_pipeline.py)
+    # with every registered vectorizer: R4.1's dot-product/sum-reduction client and
+    # R4.2's elementwise client. The pipeline is Kernel Detection -> Legality ->
+    # Profitability -> Transformation -> Validation -> Compile -> Commit/Rollback,
+    # and it is the SAME code for every client -- adding a vectorizer adds no
+    # pipeline logic here.
+    #
+    # It runs FIRST, so the vectorized IR then flows through the existing scalar
+    # optimizer / scheduler / bundler / backend unchanged. Each kernel is committed
+    # only after the packed differential oracle proves it behaviour-identical and it
+    # compiles spill-free; otherwise that loop stays scalar. A function with no
+    # committed kernel is byte-identical to the scalar compiler, so scalar
+    # compilation is unchanged whenever vectorization is rejected.
     # APARA_NO_VECTORIZE disables it; any error keeps the scalar IR.
     if not os.environ.get('APARA_NO_VECTORIZE'):
         try:
-            from dot_vectorizer import vectorize_module
-            _vec_ir, _vstats, _vreps = vectorize_module(_ir0, global_base=global_base)
+            from dot_vectorizer import vectorize_all_module
+            from vector_pipeline import format_reports
+            _vec_ir, _vstats, _vreps = vectorize_all_module(_ir0,
+                                                            global_base=global_base)
             if _vstats.vectorized:
                 _ir0 = _vec_ir
                 if verbose:
-                    print(f"[vectorize] {_vstats.vectorized} kernel(s) vectorized:")
-                    for _vr in _vreps:
-                        if _vr.committed:
-                            print("   ", repr(_vr))
+                    print("[vectorize] " + format_reports(_vstats, _vreps))
         except Exception:
             pass                                # vectorization never breaks the build
 
