@@ -84,9 +84,15 @@ def test_eligibility():
     check("U=1 is rejected (nothing to expand)",
           not ok and why == 'unroll-factor-1')
 
+    # R8.1: dot products chain `$dot $accumulate` exactly as reductions chain
+    # `$vreduce` + add, so they are now ELIGIBLE. Integer addition is associative
+    # either way, which is what makes the regrouping exact for both.
     ok, why = rae.eligible(FakePlan(kind='dot-product'), 8)
-    check("a dot product is rejected (not a reduction)",
-          not ok and why.startswith('not-a-reduction'))
+    check("a dot product is now ELIGIBLE (R8.1)", ok and why == 'ok')
+
+    ok, why = rae.eligible(FakePlan(kind='saxpy'), 8)
+    check("a non-accumulating kernel is still rejected",
+          not ok and why.startswith('not-an-accumulating-kernel'))
 
     # the restriction the milestone asks for by name: float addition is not
     # associative, so regrouping the accumulation would change the result.
@@ -239,11 +245,13 @@ def test_recurrence():
 
 def test_non_interference():
     print("nothing but integer vector reductions is affected")
+    # R8.1 removed `dot vi8` from this list: dot now expands too (it chains
+    # `$dot $accumulate` identically), so it is no longer a non-interference
+    # control. The four remaining families are still untouched.
     others = [('elementwise vi16', suite.elementwise('vi16_t')),
               ('axpy vi16', suite.axpy('vi16_t')),
               ('gemm vi16', suite.gemm('vi16_t')),
-              ('conv3 vi8', suite.conv3('vi8_t')),
-              ('dot vi8', suite.dot('vi8_t'))]
+              ('conv3 vi8', suite.conv3('vi8_t'))]
     for name, src in others:
         on, _s1 = _build(src, unroll=4, no_expand=False)
         off, _s2 = _build(src, unroll=4, no_expand=True)

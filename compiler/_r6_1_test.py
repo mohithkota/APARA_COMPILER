@@ -22,6 +22,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # APARA_VECTOR_UNROLL from the environment authoritative. The realisation flip
 # itself is measured in R6_5_CROSS_ITERATION_SCHEDULING.md.
 os.environ.setdefault('APARA_VECTOR_UNROLL', '1')
+# R8.1: expansion changes which realisation `dot` receives, so its compact loop
+# (and therefore `r.hot`) can disappear. The R6.1 properties under test do not
+# depend on expansion, so it is pinned OFF here rather than any check weakened.
+os.environ.setdefault('APARA_NO_ACC_EXPAND', '1')
 
 import bundler as _b
 from codegen import CodeGen

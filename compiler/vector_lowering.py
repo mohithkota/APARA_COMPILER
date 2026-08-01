@@ -308,30 +308,61 @@ def _acc_store(slot, value_temp, elem_bytes=8):
 def build_vector_body(plan):
     """The straight-line packed vector instructions that process the first
     `chunks*lanes` elements and store the partial accumulator. The kept scalar
-    loop (with IV re-initialised to chunks*lanes) handles the remainder."""
+    loop (with IV re-initialised to chunks*lanes) handles the remainder.
+
+    R8.1: the fully-unrolled realisation chains ALL `chunks` accumulates through
+    one register, which makes the dependence chain exactly `chunks` long. That
+    chain -- not the machine -- sets the bundle count: measured on `dot vi8`, 28
+    bundles for 72 instructions against a width bound of 9. Accumulator expansion
+    (R6.6, previously only wired into the COMPACT realisation and only for
+    sum-reduction) is reused here for both kinds."""
+    import reduction_accumulator_expansion as _rae
+    from ir import IRBinOp
+
+    # One accumulator per chunk is wasteful in registers; `best_accumulator_count`
+    # picks the K that minimises ceil(chunks/K) + log2(K), preferring the smaller.
+    k = _rae.best_accumulator_count(plan.chunks)
+    exp, plan.acc_expand_reason = _rae.plan_expansion(
+        plan, k, load_fn=_acc_addr_load, store_fn=_acc_store)
+    plan.acc_expand = exp is not None
+
     body = []
-    init, acc = _acc_addr_load(plan.acc_slot, plan.signed,
-                               elem_bytes=plan.acc_bytes)
-    body += init
+    if exp is None:
+        init, acc = _acc_addr_load(plan.acc_slot, plan.signed,
+                                   elem_bytes=plan.acc_bytes)
+        body += init
+        accs = None
+    else:
+        body += exp.pre
+        accs = exp.accs
+
     for c in range(plan.chunks):
+        acc_in = acc if accs is None else accs[c % len(accs)]
         if plan.kind == 'dot-product':
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
             body += _packed_load(aT, plan.array_slots[0], c, plan.lanes, plan.eb, plan.signed)
             body += _packed_load(bT, plan.array_slots[1], c, plan.lanes, plan.eb, plan.signed)
-            nxt = _fresh('_vacc')
+            nxt = _fresh('_vacc') if accs is None else acc_in
             body.append(IRVecDot(nxt, aT, bT, '$' + plan.vtype,
-                                 accumulate=True, accum=acc))
-            acc = nxt
+                                 accumulate=True, accum=acc_in))
+            if accs is None:
+                acc = nxt
         else:  # sum-reduction
             aT = _fresh('_vpa')
             body += _packed_load(aT, plan.array_slots[0], c, plan.lanes, plan.eb, plan.signed)
             partial = _fresh('_vred')
             body.append(IRVecReduce(partial, aT, '$' + plan.vtype, '+'))
-            nxt = _fresh('_vacc')
-            from ir import IRBinOp
-            body.append(IRBinOp(nxt, '+', acc, partial))
-            acc = nxt
-    body += _acc_store(plan.acc_slot, acc, elem_bytes=plan.acc_bytes)
+            if accs is None:
+                nxt = _fresh('_vacc')
+                body.append(IRBinOp(nxt, '+', acc, partial))
+                acc = nxt
+            else:
+                body.append(IRBinOp(acc_in, '+', acc_in, partial))
+
+    if exp is None:
+        body += _acc_store(plan.acc_slot, acc, elem_bytes=plan.acc_bytes)
+    else:
+        body += exp.post
     return body
 
 

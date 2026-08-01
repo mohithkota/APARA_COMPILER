@@ -21,6 +21,11 @@ from axpy_vectorizer import vectorize_axpy_module, AxpyTransform
 from vector_lowering import differential_packed
 import vector_compact_loop as _vcl
 import vector_pipeline
+# R8.1: expansion shifts the emitted size of the unrolled realisation and hence
+# the probe's choice. This suite asserts the COMPACT form stays reachable, an
+# R4.2.5/R4.3 property, so it is measured with expansion pinned OFF.
+os.environ.setdefault('APARA_NO_ACC_EXPAND', '1')
+
 
 _fails = []
 def check(n, c):

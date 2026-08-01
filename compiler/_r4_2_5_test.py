@@ -16,6 +16,13 @@ import sys
 import copy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# R8.1: accumulator expansion adds a prologue/epilogue to the FULLY-UNROLLED
+# realisation, which changes emitted size and therefore which realisation the
+# R4.2.5 probe selects. The property under test here is the PROBE's, so it is
+# measured with expansion pinned OFF -- the same remedy R6.4 used when
+# unrolling shifted this same assertion.
+os.environ.setdefault('APARA_NO_ACC_EXPAND', '1')
+
 
 import pycparser
 from compiler import _FAKE_TYPEDEFS

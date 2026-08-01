@@ -89,8 +89,11 @@ def eligible(plan, u):
     naming the property that failed, never a bare False."""
     if _disabled():
         return False, 'disabled:APARA_NO_ACC_EXPAND'
-    if plan.kind != 'sum-reduction':
-        return False, f'not-a-reduction:{plan.kind}'
+    # R8.1: dot products chain `$dot $accumulate` exactly as reductions chain
+    # `$vreduce` + add, and integer addition is associative either way, so the
+    # same regrouping is exact for both kinds.
+    if plan.kind not in ('sum-reduction', 'dot-product'):
+        return False, f'not-an-accumulating-kernel:{plan.kind}'
     if u < 2:
         return False, 'unroll-factor-1'
 
@@ -118,15 +121,41 @@ def eligible(plan, u):
     return True, 'ok'
 
 
-def plan_expansion(plan, u):
-    """(ExpansionPlan or None, reason)."""
+def best_accumulator_count(chunks, cap=8):
+    """How many partial accumulators to use for a straight-line chain of
+    `chunks` accumulating operations.
+
+    With K accumulators the dependence chain is ceil(chunks/K) accumulates plus
+    a ceil(log2(K))-deep fold, so the depth is minimised somewhere in the middle
+    and grows again as K rises. Pick the K that minimises it, preferring the
+    SMALLEST such K because every extra accumulator is another simultaneously
+    live register -- and R7.0 established register pressure as this compiler's
+    binding constraint."""
+    best, best_k = None, 1
+    k = 1
+    while k <= min(chunks, cap):
+        depth = -(-chunks // k) + (k - 1).bit_length()
+        if best is None or depth < best:
+            best, best_k = depth, k
+        k *= 2
+    return best_k
+
+
+def plan_expansion(plan, u, load_fn=None, store_fn=None):
+    """(ExpansionPlan or None, reason).
+
+    `load_fn`/`store_fn` default to the compact loop's slot accessors. The
+    fully-unrolled lowering passes its own (signature-compatible) pair so that
+    ONE implementation of the transform serves both realisations."""
     ok, reason = eligible(plan, u)
     if not ok:
         return None, reason
+    load_fn = load_fn or _vcl.slot_load
+    store_fn = store_fn or _vcl.slot_store
 
     # ── prologue: acc0 takes the live accumulator, the rest start at zero ──
-    pre, val = _vcl.slot_load(plan.acc_slot, plan.signed,
-                              elem_bytes=plan.acc_bytes)
+    pre, val = load_fn(plan.acc_slot, plan.signed,
+                       elem_bytes=plan.acc_bytes)
     pre = list(pre)
     accs = []
     a0 = _fresh('_vxa')
@@ -152,7 +181,6 @@ def plan_expansion(plan, u):
         if len(level) % 2:
             nxt.append(level[-1])
         level = nxt
-    post += _vcl.slot_store(plan.acc_slot, level[0],
-                            elem_bytes=plan.acc_bytes)
+    post += store_fn(plan.acc_slot, level[0], elem_bytes=plan.acc_bytes)
 
     return ExpansionPlan(u, accs, pre, post), 'ok'
