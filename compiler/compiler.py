@@ -702,6 +702,30 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         except Exception:
             pass                                # SWP never regresses the fallback
 
+    # ── R6.8: vector software pipelining (elementwise / AXPY only) ─────────────
+    # Modulo-schedules the COMPACT vector loop of the two kernel families R6.6A
+    # measured as profitable, reusing R2.5's scheduler and R2.8's compact kernel
+    # realiser unchanged. Reduction, GEMM, convolution and dot are excluded by
+    # `vector_swp.eligible_loop` and are provably untouched. Accepted only if R2.8
+    # commits (which already implies a verified modulo schedule and a matching
+    # differential), the program still compiles with ZERO spills, and the
+    # estimated dynamic bundle count falls. APARA_NO_VECTOR_SWP=1 disables it.
+    if _prod_ir is not None and _tiers and not os.environ.get('APARA_NO_VECTOR_SWP'):
+        try:
+            from vector_swp import apply_vector_swp, format_vector_swp
+            _vs_ir, _vs_recs, _vs_sum = apply_vector_swp(
+                _prod_ir, global_base=global_base)
+            if _vs_sum.changed:
+                _cg4 = CodeGen(global_base=global_base)
+                _b4 = _cg4.generate(list(_vs_ir), global_base=global_base)
+                if not _cg4.spilled:            # zero-spill invariant re-checked
+                    body = _b4
+                    _prod_ir = _vs_ir
+                    if verbose:
+                        print("[vector-swp]\n" + format_vector_swp(_vs_recs, _vs_sum))
+        except Exception:
+            pass                                # never regresses the fallback
+
     # ── R3.2: superblock / trace scheduling (enlarge scheduling regions) ────────
     # Merges single-entry/single-exit straight-line block chains (e.g. a loop body
     # and its IV-increment, split by a dead label) so the existing scheduler and

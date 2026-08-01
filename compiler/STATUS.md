@@ -6109,3 +6109,58 @@ Report: `R6_7_DELIVERY.md`.
   worsens as more vector optimizations land. `APARA_SUPERBLOCK_MODULE_SCOPE=1`
   restores pre-R6.7 behaviour and cost. Unimplemented mitigations: cache trials by
   IR identity, search only the finally-chosen candidate, leave-one-out.
+
+## R6.8 — Vector Software Pipelining (elementwise / AXPY)  (2026-08-01) ✅ DONE
+
+**Vector loops are now MODULO-SCHEDULED.** axpy vi16 1550 -> **1238 ticks
+(−20.1%)**, axpy vu16 1806 -> **1559 (−13.7%)**; dyn IPB 1.605 -> 2.005, vector
+loop occupancy 19.6% -> 33.0%. Suite 136820 -> 136261. 38/38, 16/16 unit suites,
+crosscheck PASS. New: `vector_swp.py`, `_r6_8_test.py`. Report: `R6_8_DELIVERY.md`.
+
+- **NO NEW SCHEDULER.** R2.5 modulo scheduler + R2.8 compact MVE realiser +
+  dependence graph + disambiguator + differential + rollback all reused. Runs on
+  the PRODUCTION-OPTIMIZED IR after R3.1 (not on `_ir0` like R3.1, which splices
+  whole function slices — that would discard LICM/IVSR/loop-reg for the scalar
+  init loops that share `main` with the vector kernel).
+- **KIND CANNOT SELECT THE FAMILIES:** convolution reports `vector-add`/
+  `elementwise` exactly like elementwise, and GEMM reports `saxpy`/`gemm` exactly
+  like AXPY. Eligibility is decided STRUCTURALLY on the emitted loop: `vcl_`
+  header + has `IRVecArith` + no `IRVecReduce`/`IRVecDot` (excludes reduction,
+  dot) + no `|`/`>>` (excludes the R6.3 sliding window) + innermost & counted
+  (excludes GEMM = `no-counted-iv`). conv3/dot/gemm additionally have NO compact
+  vector loop at all.
+- **BLOCKER FIXED — INVARIANTS ARE NOT ROTATING REGISTERS.** R2.8 declined every
+  vector loop with `unseeded-rotating-reg:_vct23~p0` and fell back to FULL UNROLL
+  (not pipelining at all). `_vct23 = &stack[FP-392]` is the IV-slot address,
+  defined immediately BEFORE the loop header — loop-INVARIANT. Modulo variable
+  expansion was renaming it per bank, creating a read-before-write bank-0 copy
+  that `_codegen_keeps_alive` rightly refuses. **A value the loop never writes has
+  no per-iteration version** -> `_kernel_invariants` + `_seed_cache(...,
+  invariant_names)` share them across banks like recurrences. Renaming fix in the
+  realiser, NOT a modulo-scheduling change. Shared with scalar SWP, so the
+  124-program crosscheck is the load-bearing check.
+- **A FAKE 90% WIN CAUGHT BEFORE IT SHIPPED:** the first estimate read 702 -> 76
+  dynamic bundles. The register form promotes the WHOLE function first, and
+  promotion erases the memory-slot IV that `analysis_iv` needs, so UNTOUCHED
+  loops' frequencies collapsed 64 -> 1 (known R2.6 interaction). Estimator now
+  costs pipelined candidates with the trip counts proved on the UNPIPELINED IR +
+  the realiser's own reported kernel trip, and refuses to guess. Kept as a
+  regression test (naive estimate still reads 55 vs the honest 584).
+- **THE ZERO-SPILL GATE, NOT THE SCHEDULER, LIMITS THIS MILESTONE:** of 12
+  candidate programs, 4 have no compact loop (8-bit markers) and **4 of the 6
+  eligible pipeline cleanly then SPILL** (elementwise at all 4 markers, axpy
+  vi32/vu32). Only axpy vi16/vu16 commit. `stages=2` banks of a body already
+  holding packed 64-bit values overflows 28 registers; axpy survives because its
+  body is smallest (11 ops vs elementwise's 15).
+- **HONEST ATTRIBUTION vs R6.6A:** projection was 7 -> 4 bundles/iter (−43%);
+  MEASURED 112 -> 98 dynamic loop bundles (−12.5%) — MII is a bound and the
+  compact kernel also pays a 9-op prologue and 13-op epilogue it does not model.
+  And **44% of the program gain is NOT pipelining**: 726 -> 663 from
+  `promote_function` alone, 663 -> 584 from the modulo schedule. Reporting −20.1%
+  as pure SWP would overstate it by nearly half.
+- **ELEMENTWISE — the family R6.6A rated HIGHEST (−57%) — does not pipeline on any
+  marker.** Its schedule is found and verified at II = MII = 6; it dies on
+  register pressure. That is the clearest model-vs-implementation gap.
+- **FOLLOW-ON:** reduce the compact kernel's register pressure (longer II to lower
+  simultaneously-live banks, or spill-aware bank allocation) — every remaining
+  opportunity is behind the spill gate.

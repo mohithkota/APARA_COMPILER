@@ -130,11 +130,34 @@ def _emit_window(graph, kernel, sched, T, w, U, cache):
     return body
 
 
-def _seed_cache(recur_names, U):
-    """A rename cache pre-seeded so every loop-carried recurrence register maps to
-    itself in ALL U banks (shared), while all other temps expand per bank."""
+def _kernel_invariants(graph, kernel):
+    """Names the kernel READS but never WRITES -- loop-invariant live-ins.
+
+    R6.8. Modulo variable expansion renames a value per rotating bank because
+    each iteration has its own version of it. A value the loop never writes has
+    no per-iteration version: there is exactly one, defined before the loop. It
+    must therefore be SHARED across banks, like a recurrence register.
+
+    Rotating it instead produces a bank-0 copy that the kernel body reads before
+    writing, which `_codegen_keeps_alive` correctly refuses (codegen has nothing
+    to keep alive), so the compact kernel was declined and the realiser fell back
+    to full unroll. That is what blocked every vector loop: the compact vector
+    loop addresses its induction-variable slot through an `IRLoadAddr` hoisted
+    above the loop, a textbook invariant."""
+    written, read = set(), set()
+    for op in kernel.ops:
+        ins = graph.instrs[op]
+        written.update(dest_names(ins) or ())
+        read.update(src_names(ins) or ())
+    return read - written
+
+
+def _seed_cache(recur_names, U, invariant_names=()):
+    """A rename cache pre-seeded so every loop-carried recurrence register -- and
+    every loop-invariant live-in -- maps to itself in ALL U banks (shared), while
+    all other temps expand per bank."""
     cache = {}
-    for name in recur_names:
+    for name in set(recur_names) | set(invariant_names):
         shared = Temp(name)
         for b in range(U):
             cache[(name, b)] = shared
@@ -263,7 +286,7 @@ def realize_mve_kernel(instrs, lo, hi, desc, graph, kernel, sched, recur_names):
     lblk = graph.cfg.blocks[desc.latches[0]]
     region_lo, region_hi = hblk.lo, lblk.hi
 
-    cache = _seed_cache(recur_names, U)
+    cache = _seed_cache(recur_names, U, _kernel_invariants(graph, kernel))
 
     # prologue: windows [0 .. S-2]
     prologue = []
@@ -427,11 +450,17 @@ def _realize_form(sub, plan, form, rep):
     return None
 
 
-def pipeline_mve_function(instrs, lo, hi, stats, reports):
+def pipeline_mve_function(instrs, lo, hi, stats, reports, select=None):
     """Pipeline the first eligible loop of one function as a COMPACT kernel,
     preferring the register form (promote first for a lower II) and falling back to
     R2.7's full-unroll realiser (then to the memory form) so coverage never
-    regresses below R2.7. Returns the (possibly transformed) function slice."""
+    regresses below R2.7. Returns the (possibly transformed) function slice.
+
+    `select` (R6.8) is an optional predicate on the loop descriptor. When given,
+    only loops it accepts are considered -- the vector SWP client needs to target
+    ONE specific loop (the vector kernel), not whichever loop happens to come
+    first, which in a vectorized program is a scalar initialisation loop. Default
+    None reproduces the pre-R6.8 behaviour exactly."""
     fname = getattr(instrs[lo], 'name', '?')
     sub = instrs[lo:hi + 1]
     descs = discover_function(sub, 0, len(sub) - 1)
@@ -441,6 +470,8 @@ def pipeline_mve_function(instrs, lo, hi, stats, reports):
     graph = DependenceGraph(sub, 0, len(sub) - 1, disambiguator=disamb)
 
     for d in descs:
+        if select is not None and not select(d, sub, graph):
+            continue
         stats.loops += 1
         rep = MVEReport(fname, d.header)
         reports.append(rep)
