@@ -191,6 +191,7 @@ range**, the identical constant `_gen_IRLoadAddr` tests at line 727 and that
 **File 2 — `compiler/_r9_1_test.py`** (new unit suite)
 
 * correctness: two `IRLoadAddr` with equal offset collapse; with different offsets do not; a small offset is left alone (threshold); the leader dominates every replaced use.
+* **tripwire (§10):** assert `IRLoadAddr.__init__` takes exactly `(self, dest, fp_offset)`, so any future base operand / frame id fails here and points at `gvn._expr_key`.
 * pass interaction: `mem2reg` still promotes the same slots after collapsing (guards the use-based escape analysis relied on in §2); `loop_reg` unchanged.
 * effect: `gemm vi16` shows 36 → 6 `IRLoadAddr` and a mcode reduction.
 * non-interference: kernels with no large-offset duplicates are byte-identical with the switch on and off.
@@ -214,3 +215,62 @@ comparison asserting zero regressions.
 * `scalar bubblesort` has 19 duplicated offsets but all small, so the threshold
   excludes it — it is unaffected either way. That is the intended behaviour, not
   an oversight.
+
+## 10 — Why the key is `('addr', fp_offset)` and not `('addr', function, fp_offset)`
+
+Asked as a future-proofing question: FP is invariant today, but nested functions,
+split frames, coroutine frames or dynamic allocas could change that. Should the
+key carry the function or a frame id?
+
+**No — and not merely because it is unnecessary today.**
+
+**(a) Function identity is redundant by construction.**
+`global_value_numbering` iterates `for lo, hi in func_slices(instrs)`, building a
+fresh `cfg`, `dom` and `du` per slice, and `_gvn_function` creates `table = {}`
+fresh on entry. **The table is per-function-slice.** Two keys can only ever be
+compared if inserted into the same table, and a table only ever sees one
+function, so `current_function` would be a *constant in every comparison that can
+occur*. `stack_frame_id` is the same value under another name (one frame per
+function today).
+
+**(b) It protects against none of the four scenarios**, because every one of them
+is an *intra*-function hazard:
+
+| scenario | where the hazard lives | does `('addr', fn, off)` catch it? |
+|---|---|---|
+| nested functions sharing a parent frame | `parent_FP + off` vs `own_FP + off`; if inlined, both in one function | **No** — same `fn` |
+| split stack frames | two base registers in one function | **No** — same `fn` |
+| coroutine frames | FP rewritten mid-function at a suspension point | **No** — same `fn` either side |
+| dynamic allocas | harmless if FP is fixed; hazardous only if offsets become SP-relative and SP moves mid-function | **No** — same `fn` |
+
+Adding it would create the *appearance* of frame-awareness while catching nothing
+on the list, and would discourage the next reader from looking harder. It is
+rejected as security theatre, not as premature optimisation.
+
+**(c) What actually makes `fp_offset` sufficient is structural, not incidental.**
+`IRLoadAddr.__init__` takes exactly `(self, dest, fp_offset)` — **the node has no
+base operand** — and across all 33 IR node types none names or writes a frame
+base (`IRFuncBegin` carries `frame_size`, a size, not a base). In this IR,
+varying the frame base is not merely absent, it is **inexpressible**. `fp_offset`
+is therefore the only thing that can vary, which is exactly the condition for it
+to canonicalise the value alone.
+
+**(d) A fail-safe already covers the clean implementations.** `_expr_key` ends
+with `return None` — unknown node types are excluded from value numbering by
+default. A coroutine or split-frame address introduced as a NEW node type is
+automatically safe with no change here. The codebase already follows that
+convention: `IRVaStart` is documented as `FP + offset` and is a *separate node*,
+not a widened `IRLoadAddr`.
+
+**(e) The one genuinely dangerous path** is widening `IRLoadAddr` itself — adding
+a base operand, or keeping the signature while letting the implicit base vary.
+No function-level key protects against that either.
+
+**Recommendation — a tripwire, not a wider key.** Add to `_r9_1_test.py` an
+assertion that `IRLoadAddr.__init__` takes exactly `(self, dest, fp_offset)`.
+Anyone who adds a base operand, a frame id, or a second base register gets a test
+failure naming `gvn._expr_key` as the thing to revisit. That fails **at the moment
+of the change, in the right place**, instead of silently producing a key that
+looks frame-aware but is not. If a base operand is ever added, the correct key
+becomes `('addr', _operand_key(base), fp_offset)`, which reduces to existing
+machinery and inherits `_operand_key`'s `None`-for-multiply-defined behaviour.
