@@ -6223,3 +6223,52 @@ rather than create them.
   alive. The residual is a DATA pressure problem, not an address one.
 - **NEXT:** fix the R6.8 pipelined-axpy defect (reproducer above), then re-open
   the gate; and separately find the latent bug behind defect #1.
+
+## R8.0 — Wide Vector Memory ($u128/$u256)  (2026-08-01) ⛔ STOPPED AT PHASE 1 — PREMISE DISPROVED
+
+**No code written.** The milestone's stop condition ("if register pressure does not
+decrease, stop immediately") is met three times over.
+Report: `R8_0_WIDE_MEMORY_INVESTIGATION.md`.
+
+- **THE PLUMBING ALREADY EXISTS AND IS UNUSED.** `IRLoadWide`/`IRStoreWide`,
+  `_gen_IRLoadWide/_gen_IRStoreWide`, `__ld128/__ld256/__st128/__st256` intrinsics,
+  `borrow_pair/borrow_quad`, VLOAD/VSTORE latency classes, capability DB entries --
+  all present. The gap is ONE layer: **the vectorizer never constructs an
+  `IRLoadWide`.** PROVEN: **0 of 38** emitted programs contain `$u128`/`$u256`.
+- **BLOCKER 1 -- ILLEGAL ON OUR DATA (experimental, not inferred).** A probe using the
+  existing `__ld128` intrinsic on `vi8_t a[64]` gives
+  `Error: Unaligned address in load nbytes= 16, addr= 32696`.
+  `32696 mod 16 = 8`. Cause is structural: `startup_code` sets `FP = SP = 0x7FF8`
+  and **`0x7FF8 mod 16 = 8`**, so with all slot offsets multiples of 8 **NO stack
+  object can ever be 16- or 32-byte aligned.** Fixing = change the frame base + round
+  frame sizes to 32B = an ABI change that moves every address in every program and
+  breaks the byte-identical 124-program crosscheck.
+- **BLOCKER 2 -- REGISTER PRESSURE RISES, WHICH IS FATAL.** Measured with the R7.0
+  prober on identical work (move 4 contiguous packed words):
+  **`$ld ($u256)` x1 = 7 live registers; `$ld ($i64)` x4 = 3.** Inherent, not an
+  artifact: a wide load makes all N words live SIMULTANEOUSLY in an N-consecutive
+  group, where narrow loads let each be consumed and freed. R7.0 proved register
+  pressure is THE binding constraint (demand 35-37 vs pool 28) -- this makes it worse.
+- **BLOCKER 3 -- IT RELIEVES A NON-BINDING CONSTRAINT.** Bundle bound is
+  `max(ceil(N/8), ceil(M/4))`. All six shipped vector regions are **WIDTH-bound** at
+  27-40% memory ops (elementwise 40.2%, axpy 36.3%, dot 34.7%, reduction 30.8%,
+  conv3 29.5%, gemm 38.9%). Shrinking M does not shrink bundles.
+- **BLOCKER 4 -- THE SIMULATOR CANNOT VALIDATE IT.** `AddrIsAligned` (`McodeUtils.cpp`
+  :564) has `case 32: (byte_addr & 0x1)` -- should be `& 0x1f`. **$u256 misalignment
+  is NOT caught**, so any wide work validated only in simulation would be broken on
+  hardware. ($u128's `case 16: & 0xf` IS correct, which is why the probe errored.)
+- **UNVERIFIED CONSTRAINT FOUND:** `RegAlloc.borrow_pair/borrow_quad` cite "ISA doc
+  12.2" for even-index / multiple-of-4 register groups. **That section does not exist**
+  in any `.tex`/`.pdf` in this repo (the only "multiple of 4" text is about BUNDLE
+  addressing). The compiler is stricter than any documented rule -- safe, but confirm
+  against the authoritative ISA before building on it.
+- **CORRECTS MY OWN R7.1 CLAIM:** I had said wide loads would "raise the ceiling to 8
+  AND cut register pressure". The ceiling claim holds; **the register-pressure claim
+  was wrong** and is now measured wrong (7 vs 3).
+- **ANSWER -- "does this move us materially closer to 6 IPB?" NO.** Current IPB
+  0.70-1.14; wide memory leaves it ~unchanged because all regions are width-bound.
+  The real gap is not instruction mix but **not enough independent work in flight**,
+  blocked by the 28-register file. Ranked levers: (a) fix the R6.8 pipelined-axpy
+  defect R7.1 exposed so SWP can be admitted; (b) cut pipelined demand 35-37 -> 28
+  (live-range splitting for the non-rematerializable rotating-bank values);
+  (c) revisit memory width only once regions are dense enough for ceil(M/4) to bind.
