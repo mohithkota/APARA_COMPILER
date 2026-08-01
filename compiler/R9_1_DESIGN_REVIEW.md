@@ -367,5 +367,104 @@ sccp/dce -> **GVN** -> mem2reg -> LICM -> clean } -> codegen.
 ### (f) Added to the implementation plan (§8)
 
 * Run `_clean` between `global_value_numbering` and `mem2reg` in `compiler._cp`.
+  **Validate as a separate change** from the `_expr_key` addition: it affects all
+  GVN output, not only addresses (audit in §12).
 * Unit test: mem2reg promotion counts must not fall on `axpy vi32` with AVN
   enabled — this guards the interaction directly rather than by inspection.
+
+## 12 — Final audit: is inserting `_clean` between GVN and mem2reg safe?
+
+### (a) It is an INSERTION, not a move
+
+The existing `_clean` at the end of `_cp` **stays**. This narrows the risk surface
+decisively: every pass after `_cp` already receives copy-propagated, coalesced,
+DCE'd IR, so none of them can observe a novel IR *form*. Only the two passes
+between the new call site and the existing one change what they see.
+
+### (b) Every pass between GVN and codegen
+
+Inside `_cp`:
+
+| # | pass | observes `IRAssign` copies today? |
+|---|---|---|
+| 4 | `mem2reg` | **Yes** — and is *tainted* by them (§11d). It also *emits* `IRAssign` (lines 167, 172). |
+| 5 | `loop_invariant_code_motion` (`licm.py`) | **Yes** — `IRAssign` is in `_HOISTABLE` (line 22) and handled by `_key` (line 39). |
+| — | SCCP + DCE + GVN rerun | **Not in the committed pipeline** — guarded by `APARA_MEM2REG_RERUN`, documented "Measurement knob only (default OFF)". |
+| 6 | `_clean` = `copy_propagate` → `copy_coalesce` → `dead_code_eliminate` | **Yes** — copies are its input. |
+
+After `_cp` returns: tier selection → `apply_production_swp` (R3.1) → `CodeGen` →
+`apply_vector_swp` (R6.8) → `CodeGen` → `apply_superblock_scheduling` (R3.2,
+internally `superblock_module` + R2.4 `schedule_module`) → `CodeGen` (register
+allocation + R7.1 rematerialization).
+
+**None of these observe `IRAssign` copies from GVN**, because step 6 has already
+removed them. They are unaffected in form.
+
+**SCCP is unaffected entirely** — it runs at `compiler.py:627`, *before* GVN at 628.
+
+### (c) Why removing the copies earlier is semantics-preserving
+
+* `copy_propagate` rewrites uses of `t` (where `t := s`, single-def) to `s` —
+  value-identical by the definition of a copy.
+* `copy_coalesce` merges copy chains; same argument.
+* `dead_code_eliminate` removes pure instructions whose results are unused;
+  `IRAssign` is pure.
+
+All three are **already applied to this exact IR** at the start and end of `_cp`.
+Running them at an intermediate point applies the same transformation to the same
+program earlier — it cannot construct a state the pipeline does not already reach.
+
+The strongest statement: **the reordered pipeline's output is in the same language
+as the current pipeline's output** — copy-free IR carrying mem2reg promotions. The
+only difference is *which* slots were promoted, and promoting more slots is
+mem2reg's ordinary behaviour, exercised on every program whose addresses were
+never duplicated in the first place.
+
+### (d) Dependence on temp existence, identity, or count — the specific question
+
+Checked and **none found**:
+
+* All five passes in the affected window (`mem2reg`, `licm`, `coalesce`,
+  `copyprop`, `dce`) have **zero module-level mutable state** — each is a pure
+  function `instrs → instrs`. No cross-pass map keyed by temp name or instruction
+  index can exist between them.
+* No pass counts temporaries (`len(temps)`, `n_temps`, `temp_count` — no hits
+  anywhere in the tree).
+* No pass requires a *specific* temp to be present.
+* Fresh-temp counters (`_vec_n`, `_lbl_n`, `_iv_n`, `_rp_n`, `_mve_n`) allocate
+  **new** names and are reset per module by each vectorizer client and by
+  `pipeline_mve_module`. They never look up an existing temp by index or ordinal.
+* Name-based lookups that do exist downstream — `pipeline_mve._rt_temp`
+  (`f"{name}~p{bank}"`) and R7.1's `self._remat[ir.dest.name]` — key on whatever
+  names are present. Neither requires a particular name or a particular count.
+
+**Historical precedent supports this rather than contradicting it.** The two known
+bugs of exactly this class in this codebase — LICM keying maps by bare temp name
+across functions, and `loop_reg` keying `promoted_offsets` by mutable instruction
+index — were both fixed, and both live in passes that run **before** `_cp`, hence
+before GVN. The known-fragile code is outside the affected window.
+
+### (e) The one real risk, and it is not correctness
+
+Removing copies changes instruction counts, and both the R4.2.5 realisation probe
+and the R6.4.1 adaptive unroll selector choose by measured emitted size /
+estimated dynamic bundles. So the reorder **can shift a realisation choice** —
+precisely the perturbation that cost `reduction vi16` 21 ticks in R8.1.
+
+This is a performance risk, not a correctness one, and it has been measured:
+
+| | suite ticks | wins | regressions | spills |
+|---|---|---|---|---|
+| AVN alone | 131 457 | 12 | 0 | 0 |
+| **AVN + `_clean` before mem2reg** | **131 455** | **12** | **0** | **0** |
+
+38/38 PASS in both arms.
+
+### (f) Conclusion
+
+**No pass between GVN and codegen depends on the existence, identity or count of
+temporaries rather than on SSA/dataflow. The pipeline reorder is safe.**
+
+It must still be validated as a change in its own right — separately from the
+`_expr_key` addition — because it affects *all* GVN output, not only addresses.
+Added to §8's validation list.
