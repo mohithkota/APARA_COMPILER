@@ -68,6 +68,13 @@ def _disabled():
     return os.environ.get('APARA_NO_VECTOR_SWP', '') not in ('', '0')
 
 
+def _unblock():
+    """Admit pipelines that only ever evict rematerializable values. OFF by
+    default: it currently exposes an R6.8 defect (see the gate in
+    `apply_vector_swp`). Kept as a one-flag reproducer for that work."""
+    return os.environ.get('APARA_VSWP_UNBLOCK', '') not in ('', '0')
+
+
 class _RelaxedKernelScope:
     """Temporarily let `modulo.build_kernel` accept vector arithmetic.
 
@@ -223,7 +230,26 @@ def _estimated_dynamic_bundles(ir, global_base, freq_override=None):
     from codegen import CodeGen
     cg = CodeGen(global_base=global_base)
     body = cg.generate(copy.deepcopy(ir), global_base=global_base)
-    if cg.spilled:
+    # R7.1 NOTE -- this gate deliberately still uses `spilled`, NOT the narrower
+    # `spilled_to_memory`, even though rematerialization now makes several of
+    # these pipelines memory-spill-free.
+    #
+    # Relaxing it admits `axpy vi32` / `axpy vu32`, whose pipelined code had never
+    # executed before (the spill gate had always rejected it). It FAILS simulator
+    # verification: "5 PostCondition comparisons performed, 4 declared" -- the
+    # result-writing code runs more than once, so control flow through the
+    # pipelined loop is wrong. Rematerialization is not the cause: with the SWP
+    # pass disabled the same kernel passes with rematerialization ON, and the
+    # emitted mcode is byte-identical with it on and off across all 18
+    # kernel/marker combinations.
+    #
+    # So this is a latent R6.8 defect that R7.1 merely makes reachable, and its
+    # own IR-level differential oracle does not detect it. Until that is fixed,
+    # R7.1 ships as a memory-traffic optimization only and admits no new
+    # pipelines. Reproduce with APARA_VSWP_UNBLOCK=1.
+    if cg.spilled and not _unblock():
+        return None
+    if cg.spilled_to_memory:
         return None
     freq, _unknown = _ia.label_frequencies(ir)
     if freq_override:

@@ -6164,3 +6164,62 @@ crosscheck PASS. New: `vector_swp.py`, `_r6_8_test.py`. Report: `R6_8_DELIVERY.m
 - **FOLLOW-ON:** reduce the compact kernel's register pressure (longer II to lower
   simultaneously-live banks, or spill-aware bank allocation) — every remaining
   opportunity is behind the spill gate.
+
+## R7.1 — Register Rematerialization  (2026-08-01) ✅ DONE (partial)
+
+**Rematerialization works and ships: spills fall on every kernel R7.0 measured
+(16 -> 6, 9 -> 1, 8 -> 0), static memory ops 154 -> 146, and axpy vi32/vu32 now
+need ZERO memory spills.** 38/38 + 3 negative controls, 18/18 unit suites,
+`pipeline_crosscheck` PASS. New: `rematerialization.py`, `_r7_1_test.py`.
+Report: `R7_1_DELIVERY.md`.
+
+**IT DOES NOT UNBLOCK ANY SOFTWARE PIPELINE, AND THAT IS DELIBERATE.**
+Success criterion 3 is NOT met. R7.1 turned out to EXPOSE two latent defects
+rather than create them.
+
+- **WHAT:** when the allocator would evict a value defined by `IRLoadAddr` with a
+  foldable offset (`-512..511`), it frees the register with NO store and rebuilds
+  it at its next use with ONE instruction (`+ reg ($i64) $r28 <off>`), no register
+  inputs. A store + reload becomes an ALU op. Eligibility is narrow ON PURPOSE:
+  the large-offset form needs a BORROWED SCRATCH register, and the moment remat
+  matters is the moment none is free. Loads are never duplicated; computed values
+  are excluded (they would keep their inputs alive).
+- **LATENT DEFECT #1 -- A NON-TERMINATING PROGRAM I CAUSED AND FIXED.** My first
+  version left `self.spilled` False for a rematerialized eviction ("nothing went
+  to memory"). But `spilled` gates TIER SELECTION, R3.2 SUPERBLOCK ACCEPTANCE and
+  the R4.2.5 REALISATION PROBES -- widening its meaning changed WHICH OPTIMIZATION
+  PATH THE WHOLE COMPILER SELECTED. `reduction vi16`'s IR went 82 -> 102 instrs
+  and the newly reachable path HANGS the simulator. **FIX: `spilled` keeps its
+  pre-R7.1 meaning (pressure forced an eviction) and IS still set; a new narrower
+  `spilled_to_memory` records real spills.** Verified after: emitted mcode is
+  BYTE-IDENTICAL with remat on/off across all 18 kernel/marker combos.
+  **The latent bug in that path is NOT fixed -- it is unreachable again.**
+- **LATENT DEFECT #2 -- THE PIPELINES THIS WOULD UNBLOCK ARE THEMSELVES WRONG.**
+  Relaxing the gate admits axpy vi32/vu32 (0 memory spills) and they FAIL:
+  `5 PostCondition comparisons performed, 4 declared` -- the result-writing code
+  runs more than once. **Remat is NOT the cause:** remat ON + SWP OFF passes
+  (1539 ticks); remat OFF + SWP ON passes; only the admitted pipeline fails. This
+  is an R6.8 defect in code that HAS NEVER EXECUTED (the spill gate rejected it at
+  R6.8 time and ever since), and R6.8's IR-level oracle passed it.
+  **Gate left CLOSED; `APARA_VSWP_UNBLOCK=1` is the one-flag reproducer.**
+- **THE NAIVE EVICTION POLICY THRASHES -- 4 POLICIES MEASURED:**
+  baseline 16/9/8 spills (ew vi16 / ew vi32 / axpy vi32);
+  action-only 6/4/3; prefer-unguarded **0/11/56**; prefer + demote-once-rebuilt
+  (**SHIPPED**) 6/1/0; prefer + demote-last-only 0/48/60. Unguarded preference
+  ping-pongs: evicted -> rebuilt at next use -> immediately preferred again. The
+  shipped policy is the only one that never regresses.
+- **CORRECTS THE R7.0 MODEL:** R7.0 predicted 4/4 recovery from
+  `peak 35 - 11 remat-free = 24 < 28`. **That subtraction was wrong** (R7.0's own
+  threats section flagged the assumption). A rematerializable value is STILL LIVE
+  -- remat is not a live-range transformation, it is a CHEAPER EVICTION.
+  **Demand is unchanged (35/37/27/36).** Recovery depends on whether a
+  recomputable victim exists for each forced eviction: axpy vi32 8/8 -> 0 memory
+  spills; ew vi32 9/8 -> 1; ew vi16 **16 evictions against a shortfall of 7**
+  (pressure is SUSTAINED there -- at the limit 19.5% of instructions vs 0% for
+  axpy) / 10 -> 6.
+- **WHAT STILL SPILLS:** rotating-bank copies of VECTOR DATA (`_vea6~p1`,
+  `_ver10~p0`). Not rematerializable -- recomputing a packed load would DUPLICATE
+  A MEMORY LOAD (unsound), and recomputing a `$v` result would keep its operands
+  alive. The residual is a DATA pressure problem, not an address one.
+- **NEXT:** fix the R6.8 pipelined-axpy defect (reproducer above), then re-open
+  the gate; and separately find the latent bug behind defect #1.

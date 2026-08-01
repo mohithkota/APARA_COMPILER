@@ -28,6 +28,7 @@ Register spilling (v6):
 
 import sys
 from ir import *
+import rematerialization as _remat            # R7.1
 
 # ── ABI-fixed names (never change) ────────────────────────────────────────────
 ZERO  = '$r0'
@@ -180,8 +181,20 @@ class CodeGen:
         self._func_ir_base     = 0
         self._current_epilogue = ''
         self._spill_map        = {}   # temp_name → FP offset of spill slot
+        # R7.1 rematerialization: temp_name → Recipe for values that can be
+        # RECOMPUTED (one instruction, no register inputs) instead of spilled.
+        self._remat            = {}   # name → Recipe        (known recomputable)
+        self._remat_pending    = {}   # name → Recipe        (evicted, owes a rebuild)
+        self._remat_rebuilt    = set()  # names already rebuilt once (anti-thrash)
+        self._remat_stats      = _remat.RematStats()
         self._spill_counter    = 0
-        self.spilled           = False   # True if any register spill happened
+        self.spilled           = False   # True if register pressure forced an eviction
+        # R7.1: true MEMORY spills only. `spilled` keeps its pre-R7.1 meaning
+        # ("pressure forced an eviction") because tier selection, superblock
+        # acceptance and the realisation probes all gate on it, and changing what
+        # it means silently changes which optimization path is selected across the
+        # whole compiler. Only the vector-SWP gate consults this narrower flag.
+        self.spilled_to_memory = False
         self._icall_counter    = 0    # unique id per indirect-call site
 
     # ── public interface ───────────────────────────────────────────────────────
@@ -196,8 +209,12 @@ class CodeGen:
         self._last_use       = {}
         self._func_ir_base   = 0
         self._spill_map      = {}
+        self._remat          = {}
+        self._remat_pending  = {}
+        self._remat_rebuilt  = set()
         self._spill_counter  = 0
         self.spilled         = False
+        self.spilled_to_memory = False
 
         for idx, ir in enumerate(ir_instructions):
             if isinstance(ir, IRFuncBegin):
@@ -301,6 +318,9 @@ class CodeGen:
             if last == local_idx:
                 self._ra.free(name)
                 self._spill_map.pop(name, None)   # clean up spill slot if spilled
+                self._remat.pop(name, None)       # R7.1: recipe dies with the value
+                self._remat_pending.pop(name, None)
+                self._remat_rebuilt.discard(name)
 
     # ── spill helpers ──────────────────────────────────────────────────────────
 
@@ -324,13 +344,29 @@ class CodeGen:
         protect: set of temp names that must NOT be evicted.
         """
         protect_set = set(protect)
-        for name, reg in self._ra.items():
-            if name not in protect_set:
-                slot = self._get_spill_slot(name)
-                self._emit(f"$st ($i64) [{FP} + {slot}] {reg}")
+        name, reg, recipe = _remat.choose_victim(self._ra.items(), protect_set,
+                                                 self._remat, self._remat_rebuilt)
+        if name is not None:
+            if recipe is not None:
+                # R7.1: recomputable -- free the register with NO store. The
+                # value is rebuilt from `recipe` at its next use: one instruction,
+                # no register inputs. `spilled` IS still set, because register
+                # pressure really did force an eviction and every pre-R7.1 gate
+                # (tier selection, superblock acceptance, the realisation probes)
+                # depends on that meaning; only `spilled_to_memory` distinguishes
+                # this from a real spill.
                 self._ra.free(name)
-                self.spilled = True
-                return
+                self._remat_pending[name] = recipe
+                self._remat_stats.evictions_avoided += 1
+                self.spilled = True          # pressure did force an eviction ...
+                return                       # ... but nothing went to memory
+            slot = self._get_spill_slot(name)
+            self._emit(f"$st ($i64) [{FP} + {slot}] {reg}")
+            self._ra.free(name)
+            self.spilled = True
+            self.spilled_to_memory = True
+            self._remat_stats.spills += 1
+            return
         raise RuntimeError(
             f"Spill failed: all {len(self._ra.items())} live temps are protected "
             f"from eviction (protect={protect_set}).  This is an internal compiler error.")
@@ -351,6 +387,18 @@ class CodeGen:
         # Already in a register — fast path
         if name in self._ra._map:
             return self._ra._map[name]
+
+        # R7.1: previously evicted but RECOMPUTABLE — rebuild, do not reload.
+        if name in self._remat_pending:
+            recipe = self._remat_pending.pop(name)
+            if not self._ra.has_free():
+                self._spill_evict(protect=(set(protect) | {name}))
+            reg = self._ra.reg(temp)
+            self._emit(recipe.emit(reg, FP))
+            self._remat[name] = recipe          # still recomputable next time
+            self._remat_rebuilt.add(name)       # no longer PREFERRED (anti-thrash)
+            self._remat_stats.recomputations += 1
+            return reg
 
         # Previously spilled — reload
         if name in self._spill_map:
@@ -659,6 +707,9 @@ class CodeGen:
         self._decl_frame    = ir.frame_size
         self._current_epilogue = f"{ir.name}_epilogue"
         self._spill_map     = {}           # reset spill tracking per function
+        self._remat         = {}           # R7.1: recipes are per function (FP-relative)
+        self._remat_pending = {}
+        self._remat_rebuilt = set()
         self._spill_counter = 0
 
         self._pending_labels.append(ir.name)
@@ -726,6 +777,12 @@ class CodeGen:
         fp_off = ir.fp_offset
         if -512 <= fp_off <= 511:
             self._emit(f"+ {dest} ($i64) {FP} {fp_off}")
+            # R7.1: this value is `FP + constant`, so it can be rebuilt anywhere
+            # in the function for one instruction with no register inputs.
+            recipe = _remat.recipe_for_loadaddr(fp_off)
+            if recipe is not None:
+                self._remat[ir.dest.name] = recipe
+                self._remat_stats.tracked += 1
         else:
             scr = self._safe_borrow(protect=[ir.dest.name])
             self._load_const(scr, fp_off)
