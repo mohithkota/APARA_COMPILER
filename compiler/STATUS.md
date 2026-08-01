@@ -6066,3 +6066,46 @@ New: `reduction_accumulator_expansion.py`, `_r6_6_test.py`.
 - **FOLLOW-ON:** make R3.2 superblock acceptance PER-REGION instead of
   per-module — that would likely let reduction vi32 keep BOTH U=8 and expansion,
   the configuration with the best measured loop body but the worst program ticks.
+
+## R6.7 — Region-Based Superblock Acceptance  (2026-08-01) ✅ DONE — INTERACTION REMOVED
+
+**The R6.6 optimizer interaction is gone: reduction vi32 now keeps U=8 AND
+accumulator expansion AND the scalar-loop merges it previously lost.** Body
+10 -> 4 bundles, occupancy 45% -> 75%, dyn bundles 470 -> 459, ticks 631 -> 625.
+38/38, 16/16 unit suites, crosscheck PASS, no program regresses.
+Report: `R6_7_DELIVERY.md`.
+
+- **THE R3.2 METRIC IS UNCHANGED** (compiles / no new spill / bundles not
+  increased). Only the SCOPE changed: whole-module -> per-region.
+  `superblock.py` gained `MergeCandidate` + `merge_candidates_module` + a
+  `select=` parameter; the merge legality conditions are byte-for-byte the
+  pre-R6.7 ones. NO vector-lowering, scheduler, bundler or legality change.
+- **STEP 1 IS LOAD-BEARING, NOT AN OPTIMISATION:** the whole set is tried FIRST
+  and taken unchanged if it passes, so R6.7 is a STRICT REFINEMENT. Greedy
+  per-region acceptance can only reach a SUBSET, and a subset can be WORSE than
+  the full set (if A alone increases bundles but A+B together do not, greedy
+  offering A first rejects it and never recovers it). **Measured: without step 1,
+  gemm vi8/vu8 regressed +256 ticks each and the suite went +0.36%.**
+- **CORRECTS R6.6:** the module-wide rejection reason is **`spill-increase`**, not
+  the bundle-count gate as R6.6 stated. The consequence R6.6 described (all merges
+  discarded, `fi_3` lost, 64 dynamic bundles) is unchanged.
+- **THE CASE, RESOLVED:** reduction vi32 @U=8 + expansion — module scope
+  `accepted=False reason=spill-increase merged=[]`; region scope `accepted=True
+  2 of 3 regions, merged=['fe_8','fi_3']`, static bundles 44 -> 40. Only
+  `vcl_3_incr` (the region that actually causes the spill) is rejected.
+- **COMPOSITION RESTORED:** before R6.7 the adaptive selector DECLINED expansion
+  for vi32 because the lost merges cost more than expansion saved. Now the merges
+  survive, so the selector TAKES expansion — the two optimizations compose.
+- **SUITE:** programs accepted 33 -> **34**, regions merged 105 -> **107**, static
+  bundles saved 157 -> **161**. Whole-module acceptance was failing on **5 of 38**
+  programs (conv3 vi8/vu8 + reduction vi32 = spill-increase; gemm vi32/vu32 =
+  compile-failed); **only reduction vi32 had recoverable regions.**
+- **COST, PLAINLY: 6 ticks of benefit for up to 2.2x compile time on some
+  kernels** (elementwise vi16 1.331s -> 2.924s +120%, conv3 vi8 +79%, gemm +22%,
+  reduction +13%). The search runs only when the whole set is rejected, but
+  `vectorize_all_module` builds many candidates and superblock is applied to each,
+  so kernels whose REJECTED candidates trigger the search pay without gaining.
+  **A poor trade on this suite**; the structural argument is that the interaction
+  worsens as more vector optimizations land. `APARA_SUPERBLOCK_MODULE_SCOPE=1`
+  restores pre-R6.7 behaviour and cost. Unimplemented mitigations: cache trials by
+  IR identity, search only the finally-chosen candidate, leave-one-out.

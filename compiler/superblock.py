@@ -63,15 +63,37 @@ def _cname(x):
     return type(x).__name__
 
 
-def _mergeable_removals(instrs, lo, hi):
-    """Return (label_indices_to_drop, goto_indices_to_drop, n_merged, blocks) for
-    one function slice, using the CFG. A removal merges a block into its adjacent
-    single-predecessor / single-successor layout-predecessor."""
+class MergeCandidate:
+    """One independently acceptable superblock merge: block `block_lo` folded
+    into its adjacent single-predecessor.
+
+    R6.7 made acceptance per-region, so a merge needs an identity that survives
+    being re-derived from the same unmodified IR. `block_lo` is the block's index
+    in the MODULE instruction list (`build_cfg` is given module indices), so it is
+    unique across functions and stable as long as the input IR is unchanged --
+    which it is, because every trial is built from the original `prod_ir`."""
+
+    __slots__ = ('block_lo', 'drop_label', 'drop_goto')
+
+    def __init__(self, block_lo, drop_label, drop_goto):
+        self.block_lo = block_lo
+        self.drop_label = drop_label        # index of B's leading label, or None
+        self.drop_goto = drop_goto          # index of the redundant goto, or None
+
+    def indices(self):
+        return {i for i in (self.drop_label, self.drop_goto) if i is not None}
+
+    def __repr__(self):
+        return f'<merge block@{self.block_lo}>'
+
+
+def merge_candidates(instrs, lo, hi):
+    """Every merge available in one function slice, as independent candidates.
+
+    This is the enumeration `_mergeable_removals` used to collapse immediately
+    into one set of indices; the loop and its legality conditions are unchanged."""
     cfg = build_cfg(instrs, lo, hi)
-    by_lo = {b.lo: b for b in cfg.blocks}
-    drop_label = set()
-    drop_goto = set()
-    merged = 0
+    out = []
     for b in cfg.blocks:
         if len(b.preds) != 1:
             continue                                # multi-entry (join) -> keep
@@ -81,27 +103,51 @@ def _mergeable_removals(instrs, lo, hi):
         if b.lo != p.hi + 1:
             continue                                # not adjacent -> would move code
         phi = instrs[p.hi]
+        goto_idx = None
         if _cname(phi) == 'IRJump':
             # redundant `goto B` to the very next block
             if phi.label != (instrs[b.lo].name if _cname(instrs[b.lo]) == 'IRLabel'
                              else None):
                 continue
-            drop_goto.add(p.hi)
+            goto_idx = p.hi
         elif _cname(phi) in _CTRL:
             continue                                # cond branch / return / halt
         # drop B's leading label (it now has a single fall-through predecessor)
-        if _cname(instrs[b.lo]) == 'IRLabel':
-            drop_label.add(b.lo)
-        merged += 1
-    return drop_label, drop_goto, merged, cfg.blocks
+        label_idx = b.lo if _cname(instrs[b.lo]) == 'IRLabel' else None
+        out.append(MergeCandidate(b.lo, label_idx, goto_idx))
+    return out, cfg.blocks
 
 
-def form_superblocks(instrs, lo, hi, stats=None):
+def merge_candidates_module(instrs):
+    """Every merge available anywhere in the module (module-stable ids)."""
+    out = []
+    for (lo, hi) in func_slices(instrs):
+        cands, _blocks = merge_candidates(instrs, lo, hi)
+        out.extend(cands)
+    return out
+
+
+def _mergeable_removals(instrs, lo, hi, select=None):
+    """Return (label_indices_to_drop, goto_indices_to_drop, n_merged, blocks).
+
+    `select` (R6.7) restricts the merges applied to those whose `block_lo` is in
+    the given set; None means "every available merge", which is the pre-R6.7
+    behaviour exactly."""
+    cands, blocks = merge_candidates(instrs, lo, hi)
+    if select is not None:
+        cands = [c for c in cands if c.block_lo in select]
+    drop_label = {c.drop_label for c in cands if c.drop_label is not None}
+    drop_goto = {c.drop_goto for c in cands if c.drop_goto is not None}
+    return drop_label, drop_goto, len(cands), blocks
+
+
+def form_superblocks(instrs, lo, hi, stats=None, select=None):
     """Form superblocks for one function slice. Returns the (possibly shortened)
     slice list. Pure CFG simplification; semantics-preserving."""
     if stats is None:
         stats = RegionStats()
-    drop_label, drop_goto, merged, blocks = _mergeable_removals(instrs, lo, hi)
+    drop_label, drop_goto, merged, blocks = _mergeable_removals(instrs, lo, hi,
+                                                                select=select)
     stats.functions += 1
     stats.blocks_before += len(blocks)
     stats.size_before += (hi - lo + 1)
@@ -122,16 +168,19 @@ def form_superblocks(instrs, lo, hi, stats=None):
     return new_slice
 
 
-def superblock_module(instrs):
+def superblock_module(instrs, select=None):
     """Form superblocks across a whole module. Returns (new_instrs, RegionStats).
     Rebuilds by concatenating each function's simplified slice so globals /
-    inter-function code are preserved."""
+    inter-function code are preserved.
+
+    `select` (R6.7) restricts which merges are applied, so acceptance can be
+    decided per region instead of per module. None = every merge (pre-R6.7)."""
     stats = RegionStats()
     out = []
     prev_end = 0
     for (lo, hi) in func_slices(instrs):
         out.extend(instrs[prev_end:lo])
         prev_end = hi + 1
-        out.extend(form_superblocks(instrs, lo, hi, stats))
+        out.extend(form_superblocks(instrs, lo, hi, stats, select=select))
     out.extend(instrs[prev_end:])
     return out, stats
