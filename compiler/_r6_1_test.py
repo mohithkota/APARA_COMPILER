@@ -10,6 +10,19 @@ The framework is ANALYSIS ONLY, so the tests fall into three groups:
 """
 import os, sys, copy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# R6.4.1 NOTE: adaptive unroll-factor selection picks 4x for the dot kernel,
+# which flips R4.2.5's realisation probe to the FULLY-UNROLLED form. There is
+# then no compact loop body to build a dependence graph over and `r.hot` is
+# None, so `test_depgraph` raised AttributeError. This is the same class of
+# breakage R6.4 hit in _r4_2_5 and _r4_3, and it gets the same remedy: the R6.1
+# properties under test (issue model, occupancy attribution, dependence graph of
+# a vector loop) are independent of the unroll factor, so the factor is PINNED
+# here rather than any assertion being weakened. `setdefault` keeps an explicit
+# APARA_VECTOR_UNROLL from the environment authoritative. The realisation flip
+# itself is measured in R6_5_CROSS_ITERATION_SCHEDULING.md.
+os.environ.setdefault('APARA_VECTOR_UNROLL', '1')
+
 import bundler as _b
 from codegen import CodeGen
 from vector_backend import latency as lat
