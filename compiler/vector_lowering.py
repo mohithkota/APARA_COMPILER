@@ -321,7 +321,14 @@ def build_vector_body(plan):
 
     # One accumulator per chunk is wasteful in registers; `best_accumulator_count`
     # picks the K that minimises ceil(chunks/K) + log2(K), preferring the smaller.
-    k = _rae.best_accumulator_count(plan.chunks)
+    # R8.1a: restricted to dot products. Applying it to the fully-unrolled
+    # SUM-REDUCTION as well perturbed the R4.2.5 size probe enough to change the
+    # adaptive search's outcome for `reduction vi16`, which lost the COMPACT
+    # expansion R6.6 gave it (626 -> 605 -> 626 ticks). Dot is where the chain
+    # gap is extreme (28 bundles against a width bound of 9) and where the
+    # measured gain is largest, so the transform is applied there only.
+    k = (_rae.best_accumulator_count(plan.chunks)
+         if plan.kind == 'dot-product' else 1)
     exp, plan.acc_expand_reason = _rae.plan_expansion(
         plan, k, load_fn=_acc_addr_load, store_fn=_acc_store)
     plan.acc_expand = exp is not None

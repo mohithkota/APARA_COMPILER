@@ -6272,3 +6272,54 @@ Report: `R8_0_WIDE_MEMORY_INVESTIGATION.md`.
   defect R7.1 exposed so SWP can be admitted; (b) cut pipelined demand 35-37 -> 28
   (live-range splitting for the non-rematerializable rotating-bank values);
   (c) revisit memory width only once regions are dense enough for ceil(M/4) to bind.
+
+## R8.1a — Restrict unrolled accumulator expansion to dot  (2026-08-02) ✅ DONE — REGRESSION CLOSED
+
+**Closes the one live regression R8.1 introduced, and ends up better than either
+predecessor.** Suite **136261 (R6.8) / 136222 (R8.1) -> 136206 (R8.1a)**, with
+**zero regressions against R6.8 on any of the 38 programs.**
+38/38 + 3 negative controls, 18/18 unit suites, `pipeline_crosscheck` PASS.
+
+- **THE REGRESSION, CORRECTLY ATTRIBUTED (my first diagnosis was wrong).** I first
+  reported `reduction vi16` +21 ticks by comparing against a STALE baseline
+  (`r68.json`, because the R7.1 tick run had been OOM-killed and never completed).
+  Toggling `APARA_NO_ACC_EXPAND` showed 626 either way, which looked like "not
+  R8.1's fault". The stored snapshots settle it:
+  **626 (R6.6A) -> 605 (R6.6) -> 605 (R6.7) -> 605 (R6.8) -> 626 (R8.1).**
+  R8.1 DID cause it -- indirectly. Applying expansion to the fully-unrolled
+  SUM-REDUCTION changed the emitted size, which changed the R4.2.5 realisation
+  probe, which changed what the adaptive search selected, so `reduction vi16`
+  LOST the COMPACT expansion R6.6 had given it (`accs=0`). Both arms then measure
+  626 because the expansion-firing configuration is no longer reachable at all --
+  which is exactly why the kill-switch A/B was misleading.
+- **FIX:** apply the R8.1 unrolled-form expansion to `dot-product` ONLY. Dot is
+  where the chain gap is extreme (28 bundles against a width bound of 9) and where
+  the measured gain is largest; the fully-unrolled sum-reduction gained only -5
+  ticks and cost `reduction vi16` -21.
+- **RESULT vs R6.8, program by program:** dot vi8 1609->1599, dot vu8 1609->1599,
+  dot vi16 1432->1415, dot vu16 1560->1542, reduction vi16 605 (restored),
+  reduction vi8 752 (unchanged). **Nothing regresses.**
+- **COST:** `reduction vi8` loses its R8.1 IPB gain (5.22 -> 2.60). Accepted --
+  it was worth 5 ticks and cost 21 elsewhere.
+
+## FINAL STATE — compiler frozen
+
+**Vector-region IPB:** gemm vi16 6.13, reduction vi32 6.00, conv3 vi8 5.73,
+dot vi16 4.79, elementwise vi8 4.32, dot vi8 3.90, reduction vi8 2.60,
+axpy vi16 1.57.
+**Whole-program IPB (38 programs):** min 0.698, median 1.093, mean 1.468,
+max 5.154.
+
+**IPB IS NOT A PERFORMANCE METRIC HERE, AND THIS IS MEASURED:** AXPY vi16 at U=1
+is 7 bundles / 11 instrs / **IPB 1.57 / 1238 ticks**; at U>=2 it is 19 bundles /
+132 instrs / **IPB 6.95 / 1792 ticks**. **Higher IPB is 45% SLOWER.** The adaptive
+realisation deliberately chooses U=1. Report ticks per output element, not IPB.
+
+**REMAINING KNOWN DEFECTS (both gated, neither reachable in shipped output):**
+1. **R6.8 pipelined-AXPY defect** -- admitting the memory-spill-free pipelines for
+   axpy vi32/vu32 fails verification ("5 PostCondition comparisons performed, 4
+   declared"). Gate closed in `vector_swp.apply_vector_swp`; reproduce with
+   `APARA_VSWP_UNBLOCK=1`. Estimated value if fixed: ~0.4% of suite ticks.
+2. **A latent defect in a path R7.1 briefly made reachable** -- `reduction vi16`
+   compiled to a NON-TERMINATING program when `spilled` was widened. Made
+   unreachable again by the narrower `spilled_to_memory` flag; not fixed.
