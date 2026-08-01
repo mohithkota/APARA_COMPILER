@@ -1,0 +1,216 @@
+# R9.1 Design Review — Address Value Numbering
+
+**Verdict: the optimization survives every attempt to disprove it. No stop
+condition triggers. Recommended for implementation.**
+
+Measured, not estimated: **suite ticks 136 206 → 131 457 (−3.49%), 12 programs
+improved, 0 regressed, 0 spills introduced, 38/38 still PASS.** Static mcode
+−24.2%.
+
+No code has been committed. All measurements come from a throwaway prototype that
+monkeypatches `gvn._expr_key` in a measurement process only.
+
+---
+
+## Check 1 — Can two `IRLoadAddr(fp_offset=X)` ever produce different values?
+
+**No. Traced from source, not assumed.**
+
+`IRLoadAddr(dest, fp_offset)` lowers in `codegen._gen_IRLoadAddr` to
+`dest := FP + fp_offset`. Its value therefore depends on exactly one thing: FP.
+
+**FP is written in exactly two places in the entire compiler:**
+
+| site | when |
+|---|---|
+| `codegen.py:459` (`startup_code`) | once, before `$call main` |
+| `codegen.py:718` (`_gen_IRFuncBegin`) | function prologue, before any body instruction |
+
+There is no third write. Specifically:
+
+* **Function lifetime** — the prologue does `$st [SP+0], FP` then `+ FP, ZERO, SP`, then adjusts **SP** only (`- SP, SP, fs`). FP is fixed from that point to the epilogue.
+* **Calls** — `_gen_IRCall` saves live temps to `[FP + slot]`, reserves variadic space below **SP**, and the callee's own prologue saves/restores the caller's FP through `[SP+0]`. The caller's FP is unchanged across the call. No caller instruction writes FP.
+* **Nested scopes** — the IR has no scope construct; `ir_gen` assigns each object a fixed `fp_offset` at declaration. Two disjoint C scopes may *share* a slot, but then both `IRLoadAddr(X)` still compute the **same address**, which is all GVN asserts. What the memory holds is irrelevant to value-numbering an address.
+* **Vector pipeline / software pipelining** — `pipeline_mve` clones instructions and renames Temps, but `_clone_op` copies `fp_offset` unchanged (it is an int attribute, not a Temp) and never introduces an FP write.
+* **Dynamic stack** — there is no `alloca`; `frame_size` is fixed per function by `ir_gen` (`begin.frame_size = fs`).
+
+**`IRLoadAddr` has no side effects**: it writes one Temp and reads no memory. It is
+in `dce.py`'s pure set (line 42) and `licm.py`'s `_HOISTABLE` set (line 22) —
+both passes already treat it as a pure, movable value.
+
+**Conclusion: `FP + constant` is a pure, function-invariant expression.** Two
+`IRLoadAddr` with equal `fp_offset` in one function always produce identical
+values. ✅
+
+## Check 2 — Does any pass rely on the duplication?
+
+Audited every pass named, plus the vector layers:
+
+| pass | references `IRLoadAddr` | does it depend on duplication? |
+|---|---|---|
+| **GVN** (`gvn.py`) | **0** | No — `_expr_key` returns `None` for it (final line: *"loads/stores/calls/casts/... excluded"*). This is the gap. |
+| **LICM** (`licm.py:22,94`) | yes | No. Lists it `_HOISTABLE` and keys it `('s', d.fp_offset)` — *the same key this proposal adds*. But LICM only hoists **out of loops**; the duplicates sit in a straight-line unrolled body. |
+| **mem2reg** (`mem2reg.py:78-94`) | yes | **No — checked closely, this was the main risk.** Its escape analysis is **use-based, not count-based**: an address temp is clean iff *every* use is an offset-0 load/store base. One temp with 6 such uses is still clean. `addr_off` is a name→offset map, unaffected. |
+| **loop_reg** (`loop_reg.py:116-121`) | yes | No. Same name→offset map shape; matches on the `IRLoadAddr → IRLoad/IRStore(0)` *pattern*, which survives collapsing. |
+| **IVSR** (`ivsr.py:100,206,320`) | yes | No. Recreates `IRLoadAddr(Temp(nd), ins.fp_offset)` in preheaders — it *creates* addresses; collapsing its output later is independent. |
+| **DCE** (`dce.py:42`) | yes | No — pure set membership only. |
+| **SCCP, CopyProp, strength_reduce** | 0 | Not involved. |
+| **Register allocation** | — | Consumes whatever IR it is given. |
+| **Codegen** | — | `_gen_IRLoadAddr` is per-instruction; fewer instructions is strictly less work. R7.1 rematerialization registers a recipe per `IRLoadAddr` dest — fewer recipes, each covering more uses, still correct. |
+| **Vector lowering** | yes (`plan_lowering`, `slot_width`) | No — and **it runs before GVN**, so it is unaffected either way. |
+
+**Ordering check (the highest-risk item, and it passes):** `compiler.py:602` runs
+`vectorize_all_module` and sets `_ir0 = _vec_ir`; the tiers at line 642 then call
+`_cp(...)`, which calls `global_value_numbering` at line 628. **GVN runs *after*
+vectorization**, so it sees the duplicates the vectorizer creates. `mem2reg`
+runs at line 629, immediately after — which is exactly why its use-based escape
+analysis had to be verified. ✅
+
+## Check 3 — Measured redundancy (shipped IR, all 38 programs)
+
+| program | total `IRLoadAddr` | distinct offsets | duplicated | duplicated & large | dyn-weighted |
+|---|---|---|---|---|---|
+| gemm vi32 / vu32 | 52 | 6 | 46 | 46 | 8 699 |
+| gemm vi16 / vu16 | 36 | 6 | 30 | 29 | 4 665 |
+| scalar bubblesort | 23 | 4 | 19 | 0 | 89 |
+| gemm vi8 / vu8 | 28 | 6 | 22 | 19 | 57 |
+| dot vi16 / vu16 | 49 | 4 | 45 | 0 | 45 |
+| conv3 vi8 / vu8 | 43 | 3 | 40 | 0 | 40 |
+| axpy vi8 | 39 | 3 | 36 | 0 | 36 |
+
+**Suite totals: 1 123 `IRLoadAddr`, 978 duplicated (87%), 306 of those
+large-offset.** ✅
+
+## Check 4 — Measured gain (not estimated)
+
+The brief asked for a conservative estimate; the prototype allows direct
+measurement instead, so estimates are replaced by measurements.
+
+**`gemm vi16`, end to end:**
+
+| metric | before | after | Δ |
+|---|---|---|---|
+| IR instructions | 138 | 108 | **−30** |
+| `IRLoadAddr` | 36 | 6 | −30 |
+| mcode instructions | 289 | 143 | **−50.5%** |
+| bundles | 87 | 61 | **−29.9%** |
+| memory spills | 0 | 0 | 0 |
+
+The mcode reduction is **five times** the IR reduction because each large-offset
+`IRLoadAddr` lowers to a 5-instruction sequence — `$set`, `+ (-1)`, `<< 16`, `|`,
+then `+ FP` — since the offset exceeds the foldable ±511 immediate field.
+
+**Whole suite, with the ≤511 threshold (see §7):**
+
+| metric | before | after |
+|---|---|---|
+| static mcode instructions | 6 006 | **4 550 (−24.2%)** |
+| **simulator ticks** | **136 206** | **131 457 (−3.49%)** |
+| programs improved | — | **12** |
+| programs regressed | — | **0** |
+
+Largest: gemm vi16 −12.9%, gemm vi32 −8.3%, axpy vi32 −7.0%, gemm vu16 −6.5%,
+axpy vu32 −6.0%.
+
+**Dependence chain:** removing a 5-instruction serial materialisation
+(`$set → << → | → +`) removes 4 levels of chain per collapsed address. This is why
+bundles fall 29.9% while instructions fall 50.5% — consistent with R6.5's finding
+that bundles track the dependence-chain bound.
+
+**Why R6.5 does not block this:** R6.5 proves packing is optimal *for a given
+instruction set*. This changes the instruction set by deleting instructions; it
+does not reschedule anything. ✅
+
+## Check 5 — Measured register-pressure impact (real allocator)
+
+Measured with `codegen.CodeGen` instrumented to record peak simultaneous
+allocation — no model.
+
+| | before | after (threshold) |
+|---|---|---|
+| programs whose peak pressure rose | — | **4 of 38** |
+| largest increase | — | **+12** |
+| programs that spill to memory | **0** | **0** |
+| total memory spills | **0** | **0** |
+| programs with `spilled=True` | **0** | **0** |
+
+**The stop condition "register pressure increases enough to create spills" does
+not trigger.** Pressure does rise — collapsing 36 defs into 6 extends six live
+ranges, exactly as predicted — but every program stays within the 28-register
+pool, and R7.1's rematerialization remains available as a safety net if a future
+kernel does tip over. ✅
+
+## Stop-condition summary
+
+| condition | status |
+|---|---|
+| FP is not invariant | **clear** — two writes, both before any body instruction (§1) |
+| `IRLoadAddr` has hidden side effects | **clear** — pure; already in DCE's pure set and LICM's hoistable set |
+| pressure increases enough to spill | **clear** — 0 spills before and after (§5) |
+| existing passes already eliminate it | **clear** — 978 of 1 123 duplicates survive the full pipeline (§3) |
+| any correctness ambiguity | **clear** — 38/38 simulator PASS in both arms |
+
+## 7 — Why a threshold, and what it is
+
+The **unrestricted** version (value-number every `IRLoadAddr`) was measured first:
+
+| variant | suite ticks | wins | regressions |
+|---|---|---|---|
+| unrestricted | 131 589 (−3.39%) | 8 | **4** (conv3 vi8/vu8 +12.4%, axpy vi16 +9.2%, axpy vu16 +3.1%) |
+| **threshold `abs(off) > 511`** | **131 457 (−3.49%)** | **12** | **0** |
+
+The regressions are exactly the kernels whose offsets are **small**. A foldable
+offset lowers to **one** instruction (`+ rd, FP, imm`), so collapsing it saves one
+instruction and costs an extended live range — a bad trade that perturbs the
+R4.2.5 realisation probe (the same interaction R8.1a hit). A large offset costs
+**five** instructions, where the trade is decisively favourable.
+
+The threshold is not tuned to the benchmark: **it is codegen's own foldable
+range**, the identical constant `_gen_IRLoadAddr` tests at line 727 and that
+`rematerialization.FP_IMM_LO/HI` already encode.
+
+## 8 — Implementation plan (no code yet)
+
+**File 1 — `compiler/gvn.py`**
+
+* Function: `_expr_key(ins, du)`.
+* Data structure: the returned canonical key tuple, consumed by the `table`
+  (`key → leader temp name`) in `_gvn_function`.
+* Modification: before the final `return None`, add a case for `IRLoadAddr`
+  returning `('addr', ins.fp_offset)` **only when `abs(ins.fp_offset)` exceeds the
+  foldable immediate range**; return `None` otherwise. Import the bound from
+  `rematerialization` (`FP_IMM_LO`/`FP_IMM_HI`) so one constant governs both
+  passes, rather than duplicating `511`.
+* Add a kill switch `APARA_NO_AVN`, mirroring `APARA_NO_GVN` / `APARA_NO_MEM2REG`,
+  so the transform can be disabled for A/B without disabling GVN itself.
+* No change to `_gvn_function`, `_operand_key`, the dominator walk, or the
+  scoped add/undo — `IRLoadAddr` has no Temp operands, so `_operand_key` is never
+  called for it, and the existing `du.is_single_def(dest.name)` guard already
+  applies.
+
+**File 2 — `compiler/_r9_1_test.py`** (new unit suite)
+
+* correctness: two `IRLoadAddr` with equal offset collapse; with different offsets do not; a small offset is left alone (threshold); the leader dominates every replaced use.
+* pass interaction: `mem2reg` still promotes the same slots after collapsing (guards the use-based escape analysis relied on in §2); `loop_reg` unchanged.
+* effect: `gemm vi16` shows 36 → 6 `IRLoadAddr` and a mcode reduction.
+* non-interference: kernels with no large-offset duplicates are byte-identical with the switch on and off.
+
+**File 3 — `compiler/STATUS.md`** — record the measurement and the threshold rationale.
+
+**Validation to run before commit:** 38/38 simulator + 3 negative controls,
+18/18 unit suites, `pipeline_crosscheck` (124 programs), and a per-program tick
+comparison asserting zero regressions.
+
+## 9 — Threats to validity
+
+* The gain is concentrated: **6 of the 12 improved programs are GEMM**, which is
+  52.4% of suite ticks. Suite-level −3.49% is really "GEMM −8% and axpy 32-bit −6%".
+* The threshold is justified by measurement on this suite plus codegen's own
+  immediate range. A kernel with many *small*-offset duplicates in a hot loop
+  could in principle benefit from the unrestricted form; none exists here.
+* Peak pressure rises by up to 12 registers in 4 programs. No spill occurs today,
+  but the margin is smaller than before, and a future transform that adds pressure
+  interacts with this one.
+* `scalar bubblesort` has 19 duplicated offsets but all small, so the threshold
+  excludes it — it is unaffected either way. That is the intended behaviour, not
+  an oversight.
