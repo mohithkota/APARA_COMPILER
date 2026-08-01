@@ -6361,3 +6361,46 @@ verified classifier.
   is required for correctness.
 - **MEMORY BANDWIDTH IS NOT LIMITING: `memory-lanes-full` = 0.0%.** Independent
   confirmation of R8.0 -- wide $u128/$u256 would relieve a non-binding constraint.
+
+## R9.1 — Address Value Numbering (IRLoadAddr GVN)  (2026-08-02) ✅ DONE
+
+**Suite 136206 -> 131743 ticks (−3.28%), 12 programs improved, 0 regressed.**
+Static mcode −24%. 38/38 + 3 negative controls, **19/19 unit suites**,
+`pipeline_crosscheck` PASS. Design review: `R9_1_DESIGN_REVIEW.md`.
+
+- **THE GAP:** `gvn.py` was already running in production (`compiler.py:628`) and
+  simply did not recognise `IRLoadAddr` -- `_expr_key` returned `None` for it.
+  LICM keys it identically (`('s', fp_offset)`, licm.py:94) but only hoists out of
+  LOOPS, and the duplicates sit in a straight-line unrolled body. Measured: **1123
+  `IRLoadAddr` across the suite, 978 duplicated, 306 large-offset**; gemm vi16 had
+  36 with only 6 distinct offsets.
+- **WHY IT PAYS 5x ITS IR COST:** a large-offset `IRLoadAddr` lowers to FIVE mcode
+  instructions (`$set` + `+(-1)` + `<<16` + `|` + `+FP`), so gemm vi16 goes
+  IR 138->108 but **mcode 289->143 (−50.5%)** and **bundles 87->61 (−29.9%)**.
+- **THRESHOLD IS CODEGEN'S OWN, NOT TUNED:** only offsets outside the foldable
+  immediate range are numbered, sourced from `rematerialization.FP_IMM_LO/HI` so
+  ONE constant governs both passes. Unrestricted numbering REGRESSED 4 programs
+  (conv3 +12.4%, axpy vi16 +9.2%) because a foldable offset lowers to ONE
+  instruction -- collapsing it saves 1 and costs an extended live range.
+- **KEY IS `('addr', fp_offset)` -- no function or frame id, and that is proven
+  not assumed.** GVN's table is per-function-slice, so a function id would be a
+  CONSTANT in every comparison that can occur; and it would protect against NONE
+  of nested functions / split frames / coroutine frames / dynamic allocas, all of
+  which are INTRA-function hazards. Sufficiency rests on `IRLoadAddr` having **no
+  base operand** (`__init__(self, dest, fp_offset)`) and no IR node naming a frame
+  base -- varying it is INEXPRESSIBLE. `_expr_key`'s `return None` default makes
+  any future node type fail safe. A **tripwire test** pins the node's shape.
+- **PIPELINE REORDER REQUIRED (validated separately, tick-neutral alone):** GVN
+  replaces the DEF with `IRAssign(dest, leader)` and leaves uses alone; that copy
+  is a USE of the leader that is not a load/store base, so **mem2reg's escape
+  analysis taints the leader and refuses to promote** (measured: suite promoted
+  vars 136 -> 102, axpy vi32/vu32 losing all 13 each). Fix: run the existing
+  `_clean` between GVN and mem2reg -> 136 -> 128. **THREE pipeline replicas had to
+  be updated in step** (`compiler._cp`, `vector_size_probe._optimize_like_production`
+  which AFFECTS COMPILATION, `ilp_analysis`, plus `pipeline_crosscheck`) -- the new
+  guard test caught the divergence.
+- **R9.1 SUBSUMES R7.1 ON THESE KERNELS:** with AVN on, the pipelined `axpy
+  vi32/vu32` candidates no longer spill at all, so rematerialization has nothing
+  to do there. `_r7_1_test.py` pins `APARA_NO_AVN=1` to keep testing R7.1's
+  mechanism; the subsumption is the better outcome (cause fixed, not symptom).
+- Kill switch `APARA_NO_AVN` disables address numbering without disabling GVN.

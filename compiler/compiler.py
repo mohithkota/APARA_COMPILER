@@ -626,6 +626,15 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
         x = _clean(x)
         x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
         x = global_value_numbering(x)
+        # R9.1: clean GVN's copies BEFORE mem2reg sees them. GVN replaces a
+        # redundant definition with `IRAssign(dest, leader)` and leaves uses
+        # alone; that copy is a USE of the leader which is not a load/store base,
+        # so mem2reg's escape analysis taints the leader and refuses to promote
+        # the slot. Measured without this line: promoted vars 136 -> 102 across
+        # the suite, with axpy vi32/vu32 losing all 13 each. With it: 136 -> 128.
+        # `_clean` already runs at both ends of this function, so this applies a
+        # transformation the pipeline performs anyway, only earlier.
+        x = _clean(x)
         x = mem2reg(x)                     # promote local scalars to temps
         x = loop_invariant_code_motion(x)  # hoist invariant pure computations
         # Measurement knob only (default OFF): rerun SCCP+GVN after mem2reg to

@@ -69,6 +69,10 @@ def _optimize_like_production(ir):
     x = _clean(x)
     x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
     x = global_value_numbering(x)
+    # R9.1: mirror compiler._cp -- clean GVN's copies before mem2reg, or its
+    # escape analysis is tainted by them and refuses promotions. This probe
+    # exists to match production exactly, so it must carry the same order.
+    x = _clean(x)
     x = mem2reg(x)
     x = loop_invariant_code_motion(x)
     return _clean(x)

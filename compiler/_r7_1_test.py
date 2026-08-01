@@ -17,6 +17,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 'verification'))
 
+# R9.1 NOTE: Address Value Numbering removes the duplicated large-offset
+# `IRLoadAddr` instructions that made these pipelined candidates spill in the
+# first place -- with it enabled, `axpy vi32/vu32` no longer spill at all and
+# there is nothing for rematerialization to do, so the baselines this suite
+# asserts (8 memory spills, 154 -> 146 memory operations) no longer occur.
+# That is a GOOD outcome -- R9.1 fixes the cause rather than the symptom -- but
+# the property under test here is R7.1's MECHANISM, which is independent of it.
+# AVN is therefore pinned OFF for this suite rather than any assertion being
+# weakened; the subsumption itself is recorded in R9_1_DESIGN_REVIEW.md.
+os.environ.setdefault('APARA_NO_AVN', '1')
+
 import rematerialization as remat                    # noqa: E402
 from codegen import CodeGen, POOL_REGS               # noqa: E402
 from vector_backend import ilp_analysis as ia        # noqa: E402

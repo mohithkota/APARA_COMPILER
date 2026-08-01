@@ -77,6 +77,14 @@ def _operand_key(node, du):
     return None
 
 
+# R9.1: the foldable-immediate range codegen._gen_IRLoadAddr can encode directly.
+# Sourced from `rematerialization` so ONE constant governs both passes.
+from rematerialization import FP_IMM_LO as _FOLDABLE_LO, FP_IMM_HI as _FOLDABLE_HI
+
+# Kill switch for Address Value Numbering alone (APARA_NO_GVN disables all of GVN).
+_AVN_DISABLED = os.environ.get('APARA_NO_AVN', '') not in ('', '0')
+
+
 def _expr_key(ins, du):
     """Canonical key for a value-numberable pure expression, or None if the
     instruction is not eligible."""
@@ -105,6 +113,28 @@ def _expr_key(ins, du):
         if o is None:
             return None
         return ('copy', o)
+
+    # R9.1 -- Address Value Numbering.
+    #
+    # `IRLoadAddr(dest, fp_offset)` computes `FP + fp_offset`. FP is written in
+    # exactly two places in the compiler (startup, and the function prologue
+    # before any body instruction), so within a function this is a PURE,
+    # FUNCTION-INVARIANT value and `fp_offset` alone canonicalises it: the node
+    # has no base operand, and no IR node names or writes a frame base, so there
+    # is nothing else that can vary. The function need not appear in the key --
+    # GVN's table is built per function slice, so a function id would be constant
+    # in every comparison that can occur (design review sections 1 and 10).
+    #
+    # Restricted to offsets OUTSIDE the immediate field `_gen_IRLoadAddr` can
+    # fold. A foldable offset lowers to ONE instruction (`+ rd, FP, imm`), so
+    # collapsing it saves one instruction and costs an extended live range -- a
+    # bad trade, measured as regressions on conv3 (+12.4%) and axpy vi16 (+9.2%).
+    # Beyond the field, codegen must emit `$set` + `+(-1)` + `<<16` + `|` + add =
+    # FIVE instructions, where removing the redundancy is decisive.
+    if c == 'IRLoadAddr':
+        if _AVN_DISABLED or _FOLDABLE_LO <= ins.fp_offset <= _FOLDABLE_HI:
+            return None
+        return ('addr', ins.fp_offset)
 
     return None                              # loads/stores/calls/casts/... excluded
 

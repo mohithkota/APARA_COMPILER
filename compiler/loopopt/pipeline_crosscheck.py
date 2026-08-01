@@ -114,6 +114,8 @@ def _build_tiers(ir0, ivsr_fn, licm_fn):
         x = _clean(x)
         x = dead_code_eliminate(sparse_conditional_constant_propagation(x))
         x = global_value_numbering(x)
+        # R9.1: mirror compiler._cp (clean before mem2reg).
+        x = _clean(x)
         x = mem2reg(x)
         x = licm_fn(x)                       # the (opt-in) LICM in the cleanup stage
         x = _clean(x)
