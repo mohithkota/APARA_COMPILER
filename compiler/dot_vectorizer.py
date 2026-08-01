@@ -127,6 +127,21 @@ def _estimated_dynamic_bundles(vec_ir, global_base):
     return rep.totals(dynamic=True)['bundles']
 
 
+def _expanded(vec_ir):
+    """True if R6.6 accumulator expansion actually fired in this build.
+
+    Read off the emitted IR (the `_vxa` accumulator prefix is unique to
+    `reduction_accumulator_expansion`) rather than threaded through the plan, so
+    no client signature changes -- the same trick `vector_compact_loop.
+    realisation_of` uses for the realisation."""
+    from ir_utils import dest_names
+    for i in vec_ir:
+        for n in (dest_names(i) or ()):
+            if n.startswith('_vxa'):
+                return True
+    return False
+
+
 def vectorize_all_module(instrs, global_base=0x400):
     """THE PRODUCTION ENTRY POINT (R4.2): every vectorizer, one pipeline, one
     pass over the module. Clients are tried in order per loop; each loop is
@@ -143,19 +158,44 @@ def vectorize_all_module(instrs, global_base=0x400):
 
     import copy as _copy
     best = None
-    for u in _UNROLL_CANDIDATES:
+
+    def _try(u, no_expand):
+        """Build one candidate and return (cost, out, stats, reps) or None."""
         _os.environ['APARA_VECTOR_UNROLL'] = str(u)
+        if no_expand:
+            _os.environ['APARA_NO_ACC_EXPAND'] = '1'
         try:
             out, stats, reps = _build_module(_copy.deepcopy(instrs), global_base)
             if not stats.vectorized:
-                continue                       # this factor lost the kernel
-            cost = _estimated_dynamic_bundles(out, global_base)
+                return None                    # this factor lost the kernel
+            return (_estimated_dynamic_bundles(out, global_base), out, stats, reps)
         except Exception:
-            continue                           # a candidate never breaks the build
+            return None                        # a candidate never breaks the build
         finally:
             _os.environ.pop('APARA_VECTOR_UNROLL', None)
-        if cost is not None and (best is None or cost < best[0]):
-            best = (cost, out, stats, reps)
+            if no_expand:
+                _os.environ.pop('APARA_NO_ACC_EXPAND', None)
+
+    for u in _UNROLL_CANDIDATES:
+        c = _try(u, no_expand=False)
+        if c is not None and (best is None or c[0] < best[0]):
+            best = c
+        # R6.6: accumulator expansion is a CANDIDATE, not a default. It shortens
+        # the reduction recurrence (RecMII 8 -> 3 on reduction vi32) but makes
+        # the vector body denser, and R3.2's superblock pass accepts or rejects
+        # its merges for the WHOLE module -- so at u=8 a denser body can cost an
+        # unrelated 64-iteration scalar loop its merge, which is worth more than
+        # the loop the expansion improved. Measured, not predicted: expansion is
+        # kept only where it lowers the same estimated dynamic bundle count
+        # R6.4.1 already validated against the simulator.
+        #
+        # The no-expand variant is only built when the expanded build actually
+        # expanded something, so every non-reduction module compiles in exactly
+        # the same time as before.
+        if c is not None and _expanded(c[1]):
+            c2 = _try(u, no_expand=True)
+            if c2 is not None and c2[0] < best[0]:
+                best = c2
     if best is None:
         return _build_module(instrs, global_base)   # nothing vectorized; scalar
     return best[1], best[2], best[3]

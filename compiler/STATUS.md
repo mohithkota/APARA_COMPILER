@@ -6015,3 +6015,54 @@ Suite ticks 210359 (1x) -> 138014 (fixed 4x) -> **136847 (adaptive, −34.9%)**.
   benchmark here exercises that. The estimate is a validated MODEL (8 kernels, 4
   families), it selects rather than proves. The 2x GEMM pathology remains
   unexplained, only avoided.
+
+## R6.6 — Vector Multiple Accumulator Expansion  (2026-08-01) ✅ DONE — PROJECTION HIT EXACTLY
+
+**The R6.6A projection is delivered exactly: `RecMII 8 -> 3`, `MII 8 -> 5`, and
+the loop body measured `10 -> 5` bundles/iteration — the new MII, hit precisely.**
+38/38, 16/16 unit suites, crosscheck PASS. Report: `R6_6_DELIVERY.md`.
+New: `reduction_accumulator_expansion.py`, `_r6_6_test.py`.
+
+- **WHAT:** when adaptive unrolling gives a sum-reduction U copies, each copy gets
+  its OWN accumulator instead of all U chaining through one; a BALANCED TREE folds
+  them after the loop (a chain would rebuild the serial dependence being removed).
+- **CORRECTNESS = ASSOCIATIVITY.** Integer `+` is associative including under
+  two's-complement wrap, so regrouping cannot change the result; narrow
+  accumulators are safe because `(a+b) mod M + c == (a+b+c) mod M` and a
+  sign-extending reload is congruent mod M. **`vf32_t` rejected BY NAME, first**
+  (float `+` is not associative) — currently unreachable via `ELEMENT_TYPES`, but
+  it is a property of the transform, not of the table.
+- **REUSED, NOTHING DUPLICATED:** `vector_pipeline` untouched, the existing
+  `$vreduce`+add lowering still emits the accumulate, adaptive unrolling,
+  differential oracle, R6.1 estimator, R6.2C `acc_bytes` width rule. NO scheduler,
+  bundler, legality, IR-node or ISA change. **`build_compact_chunk_loop` NOT
+  modified** — it already calls `emit_body` once per copy in order, so the client
+  tracks its own copy index instead of widening a contract 3 other clients share.
+- **THE INVESTIGATION THAT CHANGED THE DESIGN (milestone asked to explain, not
+  re-model):** expansion wins at U=2/U=4 but **LOSES 20% at U=8** (631 -> 758)
+  precisely where the loop body is best (10 -> 5 bundles). Cause is NOT prologue,
+  NOT epilogue, NOT spilling (zero spills both arms). Per-block attribution shows
+  the loss is `fi_3` — **a block of the 64-iteration SCALAR INIT loop**, worth 64
+  dynamic bundles. Expansion raises vector-body occupancy 45% -> 60%, which fails
+  **R3.2's WHOLE-MODULE superblock acceptance gate**, so EVERY merge is lost
+  (`merged away: ['fe_8','fi_3','vcl_3_incr']` -> `[]`) including in unrelated
+  scalar loops. A local improvement tripping a global gate; pre-existing R3.2
+  limitation EXPOSED, not caused, by R6.6.
+- **THEREFORE EXPANSION IS A MEASURED CANDIDATE, NOT A DEFAULT** — a second axis
+  on R6.4.1's adaptive search, and the no-expand variant is built ONLY when the
+  expanded build actually expanded something, so **non-reduction modules compile
+  in exactly the same time** (elementwise 1.213s -> 1.194s); reduction modules pay
+  +64% (0.722s -> 1.187s). Selector reaches the per-kernel optimum both times:
+  declines expansion for vi32 (keeps 631), takes it for vi16 (605).
+- **RESULT:** suite 136847 -> **136826**; **ONE of 38 programs changes**
+  (reduction vi16 626 -> 605, −3.4%). Loop-level result is large and real;
+  program-level is small because 4 of 6 reduction markers never reach the
+  transform (vi8 is fully unrolled = no loop; the 3 unsigned markers don't
+  vectorize as reductions) and GEMM dominates the suite.
+- **ANSWERS THE MILESTONE'S QUESTION:** the recurrence is no longer the limiter —
+  `RecMII 3 < ResMII 5`, so `MII = ResMII` and the loop is RESOURCE-bound.
+  R6.6A projected SWP would reach only MII 8; expansion reaches 5. **Expansion
+  before SWP is confirmed by measurement.**
+- **FOLLOW-ON:** make R3.2 superblock acceptance PER-REGION instead of
+  per-module — that would likely let reduction vi32 keep BOTH U=8 and expansion,
+  the configuration with the best measured loop body but the worst program ticks.

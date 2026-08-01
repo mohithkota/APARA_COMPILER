@@ -147,12 +147,14 @@ class LoweringPlan:
     __slots__ = ('ok', 'reason', 'kind', 'vtype', 'lanes', 'eb', 'signed',
                  'trip', 'chunks', 'remainder', 'array_slots', 'acc_slot',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'iv_bytes',
-                 'acc_bytes',
+                 'acc_bytes', 'acc_expand', 'acc_expand_reason',
                  'realisation', 'compact_per_iter', 'unrolled_len', 'peel', 'peel_len')
 
     def __init__(self):
         self.ok = False
         self.reason = None
+        self.acc_expand = False         # R6.6, set by build_compact_body
+        self.acc_expand_reason = None
         self.realisation = None         # 'compact' | 'unrolled', set by lowering
         self.compact_per_iter = 0
         self.unrolled_len = 0
@@ -340,6 +342,39 @@ def build_compact_body(plan):
     the scalar loop does -- so no loop-carried REGISTER is introduced and the
     R2.8-class live-range hazard cannot arise."""
     import vector_compact_loop as _vcl
+    import reduction_accumulator_expansion as _rae
+
+    # R6.6: when unrolling gives this loop U independent copies, a sum-reduction
+    # can give each copy its OWN accumulator instead of chaining them all through
+    # one. `plan_expansion` returns None (with a reason) whenever that does not
+    # apply, and then everything below is byte-for-byte the pre-R6.6 lowering.
+    _u = _vcl.unroll_factor(plan.chunks)
+    exp, plan.acc_expand_reason = _rae.plan_expansion(plan, _u)
+    plan.acc_expand = exp is not None
+    if exp is not None:
+        # `build_compact_chunk_loop` invokes emit_body exactly once per unrolled
+        # copy, in order k = 0 .. U-1, so the copy index is tracked here rather
+        # than widening the emit_body contract for the three clients that do not
+        # need it.
+        _copy = [0]
+
+        def emit_expanded(off, iv_index=None):
+            k = _copy[0]
+            _copy[0] += 1
+            body = []
+            aT = _fresh('_vpa')
+            body += _vcl.packed_load_at(aT, plan.array_slots[0], off,
+                                        plan.lanes, plan.eb, plan.signed)
+            partial = _fresh('_vred')
+            body.append(IRVecReduce(partial, aT, '$' + plan.vtype, '+'))
+            body.append(exp.accumulate(k, partial))
+            return body
+
+        loop, per_iter = _vcl.build_compact_chunk_loop(
+            plan.iv_slot, plan.eb, plan.lanes, plan.chunks, emit_expanded,
+            iv_bytes=plan.iv_bytes)
+        plan.compact_per_iter = per_iter
+        return exp.pre + loop + exp.post
 
     def emit(off, iv_index=None):
         body = []
