@@ -6323,3 +6323,41 @@ realisation deliberately chooses U=1. Report ticks per output element, not IPB.
 2. **A latent defect in a path R7.1 briefly made reachable** -- `reduction vi16`
    compiled to a NON-TERMINATING program when `spilled` was widened. Made
    unreachable again by the narrower `spilled_to_memory` flag; not fixed.
+
+## R9.0 — Remaining Architectural Bottlenecks (evaluation section)  (2026-08-02)
+
+**Analysis only, no code.** Explains from measurement why the compiler stops where
+it does. Report: `R9_0_REMAINING_BOTTLENECKS.md`.
+
+**54.2% of all issue slots are empty** (363052/669960), 100% classified by R6.1's
+verified classifier.
+
+- **ADDRESS GENERATION -- the largest cause, BUT the label overstates it.** The
+  classifier maps EVERY scalar ALU producer to `waiting-for-address-alu`,
+  including the program's own integer arithmetic. Splitting by opcode (APARA forms
+  addresses only with `+`, `<<`/`*`, `$set`; `&`/`|`/`^`/`-` never address):
+  **genuine address = 66.9% whole-prog / 89.6% vector-region**; the rest is real
+  program work (`&`/`-` from the benchmarks' `a[i]=i&7`, `|`/`>>` from the R6.3
+  conv window). So genuine address generation is **24.6% of all empty slots**, not
+  36.8%.
+- **INSIDE THE VECTOR REGIONS the scaled-index (17.9%) + base+index add (25.3%)
+  pair is 43.2% of address stalls.** Both exist because **APARA has NO
+  `[base + index*scale]` addressing mode** -- `$ld` takes `[rs1+rs2]` or
+  `[rs1+imm10]`, so every strided access must materialise its scaled offset in a
+  register and add it. A further 20.6% is the IV/pointer increment, inherent to
+  any counted loop.
+- **PROOF IT IS NOT COMPILER SCAFFOLDING:** a naive lowering needs >=2 address
+  instructions per strided access. Measured address/memory ratio in the vector
+  regions: **axpy 0.33, reduction 1.00, elementwise 1.21, conv3 1.43, dot 1.76** --
+  five of six AT OR BELOW the naive minimum, because IVSR/LICM/loop-reg already
+  amortise one increment across several accesses. **GEMM 5.39 is the honest
+  exception** (row base re-derived per chunk via `clone_offset`, not
+  strength-reduced across the outer loop) -- recorded, not fixed.
+- **REGION BOUNDARIES** 34.3% whole-prog but only **11.4% inside vector regions** --
+  R3.2 + R6.7 already merged what is legal; the residue is the scalar init loops'
+  2-6 instruction bodies. More requires speculation/duplication, excluded by design.
+- **MEMORY DEPENDENCE** 8.6% whole-prog, **22.1% vector region** (2nd largest
+  there) + 4.6% store-ordering. R6.2 proves disjointness where provable; the rest
+  is required for correctness.
+- **MEMORY BANDWIDTH IS NOT LIMITING: `memory-lanes-full` = 0.0%.** Independent
+  confirmation of R8.0 -- wide $u128/$u256 would relieve a non-binding constraint.
