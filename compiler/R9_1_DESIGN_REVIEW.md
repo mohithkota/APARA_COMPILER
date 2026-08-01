@@ -50,7 +50,7 @@ Audited every pass named, plus the vector layers:
 |---|---|---|
 | **GVN** (`gvn.py`) | **0** | No — `_expr_key` returns `None` for it (final line: *"loads/stores/calls/casts/... excluded"*). This is the gap. |
 | **LICM** (`licm.py:22,94`) | yes | No. Lists it `_HOISTABLE` and keys it `('s', d.fp_offset)` — *the same key this proposal adds*. But LICM only hoists **out of loops**; the duplicates sit in a straight-line unrolled body. |
-| **mem2reg** (`mem2reg.py:78-94`) | yes | **No — checked closely, this was the main risk.** Its escape analysis is **use-based, not count-based**: an address temp is clean iff *every* use is an offset-0 load/store base. One temp with 6 such uses is still clean. `addr_off` is a name→offset map, unaffected. |
+| **mem2reg** (`mem2reg.py:78-94`) | yes | **Correctness: no. Optimization: YES — see §11(d), which corrects this row.** GVN's own `IRAssign(dest, leader)` is a use of the leader that is not a load/store base, so it TAINTS the leader and the slot is refused promotion (measured: suite vars 136 → 102). Conservative, so no miscompile; mitigated by cleaning before mem2reg. |
 | **loop_reg** (`loop_reg.py:116-121`) | yes | No. Same name→offset map shape; matches on the `IRLoadAddr → IRLoad/IRStore(0)` *pattern*, which survives collapsing. |
 | **IVSR** (`ivsr.py:100,206,320`) | yes | No. Recreates `IRLoadAddr(Temp(nd), ins.fp_offset)` in preheaders — it *creates* addresses; collapsing its output later is independent. |
 | **DCE** (`dce.py:42`) | yes | No — pure set membership only. |
@@ -274,3 +274,98 @@ of the change, in the right place**, instead of silently producing a key that
 looks frame-aware but is not. If a base operand is ever added, the correct key
 becomes `('addr', _operand_key(base), fp_offset)`, which reduces to existing
 machinery and inherits `_operand_key`'s `None`-for-multiply-defined behaviour.
+
+## 11 — Consumers of `IRLoadAddr.dest`, and a correction to §2
+
+Asked whether replacing later `IRLoadAddr` with the leader preserves debug
+information, DefUse chains and mem2reg expectations at every site that reads
+`IRLoadAddr.dest`.
+
+**§2 was wrong about mem2reg. The correction is in (d) below.**
+
+### (a) GVN does not replace uses
+
+```python
+instrs[i] = IRAssign(dest, Temp(leader))   # redundant -> copy leader
+```
+
+It replaces the **defining instruction**, keeping the same `dest`. Uses are
+untouched; the later `copy_propagate -> copy_coalesce -> dead_code_eliminate`
+rewrites them. Everything below follows from that.
+
+### (b) Debug information: none exists
+
+`ir.py` has zero source-location fields (no `line`, `lineno`, `col`, `coord`) and
+`ir_gen` propagates none; `IRLoadAddr.__repr__` is derived, not stored. Nothing to
+preserve. Note for later: because GVN preserves `dest`, future metadata on that
+temp survives GVN; it is the subsequent copy-propagation that would drop it, which
+is pre-existing behaviour for every GVN elimination, not introduced here.
+
+### (c) DefUse chains: safe by construction
+
+GVN's guard is `du.is_single_def(dest.name)`. Before: one def (`IRLoadAddr`).
+After: one def (`IRAssign`). **Def count unchanged, no use touched** — no dangling
+use and no multi-def temp is ever created. Replacing the *def* is precisely what
+makes this safer than rewriting uses.
+
+### (d) CORRECTION — mem2reg is tainted, and it is measurable
+
+§2 claimed mem2reg's use-based escape analysis "is preserved". It is not. In
+
+```python
+for sn in src_names(ins):
+    if sn in addr_off and sn != clean_base:
+        clean[sn] = False
+```
+
+GVN's own `IRAssign(dest, leader)` is a **use of the leader that is not a
+load/store base**, so `clean[leader] = False` and the slot is refused promotion.
+Measured across the suite:
+
+| | vars | loads | stores |
+|---|---|---|---|
+| without AVN | 136 | 78 | 136 |
+| with AVN | **102** | 52 | 102 |
+
+`axpy vi32` and `axpy vu32` lose **all 13** promotions each. This is NOT a
+miscompile — tainting is the conservative direction, so the slot stays in memory —
+but it is a real optimization loss that §2 asserted away.
+
+**Mitigation (ordering, not a key change):** run the existing
+`copy_propagate -> coalesce -> DCE` on GVN's output *before* `mem2reg` sees it, so
+the copies are gone and the leader is never tainted.
+
+| variant | mem2reg vars | suite ticks | regressions |
+|---|---|---|---|
+| baseline | 136 | 136 206 | — |
+| AVN alone | 102 (−34) | 131 457 (−3.49%) | 0 |
+| **AVN + clean before mem2reg** | **128 (−8)** | **131 455 (−3.49%)** | **0** |
+
+Same tick win, 26 more promotions preserved, axpy vi32/vu32 fully restored. The
+residual −8 is GEMM only and is not diagnosed.
+
+### (e) Complete consumer list
+
+Order verified: vectorization -> `_ivsr` -> `licm2` -> `loop_reg` -> `_cp`{ clean ->
+sccp/dce -> **GVN** -> mem2reg -> LICM -> clean } -> codegen.
+
+**Runs BEFORE GVN — structurally cannot observe the rewrite:**
+`vector_compact_loop.slot_width:193`, `vector_legality:197`,
+`expression_tree:165`, `vector_affine:129`, `vector_remainder_peel:93,100`,
+`ivsr:100,206,320-353`, `loop_reg:121,194,200`, `licm2:67`.
+
+**Runs AFTER GVN:**
+
+| consumer | why replacement is safe |
+|---|---|
+| `mem2reg:78-94` | conservative taint (no miscompile); optimization loss measured and mitigated by (d) |
+| `licm.py:22,94` | the redundant def becomes `IRAssign`, which is ALSO in `_HOISTABLE`; the leader is still hoisted |
+| final `_clean` | copy propagation of a single-def copy is semantics-preserving, and is the same machinery GVN already relies on for every other eliminated expression |
+| `codegen._gen_IRLoadAddr` | fewer instructions, each still `FP + fp_offset` with an unchanged offset |
+| R7.1 rematerialization | recipe keyed by `dest.name`; fewer recipes, each covering more uses; the recipe `FP + constant` is unchanged |
+
+### (f) Added to the implementation plan (§8)
+
+* Run `_clean` between `global_value_numbering` and `mem2reg` in `compiler._cp`.
+* Unit test: mem2reg promotion counts must not fall on `axpy vi32` with AVN
+  enabled — this guards the interaction directly rather than by inspection.
