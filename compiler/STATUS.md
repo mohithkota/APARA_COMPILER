@@ -5978,3 +5978,40 @@ EVERY factor tested.** Report: `R6_4_VECTOR_UNROLLING.md`.
   always-unrolled) and `_r4_3` (compact still reachable).
 - **UNEXPLAINED:** why GEMM loses vectorization at 2x but not 4x/8x. Reported and
   avoided, not diagnosed.
+
+---
+
+## R6.4.1 — Adaptive Unroll-Factor Selection  (2026-08-01) ✅ DONE
+
+**The unroll factor is now CHOSEN BY MEASUREMENT per module, hitting the
+simulator-fastest factor on 8/8 kernels and removing every R6.4 regression.**
+Suite ticks 210359 (1x) -> 138014 (fixed 4x) -> **136847 (adaptive, −34.9%)**.
+38/38 maintained. Report: `R6_4_1_ADAPTIVE_UNROLL.md`.
+
+- **WHY FIXED 4x WASN'T ENOUGH:** every candidate factor is optimal for SOME
+  kernel — axpy vi16/vu16 want **1x**, elementwise vi16/vu16 want **2x**, dot vi8
+  and gemm want **4x**, reduction vi32 wants **8x**. No single value can win.
+- **THE OBJECTIVE, VALIDATED BEFORE IT WAS TRUSTED:** static bundle count is
+  useless (always prefers 1x); "loop-body bundles x iterations, everything else
+  once" got only **4/8** because it ignores OTHER loops' trip counts (a
+  64-iteration init loop dominated the estimate); **R6.1's frequency-weighted
+  dynamic bundle count (`label_frequencies` + `occupancy.analyze_mcode`) got
+  8/8** and is what ships.
+- **DESIGN:** in `vectorize_all_module`, each factor (8,4,2,1 — largest first so
+  ties keep the larger) is built through THE SAME pipeline, so each is validated
+  by the differential oracle as before; lowest estimated dynamic bundles wins. A
+  factor that loses vectorization is skipped, which is how the **2x GEMM
+  pathology is avoided without special-casing**. Any candidate exception is
+  caught. `APARA_VECTOR_UNROLL` pins the factor and skips the search.
+- **RESULT: 0.00% gap to the per-kernel optimum on 8/8.** vs fixed 4x:
+  elementwise vi16 −17.9%, vu16 −13.9%, axpy vi16 −13.5%, reduction vi32 −8.6%,
+  axpy vu16 −5.9%, dot vi16/vu16 −5%. **No kernel is worse.**
+- **COST: compile time ~5x** for a vectorized kernel (0.281 s -> 1.432 s; suite
+  verification 40 s -> 123 s) because the module is built once per candidate.
+  That is the main argument against this design; unimplemented mitigations are
+  caching per kernel shape, or searching only {4,1}.
+- **LIMITATIONS:** the choice is per MODULE, not per kernel — a program with
+  several differently-shaped vector loops gets one factor for all of them, and no
+  benchmark here exercises that. The estimate is a validated MODEL (8 kernels, 4
+  families), it selects rather than proves. The 2x GEMM pathology remains
+  unexplained, only avoided.
