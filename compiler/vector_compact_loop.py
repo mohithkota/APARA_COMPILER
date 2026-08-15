@@ -363,6 +363,10 @@ def realisation_of(instrs):
 # lane count or issue width. Tunable via APARA_VECTOR_COMPACT_MARGIN.
 _DEFAULT_MARGIN = 0.10
 
+# R11 kill switch: restore the R10 behaviour of DISCARDING any candidate that
+# spills under the post-optimizer probe.
+_RESCUE_DISABLED = os.environ.get('APARA_NO_PROBE_RESCUE', '') not in ('', '0')
+
 # MEASURED, AND IT CORRECTED A WRONG HYPOTHESIS. Remainder peeling was expected
 # to be a two-axis win (delete the tail loop, so both size and speed improve).
 # Post-optimizer measurement says otherwise: at remainder 4 the peeled tail is 4
@@ -411,6 +415,7 @@ def choose_smaller(candidates, global_base):
 
     scores = {}
     measured = []
+    rescue = False
     for cand in candidates:
         # (name, slice) or (name, slice, needs_margin). `needs_margin` is False
         # for a challenger that does NOT trade dynamic operations for size -- see
@@ -420,9 +425,46 @@ def choose_smaller(candidates, global_base):
         if slc is None:
             continue
         b, spilled = probe_bundles(slc, global_base)
+        # R11: a spill under the POST-OPTIMIZER probe is NOT a verdict that the
+        # candidate is unbuildable. That probe models TIER 1 ONLY, while
+        # production runs a SEVEN-TIER ladder and simply steps down when tier 1
+        # spills. Discarding here silently handed the choice to a realisation
+        # that is dynamically far worse.
+        #
+        # Measured on gemm vi32: at M=24 the unrolled form probes (68, SPILL)
+        # post-optimizer but (125, no spill) plain, so it was thrown away and
+        # compact won by DEFAULT -- and compact is 2.1x SLOWER (65471 vs 31236
+        # ticks), because its body executes `chunks` times while the unrolled
+        # body executes once. At M=32 the unrolled form spills BOTH ways, so it
+        # is genuinely unbuildable and compact correctly wins there. The rescue
+        # therefore fixes M=24 and deliberately leaves M=32 alone.
+        if (b is None or spilled) and not _RESCUE_DISABLED:
+            from vector_pipeline import _bundles
+            b2, sp2 = _bundles(slc, global_base)
+            if b2 is not None and not sp2:
+                b, spilled, rescue = b2, False, True
         scores[name] = (None if b is None or spilled else b)
         if b is not None and not spilled:
             measured.append((name, slc, b, needs_margin))
+
+    # SCALES MUST MATCH. The post-optimizer probe and the plain backend measure
+    # different things (gemm vi32 M=24: 68 vs 125 bundles for the same slice), so
+    # a comparison mixing them would be meaningless -- and would favour whichever
+    # candidate happened to be measured post-optimizer. If any candidate was
+    # rescued above, re-measure EVERY candidate with the plain probe so the
+    # ranking is made on one consistent scale.
+    if rescue:
+        from vector_pipeline import _bundles
+        measured, scores = [], {}
+        for cand in candidates:
+            name, slc = cand[0], cand[1]
+            if slc is None:
+                continue
+            b, spilled = _bundles(slc, global_base)
+            scores[name] = (None if b is None or spilled else b)
+            if b is not None and not spilled:
+                measured.append((name, slc, b,
+                                 cand[2] if len(cand) > 2 else True))
     if not measured:
         # R4.6.1: every candidate spilled under the POST-OPTIMIZER probe. That
         # probe models tier-1 + superblock, which raises register pressure; the

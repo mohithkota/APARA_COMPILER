@@ -6542,3 +6542,39 @@ switch `APARA_NO_ALIGN_BUNDLE=1` reproduces it **byte-for-byte**.
 - 38/38 + 3/3 negative controls, 21/21 unit suites, crosscheck 124/124, zero
   spills (the pass runs after codegen, so allocation is untouched by
   construction).
+
+## R11 Realisation-probe candidate rescue — DONE (branch feature/r11-realisation-probe)
+
+Report: `R11_PROBE_RESCUE_DELIVERY.md`. Branched off `r10-final` (`930834e`).
+Kill switch `APARA_NO_PROBE_RESCUE=1` restores R10 behaviour.
+
+- Closes the R10 future-work item "GEMM vi32 does not scale past M=16" -- but
+  the cause was NOT the one R10 guessed. Instrumenting the probe showed the
+  unrolled candidate was **discarded outright for spilling**, so compact won by
+  DEFAULT: at vi32 M=24 compact was LARGER (69 vs 68) and still chosen.
+- **ROOT CAUSE: `vector_size_probe` models TIER 1 ONLY, while production runs a
+  SEVEN-TIER ladder and steps down when tier 1 spills.** A spill under the probe
+  is not a verdict that the candidate is unbuildable. Measured on the same slice:
+  vi32 M=24 unrolled probes (68, SPILL) post-optimizer but **(125, no spill)**
+  plain; M=32 unrolled spills BOTH ways, so compact is genuinely right there.
+- Why it costs so much: the compact body executes `chunks` times per row while
+  the unrolled body executes once (vector bundles 2560 -> 41472 at M=24). vi32
+  hits it and vi16 does not purely from ISA granularity -- a packed 64-bit word
+  holds 8/elem_bytes lanes, so vi32 needs M/2 chunks against vi16's M/4.
+- FIX, two small changes in `choose_smaller`: (1) per-candidate rescue -- re-probe
+  with the plain backend before discarding, the same rescue the R4.6.1 all-spill
+  path already did but applied per candidate; (2) **scale consistency** -- the two
+  probes measure different things (68 vs 125 for one slice), so once any
+  candidate is rescued, ALL are re-measured plain. Incumbent rule, 10% margin and
+  spill/differential gates unchanged.
+- **gemm vi32 M=24: 65471 -> 31236 ticks (-52.3%)**, 113.66 -> 54.23 ticks/output.
+  M=16 and M=32 unchanged; all vi16 sizes unchanged.
+- **Shipped 38-program suite BIT-IDENTICAL: 67689 -> 67689, 0 programs changed** --
+  the R8.1a hazard (probe changes silently costing an unrelated kernel a
+  transform) does not materialise, because no shipped kernel spills under the
+  post-optimizer probe.
+- 38/38 + 3/3 negative controls, 21/21 unit suites, crosscheck 124/124, 0 spills.
+- HONEST BOUND: this does NOT make vi32 scale like vi16 (54.23 vs 18.66
+  ticks/output at M=24) -- the residue is 2-lane granularity, architectural. M=32
+  is NOT improved and cannot be by this fix; partial unrolling does not exist in
+  the compiler and was not added.
