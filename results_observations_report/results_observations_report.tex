@@ -1,0 +1,315 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titling}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+\definecolor{codestring}{rgb}{0.6,0.0,0.0}
+
+\lstdefinestyle{base}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=base}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Results and Observations --- APARA C Compiler}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\droptitle}{-1.5cm}
+\title{\textbf{Results and Observations}\\[2mm]
+\large Correctness Is Solid; Bundle Efficiency Is Not --- A Quantified Account}
+\author{APARA C Compiler Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+\vspace{-8mm}
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+This report is the single most important result of this project, because it states
+plainly what the rest of the project's documentation otherwise leaves implicit: the
+compiler is \textbf{correct} --- independently verified, at scale, with a near-zero error
+rate fully explained by one already-documented hardware defect --- but it is
+\textbf{not efficient}. Every number below was re-measured directly against the current
+compiler immediately before writing this report, not recalled from an earlier session.
+Section~\ref{sec:correctness} establishes the correctness baseline; Section~\ref{sec:efficiency}
+is the comparison that matters --- how many of the VLIW bundles this compiler emits
+actually do useful work, measured on two real, hardware-representative programs; Section~\ref{sec:rootcause}
+explains, with real compiler output, \emph{exactly} where and why the inefficiency comes
+from; Section~\ref{sec:discussion} states what a realistic fix would look like and why it
+has deliberately not been attempted yet.
+
+% ============================================================================
+\section{Main Results: Correctness}
+\label{sec:correctness}
+% ============================================================================
+
+\begin{table}[h]
+\centering
+\caption{Verification tally across the entire project}
+\begin{tabular}{@{}p{6.0cm}rp{4.4cm}@{}}
+\toprule
+Suite & Checks & Errors \\
+\midrule
+ISA instruction-coverage suite & 159 & 3 (one known simulator bug, fully explained) \\
+Matrix-multiplication suite (4 sizes) & 5440 & 0 \\
+Pre-existing baseline suite & 393 & 0 \\
+\midrule
+\textbf{Total} & \textbf{5992} & \textbf{3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Bugs found across the whole project, by where they live}
+\begin{tabular}{@{}p{6.0cm}p{6.0cm}@{}}
+\toprule
+Where & Tally \\
+\midrule
+Compiler (Python, this project's own code) & 9 found, 9 fixed \\
+Simulator (\texttt{engine\_isp}, C++, not this project's code) & 6 found --- 3 fixed and
+  confirmed in the current production binary, 3 still open (flagged for the hardware
+  team, out of scope for a C compiler to fix) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Every one of the 5\,992 checks is an independent \texttt{PostCondition} assertion, derived
+by compiling each test's \emph{exact} source natively with \texttt{gcc} against a
+plain-C reference implementation --- never by this compiler, and never by hand. The 3
+errors are not 3 different problems: they are the same one already-documented simulator
+defect (\texttt{\$vreduce} sign-extending unsigned vector reductions) landing on its 3
+predicted cases. \textbf{Correctness, in other words, is not the open question.}
+
+% ============================================================================
+\section{Main Results: Bundle Efficiency --- the Comparison That Matters}
+\label{sec:efficiency}
+% ============================================================================
+
+``Useful work'' on its own is too coarse a label. Every bundle in both test programs was
+mechanically re-classified, with the bundler's own output as the only input, into exactly
+\textbf{four mutually-exclusive categories} (every bundle falls into exactly one, so each
+program's percentages sum to 100\%):
+
+\begin{table}[h]
+\centering
+\caption{The four bundle classifications}
+\begin{tabular}{@{}p{2.6cm}p{9.4cm}@{}}
+\toprule
+Category & What it contains \\
+\midrule
+\textbf{Control flow} & A branch (\texttt{?~\$goto}), \texttt{\$call}, \texttt{\$return},
+  or \texttt{\$halt} --- moving execution, not computing or moving a value. \\
+\textbf{Arithmetic / vector compute} & The instruction the C source actually asked for:
+  one of the 13 scalar ALU operators, or \texttt{\$dot}/\texttt{\$dot \$accumulate} for
+  the vectorized matrix multiply. This is the only category that represents the
+  program's real, user-requested work. \\
+\textbf{Memory access} & A \texttt{\$ld} or \texttt{\$st} --- reading or writing a
+  variable, array element, or vector to DMEM. \\
+\textbf{Address computation \& setup} & Everything left over: computing \texttt{\&var}
+  or an array index, advancing a loop counter, loading a constant with \texttt{\$set},
+  adjusting the stack pointer. Pure bookkeeping --- no value the C program asked for is
+  computed or moved here. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Bundle classification, re-measured directly against the current compiler}
+\label{tab:efficiency}
+\begin{tabular}{@{}p{3.4cm}rrrrr@{}}
+\toprule
+Program & Total & Control flow & Arithmetic & Memory access & Addr.\ \& setup \\
+\midrule
+\texttt{matmul\_n16.c} & 95 & 16 (16.8\%) & \textbf{2 (2.1\%)} & 30 (31.6\%) & 47 (49.5\%) \\
+\texttt{test\_alu\_full.c} & 68 & 4 (5.9\%) & \textbf{15 (22.1\%)} & 41 (60.3\%) & 8 (11.8\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two different bottlenecks, not one: \texttt{matmul\_n16.c} is dominated by
+\textbf{address computation} (49.5\%, the largest single category) because every loop
+iteration recomputes \texttt{i*16}/\texttt{j*16} from scratch (Section~\ref{sec:rootcause}
+shows this directly); \texttt{test\_alu\_full.c} is dominated by \textbf{memory access}
+(60.3\%) because it is one long, branch-free sequence of independent operations, each
+needing its own pair of operand loads with nothing left over to overlap them with.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+  \def\scaleY{0.052}   % cm per bundle
+  % matmul stacked bar: ctrl(16) / arith(2) / mem(30) / addr(47), bottom to top
+  \draw[fill=gray!50]   (0,0) rectangle (1.6,{16*\scaleY});
+  \draw[fill=green!60]  (0,{16*\scaleY}) rectangle (1.6,{18*\scaleY});
+  \draw[fill=blue!40]   (0,{18*\scaleY}) rectangle (1.6,{48*\scaleY});
+  \draw[fill=orange!60] (0,{48*\scaleY}) rectangle (1.6,{95*\scaleY});
+  \node[right] at (1.6,{17*\scaleY}) {\tiny 2 (2.1\%) arith};
+  \node[below=2mm] at (0.8,0) {\small \texttt{matmul\_n16.c}};
+  % alu stacked bar: ctrl(4) / arith(15) / mem(41) / addr(8)
+  \draw[fill=gray!50]   (3.0,0) rectangle (4.6,{4*\scaleY});
+  \draw[fill=green!60]  (3.0,{4*\scaleY}) rectangle (4.6,{19*\scaleY});
+  \draw[fill=blue!40]   (3.0,{19*\scaleY}) rectangle (4.6,{60*\scaleY});
+  \draw[fill=orange!60] (3.0,{60*\scaleY}) rectangle (4.6,{68*\scaleY});
+  \node[right] at (4.6,{11.5*\scaleY}) {\tiny 15 (22.1\%) arith};
+  \node[below=2mm] at (3.8,0) {\small \texttt{test\_alu\_full.c}};
+  % axis
+  \draw[-{Triangle[length=2mm]}, thick] (-0.4,0) -- (-0.4,5.4);
+  \node[rotate=90, above] at (-0.7,2.5) {\small bundles};
+  % legend
+  \draw[fill=gray!50]   (6.2,4.8) rectangle (6.5,5.1); \node[right,font=\scriptsize] at (6.5,4.95) {control flow};
+  \draw[fill=green!60]  (6.2,4.2) rectangle (6.5,4.5); \node[right,font=\scriptsize] at (6.5,4.35) {arithmetic};
+  \draw[fill=blue!40]   (6.2,3.6) rectangle (6.5,3.9); \node[right,font=\scriptsize] at (6.5,3.75) {memory access};
+  \draw[fill=orange!60] (6.2,3.0) rectangle (6.5,3.3); \node[right,font=\scriptsize] at (6.5,3.15) {addr.\ \& setup};
+\end{tikzpicture}
+\caption{Bundle composition, stacked, to scale. The arithmetic slice (green) is the only
+segment representing real, user-requested computation in either program.}
+\end{figure}
+
+% ============================================================================
+\section{Where We Failed to Produce an Efficient Number of Bundles: Root Cause}
+\label{sec:rootcause}
+% ============================================================================
+
+The gap in Table~\ref{tab:efficiency} has one identified, specific, mechanical cause:
+\textbf{every named C variable is memory-backed.} There is no point in the compiler's
+pipeline where a value already sitting in a register is reused for a second read of the
+same variable --- every read re-issues a fresh \texttt{\$ld}, and every write re-issues a
+fresh \texttt{\$st}, even with no other instruction in between. The clearest, freshest
+evidence is the matrix-multiply inner loop's own intermediate representation:
+
+\begin{lstlisting}[caption={\texttt{matmul\_n16.c}'s inner loop IR (re-generated fresh) --- \texttt{i} is loaded and multiplied by 16 \emph{twice}}]
+_t53 = &stack[FP-8]        // address of i  (first time)
+_t54 = *(_t53+0)           // load i        (first time)
+_t55 = _t54 * 16           // i*16          (first time -- for &A[i*16])
+   ...
+_t68 = &stack[FP-8]        // address of i  (SECOND time -- identical to _t53)
+_t69 = *(_t68+0)           // load i        (SECOND time -- identical to _t54)
+_t70 = _t69 * 16           // i*16          (SECOND time -- identical to _t55)
+\end{lstlisting}
+
+\texttt{i} did not change between these two blocks --- nothing wrote to it. \texttt{\_t68}
+computes the \emph{exact same address} as \texttt{\_t53}; \texttt{\_t70} computes the
+\emph{exact same value} as \texttt{\_t55}. A compiler that cached \texttt{i}'s value in a
+register across this short span would skip all three of those instructions the second
+time, for free. The reason this happens on \emph{every} variable use, not just this one,
+is structural, not a bug: \texttt{ir\_gen.py}'s variable-access path
+(\texttt{\_load\_var}/\texttt{\_store\_var}) has no code path that returns an
+already-live register for an existing value --- only ``load/store relative to this
+variable's known stack offset.'' The bundler downstream cannot invent the independence
+this would have created; it can only pack what is already independent in the instruction
+stream it is given.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  scale=0.85, every node/.style={scale=0.85},
+  node distance=6mm and 10mm,
+  proc/.style={rectangle, draw, thick, rounded corners, minimum width=5.2cm, minimum height=0.8cm, align=center, fill=orange!10},
+  decision/.style={diamond, draw, thick, aspect=2.4, minimum width=4.4cm, minimum height=0.7cm, align=center, fill=blue!8, font=\small},
+  gone/.style={rectangle, draw, thick, dashed, rounded corners, minimum width=5.4cm, minimum height=0.8cm, align=center, fill=gray!10, font=\small},
+  term/.style={rectangle, draw, thick, rounded corners, minimum width=4.2cm, minimum height=0.7cm, align=center, fill=green!10},
+  arr/.style={-{Triangle[length=2.2mm,width=1.8mm]}, thick}
+]
+  \node[term] (start) {C reads variable \texttt{v}};
+  \node[decision, below=of start] (q) {is \texttt{v} already in a register \\ from a recent, still-valid write/load?};
+  \node[gone, right=14mm of q] (skip) {NOT IMPLEMENTED (deferred): \\ reuse that register, emit nothing};
+  \node[proc, below=of q] (load) {THIS COMPILER, ALWAYS: \\ compute \texttt{v}'s address; emit \texttt{\$ld}};
+  \node[term, below=of load] (use) {use the loaded value};
+
+  \draw[arr] (start) -- (q);
+  \draw[arr] (q) -- node[right,font=\scriptsize]{yes, in principle} (skip);
+  \draw[arr] (q) -- node[left,font=\scriptsize]{this compiler: always taken} (load);
+  \draw[arr] (load) -- (use);
+  \draw[arr] (skip) |- (use);
+\end{tikzpicture}
+\caption{The decision this compiler never makes. The dashed box is the entire missing
+optimization --- a register-cache check ahead of every load --- deferred, not implemented
+(Section~\ref{sec:discussion}).}
+\end{figure}
+
+% ============================================================================
+\section{Discussion: How Much Is Realistically Recoverable, and Why It Is Deferred}
+\label{sec:discussion}
+% ============================================================================
+
+It is tempting to compare against a hand-written ideal (``this is 13 operations, it should
+take 2 bundles''), but that bound is not achievable on this hardware: the VLIW bundle
+width is 8, several of the 13 operations have genuine sequential dependencies (\texttt{\%}
+alone needs 3 sequential steps), and every bundle's memory-access slots are themselves
+capped. A realistic, register-caching compiler --- one that reused a value already in a
+register for repeated reads within one basic block, instead of reloading it every time ---
+would not reach 2 bundles for \texttt{test\_alu\_full.c}, but it would plausibly reach
+something in the \textbf{8--12 bundle} range, versus the 68 actually produced: most of the
+\emph{load} half of every operand pair would disappear, while the address-computation and
+store instructions specific to each of the 13 distinct results would remain.
+
+This fix is \textbf{deliberately not implemented in this project}. It would change the
+"every named variable is memory-backed" assumption that the IR generator, the register
+allocator, and the bundler were all built and \emph{independently verified} against ---
+touching all 5\,992 already-passing checks at once, for a change whose own correctness
+would then need to be re-established from scratch. That work is explicitly scheduled for
+\emph{after} the project's current presentation milestone, not abandoned.
+
+% ============================================================================
+\section{Summary}
+% ============================================================================
+
+\begin{itemize}
+  \item \textbf{Correctness}: 5\,992 independently-verified checks, 3 errors, all 3
+        already fully explained by one documented, simulator-side defect outside this
+        project's own code. This is not the open problem.
+  \item \textbf{Efficiency}: of four mutually-exclusive bundle categories measured
+        directly on two real programs, only the \emph{arithmetic} category --- the one
+        representing real, user-requested computation --- accounts for 2.1\%
+        (\texttt{matmul\_n16.c}) and 22.1\% (\texttt{test\_alu\_full.c}) of all bundles;
+        the rest is control flow, memory access, and address computation/setup, in
+        different proportions for each program (Table~\ref{tab:efficiency}).
+  \item \textbf{Root cause, demonstrated with fresh compiler output, not asserted}: every
+        variable read/write re-issues memory traffic, even immediately adjacent,
+        unchanged repeats of the same variable; the bundler has nothing to pack beyond
+        what that stream already permits.
+  \item \textbf{Path forward}: a register-caching pass, realistically worth roughly a
+        $5$--$8\times$ bundle-count reduction on arithmetic-heavy code, scoped and
+        understood, but intentionally deferred until after the checks already in place
+        can be re-verified against it deliberately, not under time pressure.
+\end{itemize}
+
+\end{document}

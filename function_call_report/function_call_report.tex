@@ -1,0 +1,420 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titling}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+\definecolor{codestring}{rgb}{0.6,0.0,0.0}
+
+\lstdefinestyle{base}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=base}
+
+\lstdefinelanguage{pseudo}{
+  morekeywords={if,else,for,in,repeat,return,raise,function,not,every,delete,goto,while,True,False,continue},
+  morecomment=[l]{//},
+  sensitive=true
+}
+\lstdefinestyle{pseudostyle}{
+  language=pseudo,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Function Calling in the APARA C Compiler}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\droptitle}{-1.5cm}
+\title{\textbf{Function Calling in the APARA C Compiler}\\[2mm]
+\large How C Function Calls Are Lowered to APARA mcode}
+\author{APARA C Compiler Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+\vspace{-8mm}
+
+% ============================================================================
+\section{Introduction and Strategy}
+% ============================================================================
+
+A C function call touches more compiler machinery at once than almost any other
+construct: the IR generator (one node, \texttt{IRCall}), the register allocator (every
+live value must survive a call whose callee may clobber anything), and the code
+generator's calling-convention logic (arguments in, return value out, the stack frame
+itself). This report covers all three, end to end, for direct calls; indirect calls
+through a function pointer are mentioned only briefly, since they are blocked at the
+assembler level for an unrelated reason (Section~\ref{sec:limits}).
+
+\textbf{The governing strategy} has three deliberate simplifications, each trading some
+performance for a much smaller, more predictable amount of code to get right:
+\begin{enumerate}
+  \item \textbf{Fixed argument registers, no stack-passed arguments.} Exactly four
+        registers, \texttt{\$r2}--\texttt{\$r5}, carry the first four arguments; a 5th
+        argument is a hard compile-time error, not a silent truncation or a fallback to
+        stack passing.
+  \item \textbf{Full caller-save, not a fixed callee-save/caller-save split.} Every
+        register the allocator considers \emph{currently live} at a call site --- not a
+        fixed subset chosen by an ABI table --- is spilled to the stack before the call
+        and reloaded after. The callee is therefore free to clobber every register
+        except \texttt{\$r26}/\texttt{\$r27} (FP/SP, never touched by the allocator at
+        all).
+  \item \textbf{One epilogue per function, no matter how many \texttt{return}
+        statements.} Every \texttt{return} just loads the result into \texttt{\$r1} and
+        jumps to a single, shared epilogue label; the actual stack teardown and
+        \texttt{\$return} instruction exist exactly once per function.
+\end{enumerate}
+
+% ============================================================================
+\section{The Call Site (Caller Side): Algorithm}
+\label{sec:caller}
+% ============================================================================
+
+\texttt{ir\_gen.py}'s \texttt{\_call} lowers an ordinary call to exactly one IR node,
+\texttt{IRCall(dest, func\_name, args)} (ir\_gen.py:1188) --- all of the complexity below
+is \texttt{codegen.py}'s \texttt{\_gen\_IRCall} (codegen.py:943--1018) turning that one
+node into real mcode.
+
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{\_gen\_IRCall}, codegen.py:943--1018 (essence)}]
+function EMIT-CALL(dest, func_name, args):
+    if len(args) > 4:  COMPILE-ERROR("too many arguments"); exit
+
+    // 1. Caller-save: spill every currently-live register to the stack
+    saved <- current allocator map (name -> register), as a list
+    for (name, reg) in saved:
+        slot <- next caller-save stack slot
+        emit "$st [FP + slot], reg"
+        remember slot for name
+
+    // 2. Set up arguments in $r2..$r5, reading from the JUST-SAVED stack
+    //    slots (not from registers) so writing arg[i] can never clobber
+    //    a register that arg[i+1] still needs to read
+    for i, arg in enumerate(args[:4]):
+        if arg is a live temp that was just saved:  emit "$ld ARG[i], [FP + slot]"
+        elif arg is a constant:                      load it into ARG[i] directly
+        else:                                          emit "+ ARG[i] = 0 + arg's register"
+
+    // 3. Make the call
+    emit "$call func_name"
+    // From here on every register except $r1 may hold garbage --
+    // the allocator's bookkeeping is now stale; only the caller-save
+    // slots on the stack are trustworthy.
+
+    // 4. Capture the return value
+    if dest is needed:
+        if no free register exists:
+            EVICT-ONE-CALLER-SAVED-VALUE-TO-A-SPILL-SLOT()   // see Section 2.1
+        reg <- allocate a register for dest
+        emit "+ reg = 0 + $r1"
+
+    // 5. Restore every caller-saved value from its stack slot
+    for (name, reg, slot) in saved:
+        emit "$ld reg, [FP + slot]"
+\end{lstlisting}
+
+\subsection*{The one tricky edge case: capturing the return value when the pool is full}
+\label{sec:caller-edge}
+If all 28 registers were already live before the call, step 4 has nowhere to put the
+return value --- every register is still recorded as holding some caller-saved value
+(even though, physically, the call just clobbered it). The fix: pick any one saved value
+that is \emph{not} currently sitting in \texttt{\$r1}, reload its correct value from its
+caller-save slot, write it straight back out to a dedicated long-term spill slot instead,
+and mark its register free. This never touches \texttt{\$r1} itself, so the live return
+value is never at risk of being overwritten while making room for it.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  scale=0.82, every node/.style={scale=0.82},
+  node distance=6mm and 10mm,
+  proc/.style={rectangle, draw, thick, rounded corners, minimum width=5.6cm, minimum height=0.8cm, align=center, fill=orange!10},
+  decision/.style={diamond, draw, thick, aspect=2.4, minimum width=4.2cm, minimum height=0.7cm, align=center, fill=blue!8, font=\small},
+  term/.style={rectangle, draw, thick, rounded corners, minimum width=4.2cm, minimum height=0.7cm, align=center, fill=green!10},
+  arr/.style={-{Triangle[length=2.2mm,width=1.8mm]}, thick}
+]
+  \node[term] (start) {\texttt{IRCall(dest, func, args)}};
+  \node[proc, below=of start] (save) {1. Save every live register to the stack};
+  \node[proc, below=of save] (args) {2. Load \$r2..\$r5 from saved slots / constants};
+  \node[proc, below=of args] (call) {3. emit \texttt{\$call func}};
+  \node[decision, below=of call] (destq) {dest needed?};
+  \node[decision, right=22mm of destq] (fullq) {pool full?};
+  \node[proc, above=of fullq] (evict) {evict one non-\$r1 saved value to a spill slot};
+  \node[proc, below=of fullq] (capture) {allocate reg; copy from \$r1};
+  \node[proc, below=of destq] (restore) {5. Reload every saved value from its slot};
+  \node[term, below=of restore] (done) {done};
+
+  \draw[arr] (start) -- (save);
+  \draw[arr] (save) -- (args);
+  \draw[arr] (args) -- (call);
+  \draw[arr] (call) -- (destq);
+  \draw[arr] (destq) -- node[above,font=\scriptsize]{yes} (fullq);
+  \draw[arr] (destq) -- node[left,font=\scriptsize]{no} (restore);
+  \draw[arr] (fullq) -- node[right,font=\scriptsize]{yes} (evict);
+  \draw[arr] (evict) -- (fullq);
+  \draw[arr] (fullq) -- node[right,font=\scriptsize]{no} (capture);
+  \draw[arr] (capture) |- (restore);
+  \draw[arr] (restore) -- (done);
+\end{tikzpicture}
+\caption{Call-site code generation, step by step. The eviction loop (top right) only
+ever runs once per call, since one evicted register is always enough to make room for the
+single return-value destination.}
+\end{figure}
+
+% ============================================================================
+\section{Function Entry and Exit (Callee Side): Algorithm}
+\label{sec:callee}
+% ============================================================================
+
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{\_gen\_IRFuncBegin} / \texttt{\_gen\_IRFuncEnd}, codegen.py:572--619 (essence)}]
+function EMIT-PROLOGUE(func_name, params, frame_size):
+    if len(params) > 4:  COMPILE-ERROR("too many parameters"); exit
+    reset register allocator to a fresh 28-register pool   // new function, clean slate
+
+    LABEL func_name
+    emit "$st [SP + 0], FP"             // save caller's frame pointer
+    emit "+ FP = 0 + SP"                // establish the new frame
+    total <- frame_size + CALLER_SAVE_BYTES + SPILL_RESERVE
+    emit "- SP = SP - total"            // carve out locals + caller-save + spill areas
+
+    for i, (name, fp_offset, width) in enumerate(params):
+        emit "$st (width) [FP + fp_offset], ARG[i]"   // width-correct, not a blind $i64
+
+function EMIT-EPILOGUE(func_name):
+    LABEL func_name + "_epilogue"       // every "return" jumps here, never falls through
+    emit "+ SP = 0 + FP"                // collapse the frame
+    emit "$ld FP, [SP + 0]"             // restore caller's frame pointer
+    emit "$return"
+\end{lstlisting}
+
+The parameter-store width matters: every parameter is written back at its \emph{real} C
+width (\texttt{\$i32} for a plain \texttt{int}, \texttt{\$i8} for a \texttt{char}, \ldots),
+not a blanket 64-bit store. APARA's narrow load always reads a fixed bit-slice of the
+8-byte DMEM word; storing a small value as a full 64-bit quantity and then reading it back
+narrow would silently read the wrong half. (This was a real, confirmed bug in this
+compiler before it was fixed --- see Section~\ref{sec:limits}.)
+
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{\_gen\_IRReturn}, codegen.py:1104--1111}]
+function EMIT-RETURN(value):
+    if value exists:
+        emit "+ $r1 = 0 + value's register"     // load the result into RET
+    emit unconditional jump to func_name + "_epilogue"
+\end{lstlisting}
+A function with three \texttt{return} statements compiles to three small
+load-into-\texttt{\$r1}-then-jump sequences, all converging on the \emph{same} epilogue
+--- the stack-teardown code is never duplicated.
+
+% ============================================================================
+\section{A Fully Compiled, Verified Worked Example}
+\label{sec:worked}
+% ============================================================================
+
+\begin{lstlisting}[language=C, caption={Source}]
+int add(int a, int b) { return a + b; }
+int main() {
+    int r;
+    r = add(3, 4);
+    return r;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Generated mcode (both functions, in full)}]
+add:
+||
+    $st ($i64) [$r27 + 0] $r26        // prologue: save caller's FP
+;
+||
+    + $r26 ($i64) $r0 $r27            // FP = SP
+    $set $r1 0 824                    // 824 = frame(88) + caller-save(224) + spill(512)
+;
+||
+    - $r27 ($i64) $r27 $r1            // SP -= 824
+    $st ($i32) [$r26 + -8]  $r2       // store param a (width = $i32, matches "int")
+    $st ($i32) [$r26 + -16] $r3       // store param b
+    + $r1 ($i64) $r26 -8              // body starts: &a
+;
+||
+    $ld ($i32) $r2 [$r1 + 0]          // load a
+    + $r3 ($i64) $r26 -16
+;
+||
+    $ld ($i32) $r4 [$r3 + 0]          // load b
+;
+||
+    + $r5 ($i64) $r2 $r4              // r5 = a + b
+;
+||
+    + $r1 ($i64) $r0 $r5              // RET = r5
+    ? ($i64) $r0 == $goto add_epilogue
+;
+add_epilogue:
+||
+    + $r27 ($i64) $r0 $r26            // SP = FP
+;
+||
+    $ld ($i64) $r26 [$r27 + 0]        // FP = caller's FP
+    $return
+;
+main:
+||
+    $st ($i64) [$r27 + 0] $r26
+;
+||
+    + $r26 ($i64) $r0 $r27
+    $set $r1 0 816
+;
+||
+    - $r27 ($i64) $r27 $r1            // nothing live yet -- caller-save loop is empty
+    + $r2 ($i64) $r0 3                 // arg0 = 3
+    + $r3 ($i64) $r0 4                 // arg1 = 4
+;
+||
+    $call add
+;
+||
+    + $r1 ($i64) $r0 $r1              // capture RET (dest happened to land on $r1 too)
+    + $r2 ($i64) $r26 -8               // &r, for the store below
+;
+||
+    $st ($i32) [$r2 + 0] $r1          // r = (the call's result)
+    + $r3 ($i64) $r26 -8
+;
+||
+    $ld ($i32) $r4 [$r3 + 0]
+;
+||
+    + $r1 ($i64) $r0 $r4
+    ? ($i64) $r0 == $goto main_epilogue
+;
+main_epilogue:
+||
+    + $r27 ($i64) $r0 $r26
+;
+||
+    $ld ($i64) $r26 [$r27 + 0]
+    $return
+;
+\end{lstlisting}
+
+Note the line \texttt{+ \$r1 = \$r0 + \$r1} in \texttt{main}: this looks like a no-op, and
+on these exact values it is one --- but it is not special-cased anywhere. \texttt{main}
+had nothing live at the call site, so the caller-save loop did nothing, and the register
+allocator's ordinary linear-scan happened to hand out \texttt{\$r1} (the first register in
+its free list) for the call's destination temp, which collides with \texttt{RET}
+($=$\texttt{\$r1}) itself. The algorithm is correct either way --- it would be a real copy
+into a \emph{different} register if anything else had been live first.
+
+\subsection*{Caller-save actually firing: a second example}
+\texttt{r = x + add(3, 4);} with \texttt{x} already assigned beforehand produces, at the
+call site:
+\begin{lstlisting}[caption={Caller-save in action (excerpt)}]
+    $st ($i64) [$r26 + -96] $r3       // save x's value before clobbering $r3 for an argument
+    + $r2 ($i64) $r0 3
+;
+||
+    + $r3 ($i64) $r0 4                // $r3 reused for arg1 -- safe, x is already on the stack
+    $call add
+;
+||
+    + $r4 ($i64) $r0 $r1              // capture return value into a fresh register
+    $ld ($i64) $r3 [$r26 + -96]       // restore x
+;
+||
+    + $r5 ($i64) $r3 $r4              // r5 = x + add(3,4)
+\end{lstlisting}
+
+% ============================================================================
+\section{Known Limits and Historical Failure Modes}
+\label{sec:limits}
+% ============================================================================
+
+Four real, previously-confirmed defects sit directly in this machinery and are worth
+recording alongside the algorithm itself, since each one demonstrates a way this exact
+code path can go wrong if changed carelessly:
+\begin{itemize}
+  \item \textbf{Narrow-parameter bug (compiler-side, fixed).} The prologue's parameter
+        store used to be a hardcoded \texttt{\$st (\$i64)} regardless of the parameter's
+        real width, while reads correctly used the narrow width --- so any
+        \texttt{int}/\texttt{short}/\texttt{char} parameter silently read back as garbage.
+        Fixed by threading the real element width through \texttt{IRFuncBegin.params}
+        (Section~\ref{sec:callee}'s width-correct store is the fix).
+  \item \textbf{4-argument ceiling (compiler-side, fixed).} A 5th argument or parameter
+        used to be silently dropped with no error. Now both \texttt{\_gen\_IRCall} and
+        \texttt{\_gen\_IRFuncBegin} fail loudly at compile time instead.
+  \item \textbf{\texttt{\$call} disassembler sign-extend bug (simulator-side, fixed).}
+        Every \emph{backward} call (a callee defined above its caller in source order ---
+        the ordinary C pattern) resolved to the wrong target entirely, because the
+        disassembler sign-extended the wrong bit of the 25-bit jump field. Fixed in the
+        simulator; confirmed present in the current authoritative build.
+  \item \textbf{Instruction-memory size bug (simulator-side, fixed).} Functions whose
+        compiled body exceeded 2048 words were silently truncated, which surfaced as
+        \emph{this} machinery's symptoms (wrong return values) despite the bug having
+        nothing to do with calling convention logic at all.
+\end{itemize}
+Indirect calls through a function pointer (\texttt{\$call \$rN}) are valid hardware
+behaviour and fully implemented on the compiler side (\texttt{IRFuncAddr}/
+\texttt{IRIndirectCall}), but are blocked end-to-end because no instruction exists to load
+a function's absolute address into a register in the first place --- a hard assembler
+limitation, not a bug in this calling convention.
+
+% ============================================================================
+\section{Summary}
+% ============================================================================
+
+A C function call is, by the time it reaches mcode, five mechanical steps: spill whatever
+is live, load the fixed argument registers from the safety of the stack rather than from
+registers that are about to be overwritten, call, capture \texttt{\$r1}, and reload
+everything that was spilled. A function definition is two mechanical bookends around an
+ordinary instruction stream: a prologue that links a new frame onto the old one and stores
+incoming arguments at their real width, and a single epilogue, shared by every
+\texttt{return} in the function, that unwinds the frame and hands control back. Nothing
+here depends on what kind of function is being called or how many times it is called from
+--- the same five-step/two-bookend pattern produced every line in
+Section~\ref{sec:worked}'s worked example, and produces every function call in every
+program this compiler has ever built.
+
+\end{document}

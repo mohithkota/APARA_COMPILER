@@ -80,3 +80,22 @@ compiler_backup_*/
 *.orig
 *.rej
 *.tmp
+
+# ── Private / unpublished thesis material (NEVER publish) ─────────────────────
+# Kept locally, deliberately excluded from the published repository. Added when
+# the publish/apara-compiler branch was created; see R12 audit.
+My_mtp_phase1_draft.pdf
+Post_MTP_Progress_Update.pdf
+Post_MTP_Progress_Update.docx
+Post_MTP_Progress_Update.md
+thesis_final/
+thesis_report/
+meeting_report/
+# Third-party / unconfirmed authorship -- do not redistribute until confirmed
+compiler_support_documents/
+# Catch-all for future drafts dropped at the repository root
+/*_draft*.pdf
+/*MTP*.pdf
+/*MTP*.docx
+/*thesis*.pdf
+/*Thesis*.pdf

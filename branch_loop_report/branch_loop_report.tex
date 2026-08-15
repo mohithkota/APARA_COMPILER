@@ -1,0 +1,450 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titling}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+\definecolor{codestring}{rgb}{0.6,0.0,0.0}
+
+\lstdefinestyle{base}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=base}
+
+\lstdefinelanguage{pseudo}{
+  morekeywords={if,else,for,in,repeat,return,raise,function,not,every,delete,goto,while},
+  morecomment=[l]{//},
+  sensitive=true
+}
+\lstdefinestyle{pseudostyle}{
+  language=pseudo,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Branch and Loop Handling in the APARA C Compiler}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\droptitle}{-1.5cm}
+\title{\textbf{Branch and Loop Handling in the APARA C Compiler}\\[2mm]
+\large How C control flow is broken down into APARA mcode instructions}
+\author{APARA C Compiler Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+\vspace{-8mm}
+
+% ============================================================================
+\section{Introduction and Strategy}
+% ============================================================================
+
+This report explains how the compiler lowers every C control-flow construct ---
+\texttt{if}/\texttt{else}, \texttt{while}, \texttt{do-while}, \texttt{for}, \texttt{switch},
+\texttt{break}/\texttt{continue} --- down to APARA mcode, across the same two compiler
+stages used for everything else: \texttt{ir\_gen.py} (AST $\to$ three-address IR) and
+\texttt{codegen.py} (IR $\to$ mcode).
+
+\textbf{The single governing strategy} is that the IR has no nested structure at all ---
+no if/while/for nodes survive into it. Every construct is lowered, once and for all in
+\texttt{ir\_gen.py}, into exactly three IR primitives: \texttt{IRLabel} (a named point in
+the flat instruction stream), \texttt{IRJump} (an unconditional jump to a label), and
+\texttt{IRCondJump} (jump to a label if a comparison holds). By the time \texttt{codegen.py}
+sees the program, an \texttt{if} statement and a \texttt{while} loop are built from
+\emph{exactly the same two ingredients} --- only the arrangement of labels and jumps
+differs. This is what makes a single, uniform mcode-level treatment (Section~\ref{sec:mcode})
+possible: the bundler and the assembler never need to know what kind of C statement
+produced a given branch.
+
+% ============================================================================
+\section{Lowering Each Construct: Algorithms and Flow}
+% ============================================================================
+
+Each construct below is handled by its own \texttt{visit\_Xxx} method in
+\texttt{ir\_gen.py}, but all of them follow the same pattern: allocate a small, fixed set of
+labels up front, then emit \texttt{IRLabel}\allowbreak/\texttt{IRCondJump}\allowbreak/%
+\texttt{IRJump} around a recursive call that lowers the nested body.
+
+\subsection*{\texttt{if} / \texttt{if-else}}
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{visit\_If}, ir\_gen.py:724--735}]
+function LOWER-IF(cond, ifTrueBody, ifFalseBody):
+    t_lbl, e_lbl <- new labels "if_t", "if_e"
+    if ifFalseBody exists:
+        f_lbl <- new label "if_f"
+        EMIT-COND(cond, true->t_lbl, false->f_lbl)
+        LABEL t_lbl;  LOWER(ifTrueBody);  JUMP e_lbl
+        LABEL f_lbl;  LOWER(ifFalseBody)
+    else:
+        EMIT-COND(cond, true->t_lbl, false->e_lbl)
+        LABEL t_lbl;  LOWER(ifTrueBody)
+    LABEL e_lbl
+\end{lstlisting}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=8mm and 12mm,
+  condshape/.style={diamond, draw, thick, aspect=2.2, minimum width=2.6cm, align=center, fill=blue!8},
+  box/.style={rectangle, draw, thick, rounded corners, minimum width=2.6cm, minimum height=0.8cm, align=center, fill=orange!10},
+  lbl/.style={rectangle, draw=none, fill=none, font=\scriptsize\ttfamily},
+  arr/.style={-{Triangle[length=2.5mm,width=2mm]}, thick}
+]
+  \node[condshape] (cond) {cond};
+  \node[box, below left=of cond] (true) {if\_t: \\ ifTrue body};
+  \node[box, below right=of cond] (false) {if\_f: \\ ifFalse body};
+  \node[box, below=18mm of cond] (end) {if\_e};
+  \draw[arr] (cond) -- node[lbl, left]{true} (true);
+  \draw[arr] (cond) -- node[lbl, right]{false} (false);
+  \draw[arr] (true) -- (end);
+  \draw[arr] (false) -- (end);
+\end{tikzpicture}
+\caption{\texttt{if}/\texttt{else} flow. The \texttt{if\_f} branch and its incoming edge
+disappear entirely when there is no \texttt{else}.}
+\end{figure}
+
+\subsection*{\texttt{while}}
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{visit\_While}, ir\_gen.py:737--746}]
+function LOWER-WHILE(cond, body):
+    cond_lbl, body_lbl, end_lbl <- new labels "wc", "wb", "we"
+    push (break->end_lbl, continue->cond_lbl)
+    LABEL cond_lbl
+    EMIT-COND(cond, true->body_lbl, false->end_lbl)
+    LABEL body_lbl;  LOWER(body);  JUMP cond_lbl
+    LABEL end_lbl
+    pop break/continue targets
+\end{lstlisting}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=10mm and 16mm,
+  condshape/.style={diamond, draw, thick, aspect=2.2, minimum width=2.6cm, align=center, fill=blue!8},
+  box/.style={rectangle, draw, thick, rounded corners, minimum width=2.8cm, minimum height=0.8cm, align=center, fill=orange!10},
+  arr/.style={-{Triangle[length=2.5mm,width=2mm]}, thick}
+]
+  \node[condshape] (cond) {wc: cond};
+  \node[box, right=of cond] (body) {wb: body};
+  \node[box, below=of cond] (end) {we};
+  \draw[arr] (cond) -- node[above]{true} (body);
+  \draw[arr] (cond) -- node[left]{false} (end);
+  \draw[arr] (body.south) to[out=-90,in=0] (end.east |- body.south) -- ++(0,-10mm) -| ([xshift=-1mm]cond.south);
+  \draw[arr] (body) to[out=180,in=0] (cond);
+\end{tikzpicture}
+\caption{\texttt{while} flow: the body always jumps back to \texttt{wc}, which is the
+only place the condition is (re-)tested. \texttt{break} jumps straight to \texttt{we};
+\texttt{continue} jumps straight to \texttt{wc}.}
+\end{figure}
+
+\subsection*{\texttt{do-while}}
+Structurally the same three labels as \texttt{while}, but the body label comes
+\emph{first} and the condition is tested only after the first execution of the body ---
+the condition check still lives at a single point, just after the body instead of before
+it (\texttt{visit\_DoWhile}, ir\_gen.py:748--756):
+\begin{lstlisting}[style=pseudostyle]
+function LOWER-DO-WHILE(body, cond):
+    body_lbl, cond_lbl, end_lbl <- new labels "dw_b", "dw_c", "dw_e"
+    LABEL body_lbl;  LOWER(body)
+    LABEL cond_lbl
+    EMIT-COND(cond, true->body_lbl, false->end_lbl)
+    LABEL end_lbl
+\end{lstlisting}
+
+\subsection*{\texttt{for}}
+A \texttt{for} loop is a \texttt{while} loop with two extra, fixed slots: the
+initializer runs once before the condition label, and the increment expression gets its
+\emph{own} label so that \texttt{continue} can jump there without re-running the
+initializer (\texttt{visit\_For}, ir\_gen.py:758--774):
+\begin{lstlisting}[style=pseudostyle]
+function LOWER-FOR(init, cond, incr, body):
+    cond_lbl, body_lbl, incr_lbl, end_lbl <- new labels "fc", "fb", "fi", "fe"
+    push (break->end_lbl, continue->incr_lbl)
+    LOWER(init)                                    // runs exactly once
+    LABEL cond_lbl
+    if cond exists:  EMIT-COND(cond, true->body_lbl, false->end_lbl)
+    else:             JUMP body_lbl                // no condition -> infinite loop
+    LABEL body_lbl;  LOWER(body)
+    LABEL incr_lbl;  LOWER(incr);  JUMP cond_lbl
+    LABEL end_lbl
+    pop break/continue targets
+\end{lstlisting}
+
+\subsection*{\texttt{switch}}
+APARA mcode has no jump-table instruction, so \texttt{switch} lowers to a linear chain of
+equality tests, evaluated top to bottom --- algorithmically a sequence of \texttt{if}
+statements, not a single dispatch (\texttt{visit\_Switch}, ir\_gen.py:776--810):
+\begin{lstlisting}[style=pseudostyle]
+function LOWER-SWITCH(value, cases, default, body):
+    end_lbl <- new label "sw_end";  push break->end_lbl
+    for each (caseValue, label) in cases:           // in source order
+        diff <- value - caseValue
+        if diff == 0:  goto label                    // IRCondJump per case
+    if default exists:  JUMP default.label
+    else:                JUMP end_lbl
+    for each (label, stmts) in cases:  LABEL label;  LOWER(stmts)
+    if default exists:  LABEL default.label; LOWER(default.stmts)
+    LABEL end_lbl
+    pop break target
+\end{lstlisting}
+Because there is no dispatch table, a \texttt{switch} with $N$ cases costs $N$ sequential
+comparisons in the worst case (the last \texttt{case} matched) --- the same asymptotic cost
+as an equivalent \texttt{if}/\texttt{else if} chain, which is exactly what it compiles to.
+
+\subsection*{\texttt{break} / \texttt{continue}}
+Trivial once the enclosing construct has pushed its targets: each is a single
+\texttt{IRJump} to whichever label is currently on top of a one-deep
+\texttt{\_break\_to}/\texttt{\_cont\_to} pair of fields (ir\_gen.py:820--824), saved and
+restored around every loop/switch so nested constructs target the \emph{innermost}
+enclosing one:
+\begin{lstlisting}[style=pseudostyle]
+function LOWER-BREAK():     if break_target exists:  JUMP break_target
+function LOWER-CONTINUE():  if continue_target exists:  JUMP continue_target
+\end{lstlisting}
+
+\subsection*{Label-naming convention, at a glance}
+\begin{table}[h]
+\centering
+\caption{Label prefixes by construct (all generated by \texttt{ir\_gen.py}'s \texttt{\_lbl()})}
+\small
+\begin{tabular}{@{}p{2.2cm}p{9.6cm}@{}}
+\toprule
+Construct & Labels generated \\
+\midrule
+\texttt{if} & \texttt{if\_t} (true body), \texttt{if\_f} (else body, if present), \texttt{if\_e} (join point) \\
+\texttt{while} & \texttt{wc} (condition check), \texttt{wb} (body), \texttt{we} (exit) \\
+\texttt{do-while} & \texttt{dw\_b} (body), \texttt{dw\_c} (condition check), \texttt{dw\_e} (exit) \\
+\texttt{for} & \texttt{fc} (condition), \texttt{fb} (body), \texttt{fi} (increment), \texttt{fe} (exit) \\
+\texttt{switch} & \texttt{case} (one per \texttt{case} label), \texttt{dflt} (default), \texttt{sw\_end} (exit) \\
+\texttt{\&\&}/\texttt{||} & \texttt{andF}/\texttt{andE}, \texttt{orT}/\texttt{orE} (short-circuit result materialization) \\
+bare comparison & \texttt{cT}/\texttt{cE} (only when a comparison is used as an ordinary 0/1-valued expression, not as a direct branch condition) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Condition Lowering: From a C Expression to a Single Branch}
+% ============================================================================
+
+Every construct above calls one shared helper, \texttt{\_emit\_cond} (ir\_gen.py:1277--1284),
+to turn a C boolean expression into IR jumps. Its strategy has two paths:
+
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{\_emit\_cond}, ir\_gen.py:1277--1284}]
+function EMIT-COND(cond, true_lbl, false_lbl):
+    if cond is a direct comparison (>, <, >=, <=, ==, !=):
+        l <- EVAL(cond.left);  r <- EVAL(cond.right)
+        emit IRCondJump(l, cond.op, r, true_lbl, false_lbl)        // fast path
+        return
+    v <- EVAL(cond)                                                 // general expression
+    emit IRCondJump(v, '!=', 0, true_lbl, false_lbl)                 // "is it truthy?"
+\end{lstlisting}
+
+The \textbf{fast path} matters because APARA's actual hardware branch instruction,
+\texttt{\$goto}, only ever tests \emph{one register against zero} (with one of six
+relational operators) --- it has no two-register-compare form. So whenever a condition is
+already a direct comparison (the overwhelmingly common case --- every loop and \texttt{if}
+in this report's examples), \texttt{\_emit\_cond} skips materializing a 0/1 boolean value
+entirely and emits the comparison directly as an \texttt{IRCondJump}. Only when a condition
+is some other kind of expression (a bare variable, a function call result, a pre-computed
+\texttt{\&\&}/\texttt{||}) does it fall back to "evaluate it, then test the result against
+zero."
+
+\texttt{codegen.py}'s \texttt{\_emit\_cond\_branch} (codegen.py:463--505) then has to bridge
+the gap between the IR's general two-operand comparison and the hardware's
+one-register-against-zero branch:
+\begin{lstlisting}[style=pseudostyle, caption={\texttt{\_emit\_cond\_branch}, codegen.py:463--505 (essence)}]
+function EMIT-BRANCH(left, op, right, true_lbl, false_lbl):
+    if left and right are both compile-time constants:
+        fold the comparison now; emit one unconditional jump; return    // constant folding
+    if right == 0:
+        if op in {<, <=}:  scratch <- 0 - left;  branch on (scratch, flip(op))
+        else:               branch directly on (left, op)
+    else:
+        scratch <- (left - right)   if op in {>,>=,==,!=}
+                    (right - left)   if op in {<,<=}     // sign flip trick
+        branch on (scratch, op-or-flipped-op)
+    if false_lbl exists:  emit unconditional JUMP false_lbl
+\end{lstlisting}
+Every two-operand comparison is reduced to a \emph{subtraction} followed by a single
+register-vs-zero branch --- the same "synthesize the missing operation from a cheaper
+primitive" strategy already seen elsewhere in this compiler (e.g.\ \texttt{\%} synthesized
+as \texttt{a - (a/b)*b}). An \texttt{IRCondJump} with no false label at all (the common
+case inside a loop, where falling through to the next label \emph{is} the false branch)
+skips the trailing unconditional jump --- but every \texttt{IRCondJump} that specifies
+\emph{both} a true and a false label, as every \texttt{visit\_While}/\texttt{visit\_For}
+condition does, always compiles to exactly \textbf{two} consecutive control-transfer
+instructions: one conditional, one unconditional.
+
+% ============================================================================
+\section{A Fully Worked, Hardware-Verified Example}
+\label{sec:worked}
+% ============================================================================
+
+\begin{lstlisting}[language=C, caption={Source}]
+int main() {
+    int i;
+    i = 0;
+    while (i < 16) {
+        i = i + 1;
+    }
+    return i;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Generated IR (the loop only) --- exactly the \texttt{wc/wb/we} pattern from Section~2}]
+wc_1:
+  _t2 = &stack[FP-8]
+  _t3 = *(_t2+0)
+  if _t3 < 16 goto wb_2          (* IRCondJump: true->wb_2, false->we_3, fast path *)
+wb_2:
+  _t4 = &stack[FP-8]
+  _t5 = *(_t4+0)
+  _t6 = _t5 + 1
+  _t7 = &stack[FP-8]
+  *(_t7+0) = _t6
+  goto wc_1
+we_3:
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Resulting bundled mcode (loop only) --- 9 bundles, hardware-verified}]
+wc_1:
+||
+    + $r2 ($i64) $r26 -8          // r2 = &i
+;
+||
+    $ld ($i32) $r3 [$r2 + 0]      // r3 = i
+    + $r4 ($i64) $r0 16           // r4 = 16
+;
+||
+    - $r5 ($i64) $r4 $r3          // r5 = 16 - i  (sign-flip trick for '<')
+;
+||
+    ? ($i64) $r5 > $goto wb_2     // branch TRUE: 16-i > 0  <=>  i < 16
+;
+||
+    ? ($i64) $r0 == $goto we_3    // branch FALSE: unconditional fall-through to exit
+;
+wb_2:
+||
+    + $r4 ($i64) $r26 -8
+;
+||
+    $ld ($i32) $r5 [$r4 + 0]
+;
+||
+    + $r6 ($i64) $r5 1            // r6 = i + 1
+    + $r7 ($i64) $r26 -8
+;
+||
+    $st ($i32) [$r7 + 0] $r6      // store i+1 back
+    ? ($i64) $r0 == $goto wc_1    // loop-back -- SHARES a bundle with the store
+;
+we_3:
+\end{lstlisting}
+
+Two details worth calling out explicitly, both confirmed directly from this listing:
+\begin{itemize}
+  \item The condition \texttt{i < 16} becomes a \emph{subtraction} (\texttt{\$r5 = \$r4 -
+        \$r3}, i.e.\ \texttt{16 - i}) followed by a branch on \texttt{\$r5 > 0} --- exactly
+        the sign-flip strategy from \texttt{EMIT-BRANCH} above, because APARA's
+        \texttt{\$goto} cannot compare two registers directly.
+  \item The loop-back jump (\texttt{? \$r0 == \$goto wc\_1}) does \emph{not} need its own
+        bundle: it shares one with the preceding \texttt{\$st}, because the bundler's only
+        rule is that a control-transfer instruction must be \textbf{last} in its bundle, not
+        that it must be \textbf{alone} in it (Section~\ref{sec:mcode}).
+\end{itemize}
+
+% ============================================================================
+\section{mcode-Level Handling: One Instruction, Two Hard Rules}
+\label{sec:mcode}
+% ============================================================================
+
+By the time control flow reaches mcode, every branch in this report --- regardless of
+which C construct produced it --- is one of exactly two instruction shapes:
+\begin{itemize}
+  \item \textbf{Conditional}: \texttt{? (\$iN) \$reg OP \$goto label} --- six possible
+        \texttt{OP}s (\texttt{>}, \texttt{<}, \texttt{>=}, \texttt{<=}, \texttt{==}, \texttt{!=}),
+        always comparing one register against an implicit zero.
+  \item \textbf{Unconditional}: \texttt{? (\$i64) \$r0 == \$goto label} --- there is no
+        dedicated unconditional-jump instruction on this ISA, so the compiler reuses the
+        conditional form with the always-true tautology \texttt{0 == 0}, needing no extra
+        register at all (\texttt{\_emit\_jump}, codegen.py:459--461).
+\end{itemize}
+
+\texttt{bundler.py} enforces two rules specific to these instructions (Section
+2.4 of the main project report covers the full hazard-detection algorithm; only the
+control-flow-specific pair is repeated here):
+\begin{enumerate}
+  \item \textbf{A control-transfer instruction must be the last instruction in its
+        bundle.} Once one has been added to the bundle being packed, the very next
+        instruction --- whatever it is --- forces a new bundle to start. It does \emph{not}
+        need to be the \emph{only} instruction, as Section~\ref{sec:worked}'s loop-back
+        example shows directly.
+  \item \textbf{A label forces a new bundle boundary.} Every label (\texttt{wc\_1},
+        \texttt{wb\_2}, \texttt{we\_3}, \ldots) attaches to the start of whatever bundle
+        comes right after it; two different labels can collapse onto the very same bundle
+        only if nothing meaningful separates them, in which case
+        \texttt{\_merge\_duplicate\_labels} rewrites every reference to the dropped label
+        so it points at the surviving one (this is the exact mechanism --- and the exact
+        bug, before it was fixed --- behind the duplicate-label assembler crash documented
+        in the project's main bug report).
+\end{enumerate}
+
+% ============================================================================
+\section{Summary}
+% ============================================================================
+
+Every C control-flow construct --- however different it looks in source --- is reduced by
+\texttt{ir\_gen.py} to the same three IR primitives (\texttt{IRLabel}, \texttt{IRJump},
+\texttt{IRCondJump}), arranged in a construct-specific but fixed pattern of labels.
+\texttt{codegen.py} then reduces every two-operand comparison to a subtraction plus a
+single register-against-zero test, because that is the only branch form APARA's hardware
+actually supports, and reduces unconditional jumps to a tautological comparison, because
+APARA has no dedicated unconditional-jump instruction at all. The bundler's only
+control-flow-specific obligations are to keep each control-transfer last in its bundle and
+to treat every label as a hard bundle boundary --- everything else (how many bundles a loop
+costs, what shares a bundle with what) falls out of the same general hazard-packing
+algorithm used for arithmetic and memory instructions throughout this compiler.
+
+\end{document}

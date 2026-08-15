@@ -1,0 +1,216 @@
+diff --git a/compiler/gvn.py b/compiler/gvn.py
+index ee23f7d..fbb6ca9 100644
+--- a/compiler/gvn.py
++++ b/compiler/gvn.py
+@@ -45,6 +45,39 @@ value-number an expression when:
+     value -- i.e. a stable value throughout the function).
+ Multiply-defined operands are unstable, so such expressions are skipped.
+ 
++--------------------------------------------------------------------------------
++R9.3 -- Local Value Numbering for multi-def operands
++--------------------------------------------------------------------------------
++The multi-def operand rule above is correct but blunt, and it is disabled by
++CONSTRUCTION on exactly the values that matter most. An R2.6 register-promoted
++loop counter (`_lr*`) is multiply-defined by definition -- initialised before the
++loop, incremented inside it -- so EVERY expression reading one is skipped, even
++four textually identical ones in the same basic block with nothing between them:
++
++    fb_10:                        <- matmul16 hot loop, 256 executions
++        _vgo20 = _lr124 << 4
++        _vgo37 = _lr124 << 4      <- identical, and GVN could not touch it
++        _vgo54 = _lr124 << 4
++        _vgo71 = _lr124 << 4
++        ...
++        _lr124 = _lr124 + 1       <- the only redefinition, AFTER all four
++
++Within ONE basic block the stability question is decidable without any dataflow:
++the two computations are separated by a straight line of instructions, so the
++operands are unchanged iff nothing in between redefines them. That is classic
++local CSE and it is sound on a non-SSA IR.
++
++A second, BLOCK-LOCAL table therefore holds expressions rejected by the global
++rule. It is reset at every block, and an entry is KILLED as soon as any
++instruction redefines one of its operands or its leader. Kills are computed from
++`ir_utils.dest_names`, which is the only exhaustive answer to "what does this
++instruction write" -- `IRLoadWide` writes several temps through `dests` and has
++no `dest` attribute at all.
++
++The global table is untouched: single-def operands still get full
++dominator-scoped reuse across blocks. The local table only ADDS the cases the
++global rule had to refuse. Kill switch: `APARA_NO_LOCAL_GVN`.
++
+ Excluded entirely (conservative): loads (each load is a fresh value -- no memory
+ CSE), stores, calls (each result unique), casts (representation change), and
+ floating-point expressions (uncertain NaN / signed-zero semantics). If in doubt,
+@@ -53,7 +86,7 @@ do not value-number.
+ 
+ import os
+ from ir import Const, Temp, IRAssign, IRBinOp, IRUnaryOp
+-from ir_utils import func_slices
++from ir_utils import func_slices, dest_names
+ from analysis import DefUse, build_cfg, compute_dominators
+ 
+ # Commutative integer operators (operands sorted so a op b == b op a).
+@@ -64,6 +97,8 @@ class _Stats:
+     def __init__(self):
+         self.numbered = 0        # expressions given a value number (new leaders)
+         self.eliminated = 0      # redundant expressions replaced by a copy
++        self.local_numbered = 0    # R9.3: block-local leaders (multi-def operands)
++        self.local_eliminated = 0  # R9.3: collapsed by the block-local table
+ 
+ 
+ def _operand_key(node, du):
+@@ -139,6 +174,72 @@ def _expr_key(ins, du):
+     return None                              # loads/stores/calls/casts/... excluded
+ 
+ 
++# ── R9.3: block-local value numbering ──────────────────────────────────────────
++# Kill switch for the local table alone (APARA_NO_GVN disables all of GVN).
++_LOCAL_DISABLED = os.environ.get('APARA_NO_LOCAL_GVN', '') not in ('', '0')
++
++
++def _operand_key_local(node):
++    """Operand token for the BLOCK-LOCAL table.
++
++    A multiply-defined Temp is ACCEPTED here, which is the whole point: within a
++    block, availability is tracked explicitly (an entry dies the moment anything
++    redefines one of its operands), so the global stability rule is not needed.
++    """
++    if isinstance(node, Const):
++        return ('c', node.value)
++    if isinstance(node, Temp):
++        return ('t', node.name)
++    return None
++
++
++def _expr_key_local(ins):
++    """`_expr_key`, but with the multi-def operand rejection lifted.
++
++    Deliberately mirrors `_expr_key`'s EXCLUSIONS exactly -- floats are still
++    skipped, and loads/stores/calls/casts are still not numbered. `IRLoadAddr`
++    is absent because it has no operands, so the multi-def rule never applied to
++    it and R9.1 already handles it globally with a threshold this must not
++    bypass."""
++    c = type(ins).__name__
++
++    if c == 'IRBinOp':
++        if getattr(ins, 'ftype', None):
++            return None                      # skip float expressions
++        lo = _operand_key_local(ins.left)
++        ro = _operand_key_local(ins.right)
++        if lo is None or ro is None:
++            return None
++        ops = (lo, ro)
++        if ins.op in _COMMUTATIVE:
++            ops = tuple(sorted(ops))
++        return ('bin', ins.op, bool(getattr(ins, 'unsigned', False)), ops)
++
++    if c == 'IRUnaryOp':
++        o = _operand_key_local(ins.operand)
++        if o is None:
++            return None
++        return ('un', ins.op, o)
++
++    if c == 'IRAssign':
++        o = _operand_key_local(ins.src)
++        if o is None:
++            return None
++        return ('copy', o)
++
++    return None
++
++
++def _local_operand_names(ins):
++    """Temp names this expression READS -- the kill set for its table entry."""
++    out = []
++    for attr in ('left', 'right', 'operand', 'src'):
++        v = getattr(ins, attr, None)
++        if isinstance(v, Temp):
++            out.append(v.name)
++    return out
++
++
+ def _gvn_function(instrs, cfg, dom, du, stats):
+     """Dominator-tree pre-order value numbering over one function's CFG."""
+     children = dom.tree_children()
+@@ -158,22 +259,58 @@ def _gvn_function(instrs, cfg, dom, du, stats):
+             continue
+         added = []
+         b = cfg.blocks[bid]
++        local = {}                           # R9.3: key -> (leader, frozenset(reads))
+         for i in range(b.lo, b.hi + 1):
+             ins = instrs[i]
+             dest = getattr(ins, 'dest', None)
+-            if not isinstance(dest, Temp) or not du.is_single_def(dest.name):
+-                continue                     # result must be a stable single-def leader
+-            key = _expr_key(ins, du)
+-            if key is None:
+-                continue
+-            leader = table.get(key)
+-            if leader is not None and leader != dest.name:
+-                instrs[i] = IRAssign(dest, Temp(leader))   # redundant -> copy leader
+-                stats.eliminated += 1
+-            elif leader is None:
+-                table[key] = dest.name
+-                added.append(key)
+-                stats.numbered += 1
++            lkey = None                      # must not leak across instructions
++            if isinstance(dest, Temp) and du.is_single_def(dest.name):
++                # result is a stable single-def leader -- eligible either way
++                key = _expr_key(ins, du)
++                if key is not None:
++                    leader = table.get(key)
++                    if leader is not None and leader != dest.name:
++                        instrs[i] = IRAssign(dest, Temp(leader))  # redundant -> copy
++                        stats.eliminated += 1
++                    elif leader is None:
++                        table[key] = dest.name
++                        added.append(key)
++                        stats.numbered += 1
++                elif not _LOCAL_DISABLED:
++                    # R9.3: the global rule refused it (multi-def operand). Within
++                    # this block, availability is tracked explicitly instead.
++                    lkey = _expr_key_local(ins)
++                    if lkey is not None:
++                        ldr = local.get(lkey)
++                        if ldr is not None and ldr[0] != dest.name:
++                            instrs[i] = IRAssign(dest, Temp(ldr[0]))
++                            stats.local_eliminated += 1
++                            lkey = None      # now a copy: nothing new to publish
++                        elif ldr is not None:
++                            lkey = None      # already the leader
++
++            # ORDER IS LOAD-BEARING: lookup (above) -> kill (here) -> publish
++            # (below). Publishing before the kill makes every entry evict ITSELF
++            # -- its own destination is in its own kill set -- which silently
++            # yields zero eliminations and looks exactly like "no redundancy".
++            #
++            # `dest_names` is used because IRLoadWide writes several temps and
++            # has no `dest` attribute at all.
++            if local:
++                for w in dest_names(instrs[i]):
++                    for k in [k for k, (ldr, reads) in local.items()
++                              if ldr == w or w in reads]:
++                        local.pop(k, None)
++
++            if lkey is not None:
++                reads = frozenset(_local_operand_names(ins))
++                # An instruction that OVERWRITES ONE OF ITS OWN OPERANDS (`x = x
++                # + 1`) must never be published: the key names the operand, but
++                # after this instruction that name holds a different value, so a
++                # later identical-looking expression is a different computation.
++                if dest.name not in reads:
++                    local[lkey] = (dest.name, reads)
++                    stats.local_numbered += 1
+         added_at[bid] = added
+         stack.append((bid, 'exit'))
+         for ch in reversed(children.get(bid, [])):
+@@ -194,5 +331,7 @@ def global_value_numbering(instrs):
+         du = DefUse(instrs, lo, hi)
+         _gvn_function(instrs, cfg, dom, du, stats)
+     if os.environ.get('APARA_GVN_DEBUG'):
+-        print(f"[gvn] numbered={stats.numbered} eliminated={stats.eliminated}")
++        print(f"[gvn] numbered={stats.numbered} eliminated={stats.eliminated} "
++              f"local_numbered={stats.local_numbered} "
++              f"local_eliminated={stats.local_eliminated}")
+     return instrs

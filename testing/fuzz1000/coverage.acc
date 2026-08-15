@@ -1,0 +1,4514 @@
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i64<-$i16
+cast $i64<-$i8
+cast $i64<-$u16
+cast $i64<-$u8
+halt
+ld $i16
+ld $i32
+ld $i64
+ld $i8
+ld $u16
+ld $u32
+ld $u8
+return
+set
+st $i16
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+brtag $i64
+call label
+cast $f32<-$f64
+cast $f32<-$i32
+cast $f64<-$f32
+cast $f64<-$i32
+cast $i32<-$f32
+cast $i32<-$f64
+cast $i64<-$i16
+cast $i64<-$i32
+cast $i64<-$i8
+cast $i64<-$u16
+cast $i64<-$u8
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+brtag $i64
+call label
+cmov !=
+cmov <
+cmov <=
+cmov ==
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+alu ~^ $i64
+alu ~| $i64
+br ==
+brtag $i64
+call label
+halt
+ld $i64
+pack
+return
+set
+slice
+st $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+v * $vi16
+v * $vi32
+v * $vi8
+v * $vu16
+v * $vu32
+v * $vu8
+v + $vi16
+v + $vi32
+v + $vi8
+v + $vu16
+v + $vu32
+v + $vu8
+v - $vi16
+v - $vi32
+v - $vi8
+v - $vu16
+v - $vu32
+v - $vu8
+v rep
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+vreduce $max $vi16
+vreduce $max $vi8
+vreduce $max $vu16
+vreduce $max $vu8
+vreduce + $vi16
+vreduce + $vi32
+vreduce + $vi8
+vreduce + $vu16
+vreduce + $vu32
+vreduce + $vu8
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+brtag $i64
+call label
+dot $vi16
+dot $vi8
+dot $vu16
+dot $vu8
+dot acc $vi8
+dot acc $vu16
+halt
+ld $i64
+return
+set
+st $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f32
+alu / $f64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cast $i32<-$f64
+cast $i64<-$i32
+fsqrt $f32
+fsqrt $f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu / $u64
+alu << $i64
+alu >> $i64
+alu >> $u64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i64
+ld $u64
+null
+return
+set
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+call reg
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$f32
+cast $i32<-$f32
+cast $i32<-$f64
+cast $i64<-$i32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+ld $u32
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+call reg
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+ld $i8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+call reg
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i16
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $i8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i16
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+ld $u32
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i16
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $u16
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u16
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+call reg
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+st $i8
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+call reg
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i16
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i16
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u16
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+call reg
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >=
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu ~& $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+ld $u32
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $u8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br !=
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+call reg
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i16
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $i8
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+call reg
+halt
+ld $i32
+ld $i64
+ld $u16
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $f64<-$i32
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+call reg
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+call reg
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+ld $u32
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+ld $i8
+return
+set
+st $i32
+st $i64
+st $i8
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu * $i64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu / $f64
+alu / $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+br !=
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br !=
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $f64
+alu << $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i64
+return
+set
+st $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cmov <
+cmov >
+cmov >=
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu * $f32
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu / $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+st $i8
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $i64
+alu + $f32
+alu + $i64
+alu - $f32
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i32
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i16
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+alu ~& $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $i64
+alu + $i64
+alu - $i64
+alu ^ $i64
+br ==
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i32
+st $i64
+alu * $f64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+cast $i32<-$f64
+halt
+ld $i64
+return
+set
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f32
+alu * $f64
+alu + $f32
+alu + $f64
+alu + $i64
+alu - $f32
+alu - $f64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i32
+brtag $i64
+call label
+cast $i32<-$f32
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu + $i64
+alu - $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br !=
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i64
+return
+set
+st $i16
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu / $i64
+alu << $i64
+alu ^ $i64
+alu | $i64
+br ==
+br >
+br >=
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64
+alu & $i64
+alu * $f64
+alu * $i64
+alu + $f64
+alu + $i64
+alu - $f64
+alu - $i64
+alu << $i64
+alu >> $i64
+alu | $i64
+br ==
+br >
+brtag $i64
+call label
+halt
+ld $i32
+ld $i64
+return
+set
+st $i32
+st $i64

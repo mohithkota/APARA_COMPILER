@@ -1,0 +1,263 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titling}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.3,0.5,0.3}
+
+\lstdefinestyle{pseudostyle}{
+  morekeywords={if,else,for,in,repeat,return,raise,function,not,every,delete,goto,while,True,False,continue},
+  morecomment=[l]{//},
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  frame=single,
+  rulecolor=\color{gray!40},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  tabsize=2,
+  columns=fullflexible,
+  keepspaces=true
+}
+\lstset{style=pseudostyle}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Plan: Improving Bundle Efficiency}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\setlength{\droptitle}{-1.5cm}
+\title{\textbf{A Plan to Improve Bundle Efficiency}\\[2mm]
+\large Register Caching, Common Subexpression Elimination, and Instruction Scheduling}
+\author{APARA C Compiler Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+\vspace{-8mm}
+
+% ============================================================================
+\section{Scope and Status}
+% ============================================================================
+
+This is a \textbf{design document, not an implementation}. It is written in direct
+response to the bundle-efficiency gap quantified in the companion ``Results and
+Observations'' report (2.1\%--22.1\% of bundles doing real arithmetic, depending on the
+program) and answers the natural next question: what would actually close that gap, and
+in what order. Per explicit project direction, none of this is implemented yet --- it is
+deliberately deferred until after the current thesis presentation, specifically because
+each of the three techniques below would touch the IR generator, register allocator, or
+bundler that all 5\,992 existing verification checks were built and passed against.
+Section~\ref{sec:rollout} states the validation discipline that applies when this work
+does start.
+
+% ============================================================================
+\section{Attack Order, and Why}
+% ============================================================================
+
+\begin{enumerate}
+  \item \textbf{Register caching} --- stop reloading a variable that is still sitting,
+        unmodified, in a register.
+  \item \textbf{Common subexpression elimination (CSE)} --- stop recomputing an
+        expression whose inputs have not changed since it was last computed.
+  \item \textbf{Instruction scheduling} --- reorder what is left so the bundler's
+        existing greedy packer has more independent instructions adjacent to each other
+        to pack.
+\end{enumerate}
+
+This order is deliberate, not arbitrary: scheduling can only pack what the instruction
+stream already contains, so it is the \emph{last} lever, not the first --- run on a
+stream still full of redundant loads and recomputed subexpressions, it would mostly just
+rearrange waste. Caching and CSE shrink the stream first; scheduling then works on
+whatever genuinely independent work is left.
+
+% ============================================================================
+\section{1. Register Caching}
+% ============================================================================
+
+\textbf{The problem, with real evidence.} \texttt{test\_alu\_full.c} declares
+\texttt{long long a = 17; long long b = 5;} once, then reads \texttt{a} and \texttt{b} in
+five separate expressions (\texttt{a+b}, \texttt{a-b}, \texttt{a*b}, \texttt{a/b},
+\texttt{a\%b}) with no write to either in between. The current compiler emits a fresh
+\texttt{\$ld} for \emph{every one} of those ten reads, because
+\texttt{ir\_gen.py}'s \texttt{\_load\_var}/\texttt{\_store\_var} have no concept of ``this
+variable's value is already in a register.''
+
+\textbf{The plan.} Add a per-basic-block cache, \texttt{var\_cache: name -> Temp}, checked
+by \texttt{\_load\_var} and updated by \texttt{\_store\_var}:
+\begin{lstlisting}[caption={Register caching --- the rule, not yet implemented}]
+function LOAD-VAR(name):
+    if name in var_cache:  return var_cache[name]        // reuse, emit nothing
+    t <- emit the existing IRLoadAddr + IRLoad sequence
+    var_cache[name] <- t
+    return t
+
+function STORE-VAR(name, value):
+    emit the existing IRStore sequence
+    var_cache[name] <- value          // the just-stored value is now the cached one
+
+function INVALIDATE-CACHE():          // called at every cache-unsafe point
+    var_cache <- empty
+\end{lstlisting}
+\texttt{INVALIDATE-CACHE} must run at every point where a register's assumed contents can
+no longer be trusted: a label (multiple predecessors may disagree on what is cached --- no
+data-flow merge analysis is in scope for this design), a function call (the callee may
+write any global the cache holds), and any store through a pointer (a pointer write can
+alias any other named variable, and pointer aliasing is not tracked at all today, so a
+conservative full flush is the only safe option until that changes).
+
+% ============================================================================
+\section{2. Common Subexpression Elimination}
+% ============================================================================
+
+\textbf{The problem, with real evidence.} Caching alone is not enough.
+\texttt{test\_alu\_full.c}'s own modulo synthesis (\texttt{a - (a/b)*b}, since APARA has no
+\texttt{\%} instruction) recomputes \texttt{a/b} from scratch --- even though
+\texttt{results[3] = a/b;} just computed the \emph{exact same division} two C statements
+earlier, with \texttt{a} and \texttt{b} unchanged:
+\begin{lstlisting}[caption={Confirmed in fresh mcode: \texttt{a/b} computed twice}]
+/ $r25 ($i64) $r22 $r24        // results[3] = a / b
+...                              // (a, b reloaded -- register caching's job)
+/ $r5  ($i64) $r31 $r2          // SAME division, recomputed for a % b's synthesis
+\end{lstlisting}
+The same pattern, one level up, is why \texttt{matmul\_n16.c} spends 49.5\% of its
+bundles on address computation: \texttt{i*16} is computed once for \texttt{\&A[i*16]} and
+recomputed, identically, a few instructions later for the \texttt{results[]} index.
+
+\textbf{The plan.} Local value numbering, layered directly on top of the cache from
+Section~3: give every IR temp's \emph{value} (not just its name) a canonical number, and
+look up that number before emitting a new binary operation.
+\begin{lstlisting}[caption={CSE via local value numbering --- the rule, not yet implemented}]
+function EMIT-BINOP(op, left, right):
+    key <- (op, value_number(left), value_number(right))
+    if key in expr_table:  return expr_table[key]   // reuse -- emit nothing
+    t <- emit the IRBinOp as today
+    value_number(t) <- a fresh number
+    expr_table[key] <- t
+    return t
+\end{lstlisting}
+\texttt{expr\_table} is flushed at exactly the same points as \texttt{var\_cache}
+(Section~3) --- a label, a call, or a pointer store invalidates both, for the same
+aliasing reason. Scoping this to one basic block (no cross-branch reasoning) is enough to
+catch both confirmed cases above, since neither crosses a label or a call.
+
+% ============================================================================
+\section{3. Instruction Scheduling}
+% ============================================================================
+
+\textbf{The problem.} The bundler (\texttt{\_pack\_bundles}) never reorders anything --- it
+only packs instructions that are \emph{already} adjacent and independent in the stream it
+is handed. Once caching and CSE remove the redundant loads and recomputations, what is
+left in \texttt{test\_alu\_full.c} is 13 genuinely independent operations (\texttt{a+b},
+\texttt{a-b}, \texttt{a*b}, \ldots --- none feeds another, since each operates on its own
+operand pair); today they still end up one or two per bundle purely because of the order
+the source happens to list them in, not because of any real dependency.
+
+\textbf{The plan.} A list-scheduling pass between codegen and the bundler: build a
+dependency DAG per basic block from the same read/write/memory information
+\texttt{bundler.py}'s \texttt{\_parse\_deps} already computes (no new hazard logic needed
+--- the existing analysis is reused, not reinvented), then repeatedly emit any
+\emph{ready} instruction (all of its true dependencies already scheduled), preferring the
+one on the longest remaining dependency chain so genuinely serial work --- like
+\texttt{matmul\_n16.c}'s address-then-load-then-dot chain --- is never delayed behind
+independent work that could just as easily wait:
+\begin{lstlisting}[caption={List scheduling --- the rule, not yet implemented}]
+function SCHEDULE(basic_block):
+    DAG <- build dependency edges using bundler.py's existing _parse_deps
+    ready <- {instructions with no unscheduled predecessor}
+    output <- []
+    while ready is not empty:
+        pick <- instruction in ready with the longest remaining dependency chain
+        output.append(pick); remove pick from ready
+        for successor of pick:
+            if all of successor's predecessors are scheduled:  add successor to ready
+    return output                      // bundler.py runs unmodified on this
+\end{lstlisting}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=8mm and 4mm,
+  proc/.style={rectangle, draw, thick, rounded corners, minimum width=3.0cm, minimum height=0.8cm, align=center, fill=orange!10},
+  new/.style={rectangle, draw, thick, dashed, rounded corners, minimum width=3.0cm, minimum height=0.8cm, align=center, fill=blue!10},
+  arr/.style={-{Triangle[length=2.2mm,width=1.8mm]}, thick}
+]
+  \node[proc] (irgen) {\texttt{ir\_gen.py}};
+  \node[new, right=of irgen] (cache) {1. register cache \\ + 2. local CSE};
+  \node[proc, right=of cache] (codegen) {\texttt{codegen.py}};
+  \node[new, right=of codegen] (sched) {3. list scheduler};
+  \node[proc, right=of sched] (bundler) {\texttt{bundler.py} \\ (unmodified)};
+  \draw[arr] (irgen) -- (cache);
+  \draw[arr] (cache) -- (codegen);
+  \draw[arr] (codegen) -- (sched);
+  \draw[arr] (sched) -- (bundler);
+\end{tikzpicture}
+\caption{Where all three passes sit. Caching and CSE (1, 2) operate inside IR generation,
+where variable/expression identity is easiest to reason about. Scheduling (3) is a new
+pass between an otherwise-unmodified \texttt{codegen.py} and \texttt{bundler.py}, reusing
+\texttt{bundler.py}'s own dependency analysis rather than duplicating it.}
+\end{figure}
+
+% ============================================================================
+\section{Rollout and Validation Discipline}
+\label{sec:rollout}
+% ============================================================================
+
+Each pass is implemented and verified \textbf{separately}, in the attack order above, with
+the full 5\,992-check suite re-run after each one --- not after all three together. A pass
+is kept only if it produces \textbf{zero new errors}; if it does produce one, the
+specific test and check are diagnosed before any further pass is attempted, exactly the
+discipline already used for every fix in this project's bug reports. Bundle counts for
+\texttt{matmul\_n16.c} and \texttt{test\_alu\_full.c} are recorded before and after each
+pass individually, so the contribution of caching, CSE, and scheduling can be quoted
+separately rather than only as one combined number.
+
+% ============================================================================
+\section{Expected Combined Impact}
+% ============================================================================
+
+\begin{table}[h]
+\centering
+\caption{Reasoned estimate, not a measurement --- to be replaced with real numbers once implemented}
+\begin{tabular}{@{}p{4.0cm}p{4.0cm}p{4.6cm}@{}}
+\toprule
+Program & Today & After all three passes (estimate) \\
+\midrule
+\texttt{test\_alu\_full.c} & 68 bundles, 22.1\% arithmetic & roughly 8--12 bundles ---
+  caching removes most of the 60.3\% memory-access category, scheduling then packs the
+  13 now-independent operations several per bundle \\
+\texttt{matmul\_n16.c} & 95 bundles, 2.1\% arithmetic & address-computation category
+  (currently 49.5\%, the largest) roughly halved by CSE on \texttt{i*16}/\texttt{j*16};
+  full-loop bundle count improves more modestly, since the \texttt{\$dot} chain itself is
+  a genuine serial dependency no reordering can shorten \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The two programs improve by different amounts for a reason worth stating plainly:
+\texttt{test\_alu\_full.c}'s 13 operations are mutually independent, so caching and
+scheduling together can compress it aggressively; \texttt{matmul\_n16.c}'s core
+\texttt{\$dot} computation is a real, serial chain (Section~5 of the bundling-hazards
+report derives exactly why), and no amount of caching, CSE, or reordering can make a
+truly dependent chain shorter --- only the \emph{overhead surrounding} that chain shrinks.
+
+\end{document}

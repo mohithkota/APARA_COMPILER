@@ -1,0 +1,35 @@
+diff --git a/compiler/codegen.py b/compiler/codegen.py
+index 1164a82..b511f99 100644
+--- a/compiler/codegen.py
++++ b/compiler/codegen.py
+@@ -618,6 +618,30 @@ class CodeGen:
+                 self._ra.unborrow(scr)
+             else:
+                 self._emit(f"? ($i64) {l_reg} {op} $goto {true_lbl}")
++        elif isinstance(right, Const) and -512 <= right.value <= 511:
++            # R9.2: fold a small constant right operand into the subtract's
++            # IMMEDIATE field instead of materialising it in a register.
++            #
++            # `l OP r`  <=>  `(l - r) OP 0`, and the branch tests a register
++            # against zero, so every comparison can use `- scr, l, imm`. The
++            # old path called `_operand_reg(Const)`, which borrows a register
++            # and emits `+ rC, $r0, K` -- an instruction that is LOOP-INVARIANT
++            # and was therefore recomputed on every iteration of every counted
++            # loop, at the head of the header's RAW chain. Measured on a 16x16
++            # matmul: 850 of 15332 dynamic instructions (5.5%) recomputed such
++            # constants, and each one occupied a bundle of its own because the
++            # subtract depends on it.
++            #
++            # This also emits `<` / `<=`, which the compiler never used before
++            # (0 occurrences across the corpus) although `Eval_Branch_Condition`
++            # supports them (cases 3 and 5) -- the old code flipped them to
++            # `>` / `>=` by computing `r - l`, which is what stranded the
++            # constant on the LEFT of the subtract where no immediate can go.
++            # Overflow exposure is unchanged: both forms subtract the same pair.
++            scr = self._safe_borrow(protect=[l_reg])
++            self._emit(f"- {scr} ($i64) {l_reg} {right.value}")
++            self._emit(f"? ($i64) {scr} {op} $goto {true_lbl}")
++            self._ra.unborrow(scr)
+         else:
+             r_reg, r_bor = self._operand_reg(right, protect=[l_reg] + all_names)
+             scr = self._safe_borrow(protect=[l_reg, r_reg])
