@@ -6578,3 +6578,35 @@ Kill switch `APARA_NO_PROBE_RESCUE=1` restores R10 behaviour.
   ticks/output at M=24) -- the residue is 2-lane granularity, architectural. M=32
   is NOT improved and cannot be by this fix; partial unrolling does not exist in
   the compiler and was not added.
+
+## R12.0 Partial unrolling — STOPPED at Phase 7, NO CODE CHANGED
+
+Report: `R12_0_PARTIAL_UNROLL_DELIVERY.md`. Branch `feature/r12-partial-unroll`
+off `r11-verified`.
+
+- **THE PREMISE DID NOT HOLD. Partial unrolling ALREADY EXISTS**, and is already
+  chosen adaptively: `vector_compact_loop.build_compact_chunk_loop` emits U
+  chunks per iteration (R6.4), and `dot_vectorizer.vectorize_all_module` (R6.4.1)
+  searches `_UNROLL_CANDIDATES = (8,4,2,1)`, building each through the FULL
+  pipeline and picking by **frequency-weighted DYNAMIC bundles** -- explicitly
+  not a static heuristic. Implementing it would have duplicated a feature.
+- GEMM vi32 ticks by pinned factor (`APARA_VECTOR_UNROLL`, no code change):
+  M=16 and M=24 are factor-INDEPENDENT (the unrolled realisation wins, so the
+  chunk loop is never built); **M=32 is 148975 at U=1 and 280047 at U>=2**.
+- **At M=32, U>=2 do not merely lose -- the kernel LOSES VECTORIZATION ENTIRELY**;
+  280047 is the SCALAR fallback. (`realisation_of` reports 'unrolled' for scalar
+  code, which initially disguised this as a realisation flip.)
+- **ROOT CAUSE: the differential oracle rejects U>=2 with `differential:mismatch`
+  -- the partially-unrolled build COMPUTES THE WRONG ANSWER.** Not a spill, not
+  register pressure. The gate is doing its job and the search falls back to U=1.
+- Defect bounded: it occurs ONLY at **chunks=16 with U>=2** (vi32 M=32). chunks
+  12 and 8 are clean, and vi8/vi16 are clean at every size tested.
+- **LATENT, NOT SHIPPED**: the oracle catches it on every build, the search falls
+  back to a validated U=1, GEMM vi32 M=32 passes its gcc golden check today, and
+  the 38-program suite never reaches 16 chunks. No correctness risk exists now --
+  but the partial-unroll path is unusable at that chunk count, and the masking is
+  why it had never surfaced.
+- Whether fixing it would CLOSE the M=32 cliff is UNKNOWN and was not assumed:
+  U>=2 has never produced a correct build there, so no valid measurement exists.
+- Stop conditions triggered: "no valid partial factor beats the existing
+  realization". No compiler source changed; nothing to re-validate.
