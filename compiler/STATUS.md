@@ -6404,3 +6404,55 @@ Static mcode −24%. 38/38 + 3 negative controls, **19/19 unit suites**,
   to do there. `_r7_1_test.py` pins `APARA_NO_AVN=1` to keep testing R7.1's
   mechanism; the subsumption is the better outcome (cause fixed, not symptom).
 - Kill switch `APARA_NO_AVN` disables address numbering without disabling GVN.
+
+## R9.2 Branch-immediate folding — DONE
+
+Report: `R9_2_DELIVERY.md` (supersedes `R9_2_WIP.md`). Baseline for every number:
+`ac0d159` (R9.1), preserved at `wip_r9_2/codegen_PRE_r9_2_baseline.py`.
+
+- One `elif` in `codegen._emit_cond_branch`: a constant right operand in
+  `[-512, 511]` folds into the subtract's IMMEDIATE field, replacing 3
+  instructions with 2. The old path emitted `+ rC, $r0, K` — loop-INVARIANT yet
+  recomputed every iteration, at the head of the header's RAW chain. The window
+  is the SAME one `_load_const` uses for an ALU immediate (codegen.py:498);
+  `_r9_2_test.py` asserts they agree so they cannot drift.
+- **First time the compiler ever emits `<` / `<=`** (0 occurrences in the whole
+  corpus before). Not an ISA gap — `Eval_Branch_Condition` cases 3 and 5 exist;
+  the old code flipped them to `>` / `>=` by computing `r - l`, stranding the
+  constant on the LEFT where no immediate field exists.
+- Unconditional by design: 3 instructions become 2, so it can never add work.
+  Gating it to the tick-winning cases would fit alignment noise — the R8.1
+  mistake — and was rejected.
+- **38/38 + 3 negative controls, 21/21 unit suites, `pipeline_crosscheck`
+  124/124.** New suite `_r9_2_test.py` (105 checks): both window boundaries and
+  both first out-of-range values, agreement with `_load_const`, `K == 0` keeping
+  its shorter path, native `<`/`<=`, exactly −1 instruction per branch measured
+  against the real pre-R9.2 codegen, byte-identical output out of window, and
+  1092 (left, op, K) combinations executed and checked against C semantics.
+- Suite ticks 131743 -> 131424 (**−0.242%**); dynamic instructions 172579 ->
+  165911 (**−3.864%**), DOWN in all 38 programs and up in none. Static bundles
+  2096 -> 2058, static instructions 5087 -> 5007. matmul16 10371 -> 10099
+  (**−2.62%**), 4/4 PostConditions. gemm vi16 −2.62%, gemm vu16 −2.44%.
+- 124-program A/B vs the pre-R9.2 codegen: 27 programs change, **0 get larger,
+  0 unexplained**. The ONLY opcode whose count changes anywhere is `+`; `$st`
+  and `$ld` are identical in all 124, which is what rules out a new spill.
+- **The 4 tick regressions are an ALIGNMENT artifact, proven from the aligned
+  images.** Each executes strictly FEWER instructions and takes MORE ticks by
+  exactly the same amount (reduction vu8/vu16/vu32 −65/+65, bubblesort −32/+32).
+  Mechanism: the folded constant shared a **2-slot bundle**, so removing it does
+  not remove a bundle — it makes the bundle 1-slot and `mcode_align` inserts one
+  extra `pad_*` bundle to restore downstream alignment (every later block lands
+  at an identical PC in both arms). reduction vu8 statically: real bundles **41
+  in both arms**, pad 23 -> 24. **This CORRECTS `R9_2_WIP.md` §4**, which read
+  the effect as saved bundles converting into padding on frequency-weighted
+  estimates; no real bundle is saved in those cases at all. Where the fold does
+  collapse whole bundles (matmul16, gemm) the saving survives. All four
+  regressing programs PASS their gcc golden reference in both arms.
+- No kill switch (unlike R9.1's `APARA_NO_AVN`); the A/B restore points in
+  `wip_r9_2/` serve that role and `_r9_2_test.py` loads them directly.
+- **UNMODELLED, NOT CLAIMED:** no pass models `mcode_align` padding — the
+  scheduler and bundler optimise SOURCE bundles, which the above shows is the
+  wrong objective. 52-61 pure `pad_*` bundles per program = 27-46% of all
+  bundles, but reachability is NOT established (a pad after an unconditional
+  branch never executes); measuring it is the first step if picked up. Not the
+  same thing as R6.1's 54.2% empty issue slots (INTRA-bundle, already counted).
