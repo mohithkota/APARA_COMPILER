@@ -46,7 +46,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import Const, Temp, IRLoad, IRStore, IRLoadAddr
+from ir import Const, Temp, IRLoad, IRStore, IRLoadAddr, IRBinOp
 from ir_utils import src_names
 from analysis import DefUse
 import vector_compact_loop as _vcl
@@ -272,8 +272,112 @@ def _row_body(plan, instrs, def_map, region, a_val, iv_value):
     return body, None
 
 
+# ── R9.3: invariant row base + [reg + imm] chunk offsets ───────────────────────
+#
+# The unrolled realisation used to call `clone_offset` once PER CHUNK, re-emitting
+# the whole address computation (reload the row IV, scale it, add the chunk term,
+# scale to bytes) and leaving the result in a REGISTER. Two costs followed:
+#
+#   1. the address arithmetic itself -- 9 instructions in matmul16's hot block;
+#   2. far worse, a register-valued offset is OPAQUE TO R6.2. Four accumulator
+#      accesses sharing a base but holding their offsets in four different
+#      registers cannot be proved disjoint, so every store is ordered against
+#      every later load. Measured on matmul16's hot block: those memory edges
+#      nearly DOUBLE the dependence height (register-only 9, actual 16), and the
+#      bundler is already at that height -- so they are the binding constraint.
+#
+# Because `plan_axpy` only accepts CONTIGUOUS accesses (`vector_affine`:
+# coeff == elem_bytes), the offset is exactly `invariant + j * eb`. Substituting
+# j = c*lanes gives `off(c) = off(0) + c*lanes*eb` -- the per-chunk difference is
+# a COMPILE-TIME CONSTANT. So the invariant part is computed once into an address
+# temp and each chunk becomes `[addr + c*lanes*eb]`.
+#
+# This introduces NO new address recognizer and NO new alias rule: the constant
+# delta is licensed by the contiguity test that already had to pass, and the
+# disjointness conclusion is drawn by the existing R6.2 disambiguator.
+
+_REG_IMM_DISABLED = os.environ.get('APARA_NO_GEMM_REG_IMM', '') not in ('', '0')
+
+# The ISA immediate field codegen._gen_IRLoad / _gen_IRStore encode directly.
+# Sourced from `rematerialization` so ONE constant governs every pass that cares.
+from rematerialization import FP_IMM_LO as _IMM_LO, FP_IMM_HI as _IMM_HI
+
+
+def _row_base(plan, instrs, def_map, region, off_expr, slot):
+    """(instrs, addr_temp) -- array base + INVARIANT row offset, computed once.
+
+    `(None, reason)` if the offset cannot be cloned at chunk 0, in which case the
+    caller falls back to the per-chunk register-offset form."""
+    pre, off0 = clone_offset(instrs, def_map, region, off_expr,
+                             plan.iv_slot, Const(0))
+    if pre is None:
+        return None, off0
+    b = _fresh('_vrb')
+    a = _fresh('_vra')
+    return list(pre) + [IRLoadAddr(b, slot), IRBinOp(a, '+', b, off0)], a
+
+
+def _build_unrolled_imm(plan, instrs, def_map, region, a_val):
+    """The R9.3 form, or None to fall back to the register-offset form."""
+    if _REG_IMM_DISABLED:
+        return None
+    step = plan.lanes * plan.eb                  # bytes between chunks
+    if plan.chunks < 2:
+        return None                              # nothing to share a base with
+    top = (plan.chunks - 1) * step
+    if not (_IMM_LO <= 0 and top <= _IMM_HI):
+        return None                              # outside the immediate field
+
+    ybi, yaddr = _row_base(plan, instrs, def_map, region, plan.y_off, plan.y_slot)
+    if ybi is None:
+        return None
+    xbi, xaddr = _row_base(plan, instrs, def_map, region, plan.x_off, plan.x_slot)
+    if xbi is None:
+        return None
+
+    bodies = []
+    for c in range(plan.chunks):
+        d = c * step
+        bodies.append(_chunk(
+            plan, a_val,
+            lambda t, d=d: _vcl.packed_load_at_imm(t, xaddr, d, plan.lanes,
+                                                   plan.eb, plan.signed),
+            lambda t, d=d: _vcl.packed_load_at_imm(t, yaddr, d, plan.lanes,
+                                                   plan.eb, plan.signed),
+            lambda v, d=d: _vcl.packed_store_at_imm(yaddr, d, v, plan.lanes,
+                                                    plan.eb)))
+
+    # ALL CHUNK LOADS FIRST, then the arithmetic and the stores.
+    #
+    # Emitting chunk-at-a-time (load, multiply, add, store, next load ...) puts
+    # every chunk's X load AFTER the previous chunk's Y store. X and Y are
+    # different arrays, but at mcode level their bases are two opaque registers,
+    # so R6.2 cannot prove that and must keep a store->load edge. Those edges
+    # chain the chunks end to end: measured on matmul16, dependence height 20
+    # for 29 instructions, WORSE than the 16 it replaced.
+    #
+    # Hoisting the loads removes the chain (height 20 -> 6). It is licensed by
+    # the gate that already had to pass to vectorize at all:
+    # `vector_legality._aliasing_ok` REJECTS the kernel if any carried array
+    # memory edge exists between the store and the read arrays. The chunks are
+    # unrolled iterations of that same loop, so "no carried array edge" is
+    # exactly "chunk c's store cannot alias chunk c'>c's load". The packed load
+    # itself already relies on this -- one `$ld` reads `lanes` elements before
+    # any of the lane stores happen. No new alias rule is introduced here.
+    loads = [i for b in bodies for i in b if _cname(i) == 'IRLoad']
+    rest = [i for b in bodies for i in b if _cname(i) != 'IRLoad']
+    return list(ybi) + list(xbi) + loads + rest
+
+
 def build_unrolled(plan, instrs, def_map, region):
     pre, a_val = _load_scalar(plan)
+
+    imm = _build_unrolled_imm(plan, instrs, def_map, region, a_val)
+    if imm is not None:
+        out = list(pre) + imm
+        plan.unrolled_len = len(out)
+        return out, None
+
     out = list(pre)
     for c in range(plan.chunks):
         body, err = _row_body(plan, instrs, def_map, region, a_val,

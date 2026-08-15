@@ -6456,3 +6456,48 @@ Report: `R9_2_DELIVERY.md` (supersedes `R9_2_WIP.md`). Baseline for every number
   bundles, but reachability is NOT established (a pad after an unconditional
   branch never executes); measuring it is the first step if picked up. Not the
   same thing as R6.1's 54.2% empty issue slots (INTRA-bundle, already counted).
+
+## R9.3 GEMM invariant row base + `[reg + imm]` addressing — DONE
+
+Report: `R9_3_GEMM_REG_IMM_DELIVERY.md`. Baseline `50e2b67` (R9.2); kill switch
+`APARA_NO_GEMM_REG_IMM=1` reproduces it **byte-for-byte**.
+
+- `gemm_lowering.build_unrolled` used to call `clone_offset` ONCE PER CHUNK,
+  re-emitting the whole address computation into a REGISTER. Now the invariant
+  row base is cloned once per array and each chunk is `[addr + c*lanes*eb]`.
+  New `_row_base` / `_build_unrolled_imm`; `packed_load_at_imm` /
+  `packed_store_at_imm` in `vector_compact_loop`. Falls back to the old form when
+  `chunks < 2`, the offset does not fit `[-512, 511]`, or `clone_offset` fails.
+- Soundness comes from gates that ALREADY had to pass: the constant delta from
+  CONTIGUOUS (`coeff == elem_bytes`, so `off(c) = off(0) + c*lanes*eb`), and the
+  load hoisting from `vector_legality._aliasing_ok` (no carried array edge
+  between the store and the read arrays). No new recognizer, no new alias rule,
+  no bundler or R6.2 change; `[reg+imm]` is the pre-existing codegen path.
+- **THE POINT IS DISAMBIGUATION, NOT FEWER INSTRUCTIONS.** Store->later-access
+  edges in matmul16's hot block: 17 (`[reg+reg]`) -> 6 (`[reg+imm]`) -> 0
+  (+ loads first). Four accumulators sharing a base but holding offsets in four
+  REGISTERS cannot be compared by R6.2; as constants off one base it proves them
+  disjoint.
+- **EMISSION ORDER IS LOAD-BEARING.** `[reg+imm]` emitted chunk-serially is a
+  17% REGRESSION (matmul16 10099 -> 12163): the 6 surviving cross-array edges
+  chain the chunks (height 20 for 29 instructions, worse than the 16 it
+  replaced). Emitting every chunk's loads before any store removes them.
+  Block: 37 instr/16 bundles/height 16 -> 29 instr/**8 bundles**/height 8.
+  `bundles == height` throughout -- the bundler was and stays at the lower bound.
+- **Suite ticks 131424 -> 108960 (-17.09%)**, dynamic instructions -9.72%,
+  static bundles -2.62%. **6 kernels improved, 0 regressed, 32 unchanged** --
+  gemm vi32/vu32 -50.4%/-47.9%, vi16/vu16 -30.3%/-28.1%, vi8/vu8 -12.5%/-12.1%.
+  matmul16 10099 -> 7043 (-30.3%), IR 111 -> 92, IPB 1.412 -> 1.709, 4/4 golden.
+- Executed pad bundles in matmul16's hot loop **2304 -> 1280 (-44%)**; the saving
+  SURVIVED the aligner, unlike R9.2's reduction case. Padding is still 38% of the
+  hot loop -- alignment remains unmodelled.
+- Registers in the hot block 26/28 -> 25/28, **zero spills** in both arms, same
+  tier selected. 38/38 + 3/3 negative controls, 21/21 unit suites, crosscheck
+  124/124, and the 124-program corpus is **byte-identical** (no non-GEMM kernel
+  is touched).
+- Production BEAT the R9.3 what-if (predicted -12.7%, measured -30.3%): LICM
+  hoists the C-row base out of the k loop, and the load-first order reaches the
+  register floor the model could not show.
+- NOT part of this milestone: the R9.3 local-GVN experiment, measured
+  cycle-neutral (-4.63% dynamic instructions, 0 ticks). Parked in `wip_r9_3/`,
+  see `R9_3_LOCAL_GVN_WIP.md`.

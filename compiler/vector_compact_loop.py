@@ -86,6 +86,35 @@ def packed_load_at(dest, slot, off_temp, lanes, eb, signed):
     return [la, ld]
 
 
+def packed_load_at_imm(dest, addr, imm, lanes, eb, signed):
+    """A packed 64-bit load at `addr + imm`, `imm` a compile-time constant.
+
+    The SAME ACCESS as `packed_load_at` -- only the way the address is spelled
+    differs. `addr` already carries the array base and the invariant row offset,
+    so the per-chunk part is a constant and two things follow:
+
+      * codegen emits the ISA's `[reg + imm]` form directly
+        (`_gen_IRLoad`, offset in [-512, 511]) instead of materialising the
+        offset in a register, and
+      * R6.2 sees two accesses off a SHARED base separated by a CONSTANT, which
+        it can prove disjoint. With a register-valued offset it cannot, so every
+        store is ordered against every later load.
+
+    The second effect is the reason this exists; the first is a bonus. See
+    `R9_3_GEMM_REG_IMM_DELIVERY.md`.
+    """
+    ld = IRLoad(dest, addr, Const(imm), elem_bytes=8, unsigned=(not signed))
+    ld._vec_pack = (lanes, eb)
+    return [ld]
+
+
+def packed_store_at_imm(addr, imm, value, lanes, eb):
+    """Store one packed 64-bit result at `addr + imm`. See packed_load_at_imm."""
+    st = IRStore(addr, Const(imm), value, 8)
+    st._vec_pack = (lanes, eb)
+    return [st]
+
+
 def aligned_pair_at(slot, off_temp, shift_bytes, lanes, eb):
     """(instrs, w0, w1) -- the two ALIGNED words a window at `shift_bytes` needs.
 
