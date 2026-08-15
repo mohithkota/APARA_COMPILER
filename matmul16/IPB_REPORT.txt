@@ -1,0 +1,33 @@
+==========================================================================
+  16x16 VECTOR MATRIX MULTIPLY -- IPB REPORT
+==========================================================================
+
+VECTORIZED
+  tier selected              : IVSR+LICM+loop-reg+superblock
+  kernels vectorized         : 1
+  static  bundles            : 65
+  static  instructions       : 149
+  static  IPB                : 2.292
+  dynamic bundles            : 7472
+  dynamic instructions       : 15327
+  DYNAMIC IPB (whole program): 2.051   (25.6% of the 8-wide machine)
+  occupancy                  : 25.6%
+  --- vector region only ---
+  realisation                : unrolled
+  bundles / instructions     : 16 / 37
+  VECTOR-REGION IPB          : 2.312   (28.9% of peak)
+  region occupancy           : 28.9%
+
+SCALAR (APARA_NO_VECTORIZE=1)
+  tier selected              : IVSR+LICM+loop-reg+superblock
+  static  bundles            : 63
+  static  instructions       : 129
+  static  IPB                : 2.048
+  dynamic bundles            : 46624
+  dynamic instructions       : 70916
+  DYNAMIC IPB (whole program): 1.521   (19.0% of the 8-wide machine)
+  occupancy                  : 19.0%
+
+  Note: whole-program IPB is dominated by the 256-element scalar
+  initialisation loop; the vector-region figure is the kernel itself.
+==========================================================================
