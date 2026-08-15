@@ -6610,3 +6610,38 @@ off `r11-verified`.
   U>=2 has never produced a correct build there, so no valid measurement exists.
 - Stop conditions triggered: "no valid partial factor beats the existing
   realization". No compiler source changed; nothing to re-validate.
+
+## R12.1 GEMM compact-unroll correctness fix — DONE
+
+Diagnosis: `R12_1_GEMM_VI32_UNROLL_BUG_ANALYSIS.md`. Delivery:
+`R12_1_GEMM_UNROLL_FIX_DELIVERY.md`. Branch `feature/r12-partial-unroll`.
+
+- **ONE LINE**: `gemm_lowering.build_compact.emit` passed `None` instead of
+  `iv_index` to `_row_body`, so `clone_offset` RE-LOADED the IV slot and all U
+  unrolled copies re-derived the SAME address while the loop advanced by
+  `U*lanes` -- one chunk accumulated U times, U-1 chunks never written.
+  `build_compact_chunk_loop` documents this exact hazard; GEMM was the client
+  ignoring it.
+- Proven three ways: the framework's computed index `_vci120` had **ZERO
+  consumers**; wrong values repeated `[2x,2x,0,0]` with period `U*lanes`; first
+  wrong addresses identical across U=2/4/8. Not an oracle defect.
+- **CORRECTS R12.0's "bounded to chunks=16"** -- forcing compact shows U>=2 was
+  wrong for EVERY element type and chunk count. chunks=16 was merely the only
+  configuration where the selector picks compact, i.e. where it was OBSERVABLE.
+- U=1 output **byte-identical** pre/post fix on 6 configurations (copy 0 gets the
+  temp already holding the loaded IV). All 36 type x size x U combinations now
+  match; every U>=2 previously mismatched.
+- **GEMM vi32 M=32: 148975 -> 91631 ticks (-38.5%)**, 145.48 -> 89.48
+  ticks/output. The EXISTING selector found it unaided: its estimates were
+  U=1 167423, U=2 118271, **U=4 97791 (chosen)**, U=8 97856 -- and the simulator
+  agrees U=4 (91631) beats U=8 (93745). No hard-coding, no profitability change.
+- **M=16 (4893) and M=24 (31236) UNCHANGED** -- R11's probe rescue preserved.
+  Correct U>=2 compact builds now exist there too but the unrolled realisation
+  still beats them, so the selector keeps it: making U>=2 correct did not make it
+  win where a better option already existed.
+- 38/38 + 3/3 negative controls, 21/21 unit suites, crosscheck 124/124, 0 spills,
+  **shipped suite BIT-IDENTICAL (67689, 0 programs changed)** -- no shipped kernel
+  selects compact GEMM.
+- HONEST BOUND: M=32 is still far from vi16 (89.48 vs 19.51 ticks/output, vector
+  IPB 2.562 vs 4.900). The cliff is substantially REDUCED, not removed; the
+  residue is the 2-lane granularity of 32-bit elements.
