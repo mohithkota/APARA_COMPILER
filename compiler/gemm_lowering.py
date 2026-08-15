@@ -394,15 +394,25 @@ def build_compact(plan, instrs, def_map, region):
     err_box = [None]
 
     def emit(_off, iv_index=None):
-        # The address comes from the cloned expression, which RE-LOADS the IV
-        # slot, so `build_compact_chunk_loop`'s own scaled offset is unused here.
+        # R12.1: substitute the ELEMENT INDEX the framework supplies for THIS
+        # copy. Passing None instead made `clone_offset` re-load the IV slot, so
+        # with R6.4 unrolling every one of the U copies re-derived the SAME
+        # address while the loop advanced by U*lanes -- one chunk was accumulated
+        # U times and U-1 chunks were never written. `build_compact_chunk_loop`
+        # documents exactly this hazard for clients that address through
+        # `clone_offset`; GEMM is that client and was ignoring it. For copy 0 the
+        # framework passes the temp already holding the loaded IV, so U=1 output
+        # is unchanged.
+        #
+        # The byte offset `_off` stays unused: the address comes from the cloned
+        # expression, not from the loop's own scaled offset.
         # That re-read is why GEMM was the client that exposed defect D2: the
         # compact loop wrote the slot 8 bytes wide while the cloned `int j`
         # access read it 4 bytes wide, and a 4-byte read of a 64-bit DMEM word
         # takes the wrong half -- so the row index was always 0. `iv_bytes`
         # (from plan_axpy, via vector_compact_loop.slot_width) keeps every
         # access to the slot at the one width the scalar code uses.
-        body, err = _row_body(plan, instrs, def_map, region, a_val, None)
+        body, err = _row_body(plan, instrs, def_map, region, a_val, iv_index)
         if body is None:
             err_box[0] = err
             return []
