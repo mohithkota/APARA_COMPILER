@@ -571,6 +571,87 @@ def _merge_duplicate_labels(bundles):
 
 # ── Emitter ───────────────────────────────────────────────────────────────────
 
+# ── R9.5: alignment-aware bundle formation ────────────────────────────────────
+#
+# mcode_align gives every bundle a CAPACITY (see `_bundle_capacity`, and the
+# block comment above `resolve_code_labels`): 8 if it holds a CTI / load / store
+# / divide, otherwise the instruction count rounded up to 1, 2, 4 or 8. A bundle
+# is then placed at the next address that is a MULTIPLE OF ITS CAPACITY, and the
+# gap is filled with `pad_*` bundles of `$null`. Each pad bundle issues, so it
+# costs a TICK -- measured post-R9.3: 35.0% of all bundles are pads and roughly
+# 31.7% of runtime is spent on them (`R9_4_POST_R9_3_FINAL_ANALYSIS.md`).
+#
+# Which bundles cause that? Only the ones whose capacity is LESS than 8, i.e.
+# pure-ALU bundles of 1-4 instructions. A capacity-8 bundle starting at a
+# multiple of 8 leaves the address a multiple of 8, so a RUN OF CAPACITY-8
+# BUNDLES IS SELF-ALIGNING and needs no padding at all. A small ALU bundle in
+# the middle of such a run knocks the address off the boundary, and every
+# following full bundle then pays up to three pad bundles (the pad count for a
+# gap g is popcount(g): g=7 -> pads of 1,2,4).
+#
+# So the decision this pass makes is deliberately narrow: inside a LOOP, pad a
+# sub-capacity bundle out to 8 slots with `$null` so it stops breaking the
+# alignment run. Nothing is reordered, no hazard rule is consulted or changed,
+# no instruction is added or removed -- `$null` is architecturally a no-op, and
+# the bundle's real instructions and their order are untouched. Straight-line
+# code outside loops is left alone, because its pads execute once and the IMEM
+# would be spent for nothing.
+#
+# Measured on gemm vi16 (candidates evaluated through the real toolchain):
+#     production            7037 ticks   26 pads   392 IMEM words
+#     loops only (this)     4375 ticks   12 pads   408 IMEM words  -37.8% / +4.1%
+#     every bundle          4366 ticks    0 pads   432 IMEM words  -38.0% / +10.2%
+# Widening everything buys 0.2 points more for 2.5x the IMEM, so this pass
+# widens loop bundles only.
+#
+# Kill switch: APARA_NO_ALIGN_BUNDLE=1 restores the R9.3 layout exactly.
+
+_ALIGN_WIDEN_DISABLED = os.environ.get('APARA_NO_ALIGN_BUNDLE', '') not in ('', '0')
+
+ISSUE_WIDTH = 8
+
+
+def _loop_depth(bundles):
+    """Loop nesting depth per bundle, from BACKWARD branches in the emitted
+    stream. A bundle is 'in a loop' if some later bundle branches to a label at
+    or before it. Purely structural -- no profile is needed and none exists at
+    this stage."""
+    at = {}
+    for idx, b in enumerate(bundles):
+        for l in b['labels']:
+            at.setdefault(l, idx)
+    depth = [0] * len(bundles)
+    for idx, b in enumerate(bundles):
+        for t in b['instrs']:
+            m = re.search(r'\$goto\s+(\S+)', t)
+            if m and m.group(1) in at and at[m.group(1)] <= idx:
+                for k in range(at[m.group(1)], idx + 1):
+                    depth[k] += 1
+    return depth
+
+
+def _align_aware_widen(bundles):
+    """Pad loop-resident sub-capacity bundles out to the full issue width.
+
+    Returns (bundles, n_widened). The instruction lists are only ever EXTENDED
+    with `$null`; nothing is moved, removed or reordered."""
+    if _ALIGN_WIDEN_DISABLED:
+        return bundles, 0
+    depth = _loop_depth(bundles)
+    n = 0
+    for b, d in zip(bundles, depth):
+        if d < 1:
+            continue                       # straight-line code: pads run once
+        if not b['instrs']:
+            continue
+        if _bundle_capacity(b['instrs']) >= ISSUE_WIDTH:
+            continue                       # already a full bundle: self-aligning
+        b['instrs'] = list(b['instrs']) + \
+            ['$null'] * (ISSUE_WIDTH - len(b['instrs']))
+        n += 1
+    return bundles, n
+
+
 def _emit_bundles(header, bundles):
     out = list(header)
     for b in bundles:
@@ -733,8 +814,14 @@ def bundle_mcode(mcode_text, schedule=True, disambiguate=True):
         flat      = _schedule_within_blocks(flat)
     bundles       = _pack_bundles(flat)
     bundles       = _merge_duplicate_labels(bundles)
+    # R9.5: decide emitted WIDTHS so mcode_align has less to pad. Runs last, on
+    # the final bundle list, so the layout `resolve_code_labels` then computes is
+    # the one that ships. Adds only `$null`; never reorders or repacks.
+    bundles, _widened = _align_aware_widen(bundles)
     n_after       = len(bundles)
     new_mcode     = _emit_bundles(header, bundles)
+    if os.environ.get('APARA_BUNDLE_STATS') and _widened:
+        print(f"[align] widened {_widened} loop bundles to {ISSUE_WIDTH} slots")
     return new_mcode, n_before, n_after
 
 

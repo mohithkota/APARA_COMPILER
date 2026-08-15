@@ -6501,3 +6501,44 @@ Report: `R9_3_GEMM_REG_IMM_DELIVERY.md`. Baseline `50e2b67` (R9.2); kill switch
 - NOT part of this milestone: the R9.3 local-GVN experiment, measured
   cycle-neutral (-4.63% dynamic instructions, 0 ticks). Parked in `wip_r9_3/`,
   see `R9_3_LOCAL_GVN_WIP.md`.
+
+## R9.5 Alignment-aware bundle formation — DONE
+
+Report: `R9_5_ALIGNMENT_AWARE_BUNDLING.md`. Baseline `6e0f738` (R9.3); kill
+switch `APARA_NO_ALIGN_BUNDLE=1` reproduces it **byte-for-byte**.
+
+- **THE MECHANISM WAS ALREADY MODELLED IN THE COMPILER.** `mcode_align` gives a
+  bundle capacity 8 if it holds a CTI / load / store / divide, else the
+  instruction count rounded up to 1/2/4/8, and places it at the next multiple of
+  its capacity, filling the gap with `pad_*` `$null` bundles that each COST A
+  TICK. `resolve_code_labels` / `_bundle_capacity` already implement this rule as
+  the linker; R9.5 REUSES that model rather than duplicating it. Pads for a gap
+  g number popcount(g) (g=7 -> 1,2,4).
+- **Only sub-capacity bundles can misalign the stream.** A run of capacity-8
+  bundles is SELF-ALIGNING; a small pure-ALU bundle dropped into it knocks the
+  address off the boundary and every following full bundle pays up to 3 pads.
+  So `_align_aware_widen` pads a sub-capacity bundle out to 8 slots with `$null`
+  **only inside a loop** (loop membership = structural, from backward branches).
+  Nothing is reordered, repacked or rescheduled; no hazard/lane/legality rule is
+  consulted; `$null` is a no-op, so dynamic instruction count is UNCHANGED.
+- **Straight-line code is deliberately left alone** -- its pads execute once, so
+  the IMEM would buy nothing. Candidates measured through the REAL toolchain on
+  gemm vi16: production 7037 ticks / 392 words; depth>=2 5261 / 408; **depth>=1
+  (shipped) 4375 / 408**; all bundles 4366 / 432. Widening everything buys 0.2
+  more points for 2.5x the IMEM -- **the minimum-pad candidate is NOT the best.**
+- **Suite ticks 108960 -> 67689 (-37.88%). 38/38 kernels improve, 0 regress**,
+  including the two scalar controls -- padding was never vector-specific.
+  reduction vi8 -51.5%, conv3 vi8 -51.2%, gemm vu16 -40.7%, matmul16 7043 ->
+  4381 (-37.8%, 4/4 gcc golden), dot vi32 -28.5% (smallest).
+- **Executed pad bundles 34507 -> 625 (-98.2%)**; static pads 1080 -> 625
+  (-42.1%). The survivors are outside loops, executing once -- by design.
+- **IMEM 14424 -> 15056 words (+4.4%)** vs +11.1% for the zero-padding bound;
+  largest program 592 of 2048 words. R9.5 captures 98.9% of the theoretical tick
+  benefit at 40% of the size cost.
+- Dynamic instructions **+0.00%** and static bundles unchanged (2004) -- the
+  cleanest evidence nothing moved. IPB rises purely because ticks fell
+  (matmul16 1.709 -> 2.747, non-null per tick); it was NOT the objective and a
+  slot-occupancy IPB would be meaningless now that bundles carry `$null`.
+- 38/38 + 3/3 negative controls, 21/21 unit suites, crosscheck 124/124, zero
+  spills (the pass runs after codegen, so allocation is untouched by
+  construction).
