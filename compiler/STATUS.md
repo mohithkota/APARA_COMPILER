@@ -6721,3 +6721,106 @@ rather than restating 21/21, so the R13 gate compares like with like.
 
 Next: Phase 1 (formalise the generic `invariant_base + IV*elem_bytes` access) and
 Phase 4 (structural matcher unit tests) BEFORE enabling production lowering.
+
+### Phases 1-4 — generic access representation + structural matcher (DONE)
+
+New, ANALYSIS-ONLY modules. Neither is imported by `compiler.py` or registered
+as a pipeline client, so production behaviour is unchanged by construction:
+
+| file | role |
+|---|---|
+| `matmul_access.py` | the generic form + ten explicit predicates |
+| `matmul_probe.py` | replicates the pipeline's loop enumeration, calls the matcher instead of a lowering |
+| `_r13_0_test.py` | 42 structural matcher checks |
+
+**Phase 1 — the representation.** `access = base_slot[invariant_base + IV*coeff]`,
+with `invariant_base` split into the parts the resolver can prove separately:
+`const_off` (compile-time bytes) and `sym_div` (a positive integer that provably
+divides every symbolic byte term; 0 = none, 1 = present but nothing proven).
+Nothing re-implements affine analysis: `vector_affine.classify_access`,
+`word_aligned` and `LoopAffineContext.varies` (R4.2.8) are composed into ten
+named predicates. No matrix-size, benchmark-name, variable-name, vu8-specific or
+tile logic anywhere.
+
+**Multiplicands are anchored STRUCTURALLY, not heuristically.** The first draft
+swept up every affine load in the body and mistook loop counters for
+multiplicands (`stride-0-not-elem-4`). The multiplicands are BY DEFINITION the
+two operands of the multiply that updates the reduction slot, so
+`_multiplicand_loads` mirrors `kernel_detector`'s own reduction walk -- the code
+that decided `reduction_value == 'dot'`. The pair analysed is therefore exactly
+the pair the detector classified.
+
+**Predicate ownership was corrected by measurement.** Two defects were initially
+reported by the wrong predicate:
+- an un-transposed B and a `k*2` stride were both caught by p6. p6 now claims
+  only "the stride is a compile-time constant"; **p3 owns "that constant equals
+  elem_bytes"**, so the reason names the real defect.
+- p9 (capability) ran before the access checks, so a malformed access -- which
+  leaves the detector with no element type at all -- was reported as
+  `no-element-type`, masking the cause. **p9 now runs after p2/p6/p3/p4/p5.**
+Order is p1, p10, p2, p6, p3, p4, p5, p9, p7, p8.
+
+**p4 is HONESTLY subsumed.** A varying base makes `resolve_offset` return
+UNKNOWN, so p6 always fires first; p4 has never been the reported cause in any
+test. It is retained because the spec requires the requirement to be explicit,
+but it is defence in depth, not load-bearing. The varying-base negative control
+asserts **p6**, and says so.
+
+**Phase 2 — datatype x size sweep** (6 markers x 9 shapes = 54 probes). Confirms
+the anti-bias requirement concretely:
+- `vi8`/`vu8`: ACCEPT for K>=8; **4x4 REJECTED** (zero full chunks, and rows of
+  4 bytes are not 8B-aligned).
+- `vi16`/`vu16`: ACCEPT at **every** tested shape **including 4x4** (lanes=4, so
+  a 4-element row is exactly one chunk).
+- `vi32`/`vu32`: REJECTED everywhere, `p9:no-32bit-dot` -- an **ISA** limit from
+  the capability DB, not a compiler one. The datatype is never silently narrowed
+  to win lanes.
+So 16x16 does not imply 8-bit, and 4x4 does not imply scalar: 4x4 vectorizes at
+16-bit and is rejected at 8-bit. Lanes are DERIVED (`WORD_BITS/element_bits`),
+never assumed.
+
+**Phase 3 — convertibility, proven not asserted.** `dot_plan_parity` walks every
+`LoweringPlan` field: 9 supplied by the form, 6 already derived by the shared
+planner from `desc`/`kernel`, and exactly **2 genuine extensions** --
+`array_slots` (a bare slot today; matmul also needs the invariant base, the
+`invariant + IV*eb` form `gemm_lowering.clone_offset` already builds) and `peel`
+(`vector_remainder_peel.PeelArray` needs the same, or a peeled tail addresses
+row 0). **Latent trap found for Phase 5:** `vector_lowering.py:215` reads
+`need = 2 if kernel.kind in ('dot-product',) else 1`. matmul has TWO
+multiplicands, so it must be added there or `array_slots[:1]` silently drops one
+-- a correctness bug, not a missed optimisation.
+
+**Phase 4 — 42/42 checks PASS.** Positives vary variable and temporary names,
+operand order, parenthesisation, commuted index terms (`k + i*K`), datatype
+(vi8/vu16/vi16) and shape (K=8/24/32, rectangular 32x16x16); an explicit
+anti-bias test asserts two spellings yield the SAME facts and the SAME
+per-predicate results, not merely both-accepted. Negatives each assert the
+OWNING predicate, so a test cannot pass because the kernel became undetectable.
+
+**LIMITATION FOUND (real, pre-existing, not R13-specific).** Alignment
+provability is **spelling-dependent**. With row bases pre-hoisted into scalars
+(`ra = i*16; ... A[ra + k]`), p2-p5 all still pass, but round-tripping the base
+through a stack slot loses the "multiple of 16" fact: `sym_div` drops 16 -> 1,
+alignment cannot be PROVEN, and **`analyze_legality_loop` itself** rejects with
+`unaligned-packed-access` before R13 is consulted. The inline and pre-hoisted
+spellings therefore do NOT classify identically. This is a `vector_affine`
+resolver limitation that already affects existing clients. Asserted as a known
+limitation in `test_known_limitations` so it cannot change silently; a fix
+(propagating divisibility through single-def scalar slots) is NOT in R13.0.
+
+**Regression gate — production provably unchanged.**
+
+| check | baseline | after Phases 1-4 |
+|---|---|---|
+| 38-program suite | 38/38 | **38/38**, metrics CSV **bit-for-bit identical** |
+| negative controls | 3/3 | **3/3** |
+| `pipeline_crosscheck` | 124/124 | **124/124**, 0 IR / 0 code / 0 tier mismatches |
+| `compiler/_r*_test.py` | 20/20 | **21/21** (the new `_r13_0_test.py`) |
+
+NOTE: the compiler unit-suite count is now 21 only because R13 ADDED a suite.
+That is a coincidence and is NOT the missing 21st suite R10 referred to; the
+reproducible baseline remains 20 pre-R13 + 25 loopopt + 124/124 crosscheck.
+
+Next: Phase 5 (generalise `plan_lowering`'s array extraction to
+`base + scaled_IV`, widen the `need` predicate, extend `PeelArray`) -- the first
+phase that changes production behaviour.
