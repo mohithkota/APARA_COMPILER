@@ -6824,3 +6824,55 @@ reproducible baseline remains 20 pre-R13 + 25 loopopt + 124/124 crosscheck.
 Next: Phase 5 (generalise `plan_lowering`'s array extraction to
 `base + scaled_IV`, widen the `need` predicate, extend `PeelArray`) -- the first
 phase that changes production behaviour.
+
+### Phase 5 — matmul reaches the existing $dot lowering (DONE)
+
+Delivery: `R13_0_MATMUL_DOT_DELIVERY.md`. First phase to change production
+behaviour. Same client, same planner, same `$dot` emitter -- no second backend.
+
+- `plan_lowering` extraction generalised from "offset IS the scaled IV" to
+  `vector_affine.classify_access == CONTIGUOUS`, a strict SUPERSET: a bare IV
+  term has an empty invariant part, records `None`, and takes the byte-identical
+  path. New plan fields `array_offs` / `array_addr` / `array_base_pre`.
+- **`need = 2 if kernel.reduction_value == 'dot' else 1`**, derived from the
+  reduction structure instead of a hard-coded kind list. Identical for
+  dot-product (2) and sum-reduction (1); matmul now correctly gets 2. The old
+  `need = 2 if kind in ('dot-product',) else 1` would have handed matmul ONE
+  slot and silently dropped a multiplicand -- a wrong-answer bug.
+- Row bases reuse R9.3: `clone_offset(..., Const(0))` once, then
+  `[addr + c*lanes*eb]` per chunk.
+- **Emission now branches on OPERAND COUNT, not kind.** `_is_dot_shaped(plan)`
+  replaces `plan.kind == 'dot-product'`, which had sent matmul down the
+  one-operand `$vreduce` path. **The differential oracle caught this as
+  `differential:mismatch` before any test did**; fixed at the root.
+- Two wrong-answer guards, both clean rejections rather than silent fallbacks:
+  `build_compact_body` DECLINES based accesses (a register chunk offset carries
+  no row base, so it would address row 0 every row -- the R12.1 shape), and a
+  based access with a remainder is rejected (the peel replays original loads).
+
+Results -- `$dot` count equals `chunks` in every vectorized case, all correct,
+0 spills, all `unrolled`:
+
+| dtype | N | chunks | $dot | ticks | ticks/out |
+|---|---|---|---|---|---|
+| vu16 | 8 | 2 | **2** | 1691 | 26.42 |
+| vu8 | 16 | 2 | **2** | 6399 | 25.00 |
+| vi16 | 16 | 4 | **4** | 7183 | 28.06 |
+| vi8 | 24 | 3 | **3** | 15343 | 26.64 |
+| vu8 | 32 | 4 | **4** | 30207 | 29.50 |
+
+Two non-vectorized, both expected: **4x4 vi16** is structurally accepted by all
+ten predicates then declined by the PRE-EXISTING `trip >= 2*lanes` rule
+(`vector_profitability.py:91`) -- so the spec's nominated "smallest positive
+target" does not vectorize, for a reason predating R13; the smallest that does
+is 8x8 vu16. And **vi32/vu32** are `illegal:isa-unsupported:no-32bit-dot`, an ISA
+limit.
+
+Gate: 38/38 with the metrics CSV **bit-for-bit identical** to the Phase-0
+baseline, 3/3 negative controls, crosscheck 124/124 (0 IR / 0 code / 0 tier
+mismatches), loopopt 25/25, `_r13_0_test.py` **59/59**. Dedicated tests assert
+dot-product still gets 2 slots and sum-reduction 1, both with no invariant base
+and no row-base prologue -- i.e. the pre-R13 path exactly.
+
+Not started: Phase 6+ (datatype/size coverage, adaptive U search, corpus sweep,
+performance comparison against the 309-tick hand-written reference).

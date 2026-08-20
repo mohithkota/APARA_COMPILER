@@ -33,7 +33,7 @@ class LoopProbe:
     """One loop's full analysis record."""
     __slots__ = ('func', 'label', 'kind', 'vtype', 'lanes', 'trip',
                  'legal', 'legal_reason', 'profitable', 'prof_note',
-                 'form', 'dot_plan_reason')
+                 'form', 'dot_plan_reason', 'dot_plan')
 
     def __init__(self, **kw):
         for s in self.__slots__:
@@ -62,6 +62,7 @@ def probe_instrs(instrs, global_base=0x400, kinds=('matmul',)):
             prof = estimate(legality, d) if legality.legal else None
             form = matmul_access.analyze(d, sub, kernel, legality)
             # Phase 3: what does the EXISTING dot planner say about this loop?
+            dp = None
             try:
                 dp = vector_lowering.plan_lowering(d, sub, kernel, legality)
                 dp_reason = None if dp.ok else dp.reason
@@ -75,7 +76,7 @@ def probe_instrs(instrs, global_base=0x400, kinds=('matmul',)):
                 legal_reason=getattr(legality, 'reason', None),
                 profitable=(prof.profitable if prof else False),
                 prof_note=(prof.note if prof else None),
-                form=form, dot_plan_reason=dp_reason))
+                form=form, dot_plan_reason=dp_reason, dot_plan=dp))
     return out
 
 

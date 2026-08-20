@@ -32,7 +32,12 @@ import vector_compact_loop as _vcl
 from vector_lowering import lower_kernel, plan_lowering, differential_packed
 from vector_dynamic import model_realisation
 
-_SUPPORTED = ('dot-product', 'sum-reduction')
+# R13.0: 'matmul' joins the kinds this client claims. It is the SAME client,
+# the SAME planner and the SAME $dot emitter -- a matmul inner loop is a dot
+# product whose operand addresses carry an invariant row base, which
+# `plan_lowering` now expresses (`array_offs`/`array_addr`). No second dot
+# backend and no matmul-specific lowering exists.
+_SUPPORTED = ('dot-product', 'sum-reduction', 'matmul')
 
 
 class DotReductionTransform(VectorTransform):

@@ -145,10 +145,12 @@ def _region(desc):
 
 class LoweringPlan:
     __slots__ = ('ok', 'reason', 'kind', 'vtype', 'lanes', 'eb', 'signed',
-                 'trip', 'chunks', 'remainder', 'array_slots', 'acc_slot',
+                 'trip', 'chunks', 'remainder', 'array_slots', 'array_offs',
+                 'acc_slot',
                  'iv_slot', 'iv_init_site', 'region_lo', 'region_hi', 'iv_bytes',
                  'acc_bytes', 'acc_expand', 'acc_expand_reason',
-                 'realisation', 'compact_per_iter', 'unrolled_len', 'peel', 'peel_len')
+                 'realisation', 'compact_per_iter', 'unrolled_len', 'peel',
+                 'peel_len', 'array_addr', 'array_base_pre')
 
     def __init__(self):
         self.ok = False
@@ -160,6 +162,18 @@ class LoweringPlan:
         self.unrolled_len = 0
         self.peel = None                # R4.2.7 PeelTemplate, or None
         self.peel_len = 0
+        # R13.0: per-array INVARIANT byte-offset expression, positionally
+        # aligned with `array_slots`. None means "no invariant part", i.e. the
+        # pre-R13 form `offset == IV*elem_bytes`, and the lowering then takes
+        # the byte-for-byte identical path it always did. A non-None entry is
+        # the `invariant_base + IV*elem_bytes` form a matmul row/column needs.
+        self.array_offs = []
+        # R13.0: materialised `array base + invariant row offset` address temps,
+        # positionally aligned with `array_slots`; None where `array_offs` is
+        # None. Built once in the plan so the emission path stays a pure
+        # function of the plan (it has no access to instrs/def_map).
+        self.array_addr = []
+        self.array_base_pre = []
 
 
 def plan_lowering(desc, instrs, kernel, legality):
@@ -188,8 +202,26 @@ def plan_lowering(desc, instrs, kernel, legality):
                 if _cname(instrs[i]) == 'IRLoadAddr'}
     iv_terms = set(desc.iv_terms.keys())
 
-    # affine array loads: base must be a local IRLoadAddr slot; stride == elem_bytes
+    # Affine array loads: base must be a local IRLoadAddr slot, and the access
+    # must be CONTIGUOUS in the loop IV (stride == elem_bytes).
+    #
+    # R13.0 generalisation. The pre-R13 test was `off.name in desc.iv_terms`,
+    # i.e. the offset temp had to BE the IV scaled by elem_bytes. That admits
+    #     offset = IV*eb
+    # but rejects the form every matmul row/column produces,
+    #     offset = invariant_base + IV*eb
+    # which is why matmul died with 'array-bases-not-extracted'.
+    #
+    # The generalised test asks `vector_affine.classify_access` for CONTIGUOUS,
+    # which is a strict SUPERSET: a bare IV term classifies CONTIGUOUS with an
+    # empty invariant part (const_off == 0 and sym_div == 0), so every kernel
+    # that matched before still matches, and still records `None` as its base --
+    # taking the identical emission path. Only accesses with a real invariant
+    # part take the new path.
+    import vector_affine as _va_r13
+    _actx = _va_r13.LoopAffineContext(instrs, desc)
     array_slots = []
+    array_offs = []                     # invariant byte-offset expr, or None
     array_info = []                     # (slot, elem_bytes, unsigned) per load
     load_temps = {}                     # temp name -> slot, for finding the mul
     for i in _region(desc):
@@ -198,25 +230,42 @@ def plan_lowering(desc, instrs, kernel, legality):
             continue
         base = getattr(ins, 'base', None)
         off = getattr(ins, 'offset', None)
-        is_affine = (isinstance(off, Temp) and off.name in iv_terms)
-        if not is_affine or not isinstance(base, Temp) or base.name not in addr_off:
+        if not isinstance(off, Temp) or not isinstance(base, Temp):
             continue
-        # packed check: the index advances by elem_bytes per iteration, i.e. the
-        # offset temp is the IV scaled by elem_bytes (stride == elem_bytes, packed)
-        slot, scale = desc.iv_terms.get(off.name, (None, None))
-        if scale != kernel.elem_bytes:
+        if base.name not in addr_off:
+            continue
+        if addr_off[base.name] in (desc.primary_iv, kernel.reduction_slot):
+            continue                    # the IV's own slot / the accumulator
+        acc = _va_r13.classify_access(ins, _actx)
+        if not acc.ok or acc.kind == _va_r13.INVARIANT:
+            continue                    # not an array walk (scalar operand)
+        if acc.kind != _va_r13.CONTIGUOUS or acc.coeff != kernel.elem_bytes:
             p.reason = 'unpacked-array-stride'
             return p
+        bare_iv = (acc.const_off == 0 and (acc.sym_div or 0) == 0)
         array_slots.append(addr_off[base.name])
+        array_offs.append(None if bare_iv else off)
         array_info.append((addr_off[base.name], ins.elem_bytes,
                            bool(getattr(ins, 'unsigned', False))))
         load_temps[ins.dest.name] = addr_off[base.name]
 
-    need = 2 if kernel.kind in ('dot-product',) else 1
+    # How many multiplicand arrays this reduction actually consumes, derived
+    # from the reduction VALUE rather than a hard-coded kind list.
+    # `reduction_value == 'dot'` means the accumulated value is load*load, so
+    # there are two operand arrays; 'load'/'scaled' means one.
+    #
+    # This is behaviour-preserving for the pre-R13 kinds -- 'dot-product' has
+    # reduction_value 'dot' (2, as before) and 'sum-reduction' has 'load' or
+    # 'scaled' (1, as before) -- and it is what makes matmul safe: matmul is
+    # ALSO a load*load reduction, so it needs 2. The old expression gave it 1,
+    # and `array_slots[:1]` would have silently dropped the second multiplicand,
+    # which is a wrong-answer bug rather than a missed optimisation.
+    need = 2 if kernel.reduction_value == 'dot' else 1
     if len(array_slots) < need:
         p.reason = 'array-bases-not-extracted'
         return p
     p.array_slots = array_slots[:need]
+    p.array_offs = array_offs[:need]
     p.acc_slot = kernel.reduction_slot
     p.iv_slot = desc.primary_iv
     # R6.2C / defect D2: the compact chunk loop REUSES this slot, so it must
@@ -230,6 +279,41 @@ def plan_lowering(desc, instrs, kernel, legality):
     # loop must read and write it at the width the rest of the program uses.
     p.acc_bytes = (_vcl_w.slot_width(instrs, lo, hi, p.acc_slot)
                    if p.acc_slot is not None else None)
+
+    # ── R13.0: materialise the INVARIANT part of each based access ────────────
+    # For `offset = invariant_base + IV*eb`, substituting IV = c*lanes gives
+    #     off(c) = off(0) + c*lanes*eb
+    # so the invariant part is computed ONCE into an address temp and each chunk
+    # becomes `[addr + c*lanes*eb]` -- a compile-time constant displacement.
+    # This is exactly R9.3's `_row_base` construction, reused rather than
+    # reinvented, and the constant delta is licensed by the contiguity test that
+    # already had to pass above.
+    p.array_addr = [None] * len(p.array_slots)
+    p.array_base_pre = []
+    if any(o is not None for o in p.array_offs):
+        from gemm_lowering import clone_offset as _clone_offset
+        from ir import IRBinOp as _IRBinOp
+        _dm = du.single_defs()
+        _rg = set(_region(desc))
+        if p.remainder:
+            # A peeled/scalar tail replays the ORIGINAL loads, whose addressing
+            # this plan does not describe; emitting one would address row 0.
+            # Reject rather than risk a wrong answer.
+            p.reason = 'based-access-with-remainder-unsupported'
+            return p
+        for _i, _off in enumerate(p.array_offs):
+            if _off is None:
+                continue
+            _pre, _off0 = _clone_offset(instrs, _dm, _rg, _off, p.iv_slot,
+                                        Const(0))
+            if _pre is None:
+                p.reason = f'row-base-not-clonable:{_off0}'
+                return p
+            _b, _a = _fresh('_vrb'), _fresh('_vra')
+            p.array_base_pre += list(_pre) + [
+                IRLoadAddr(_b, p.array_slots[_i]),
+                _IRBinOp(_a, '+', _b, _off0)]
+            p.array_addr[_i] = _a
 
     # R4.2.7 peel template: replay the ORIGINAL loads/arithmetic at a constant
     # index rather than re-deriving the tail (which would risk getting integer
@@ -275,6 +359,22 @@ def plan_lowering(desc, instrs, kernel, legality):
 
 # ── the packed vector body ──────────────────────────────────────────────────────
 
+def _packed_load_any(dest, plan, which, chunk):
+    """Packed load of chunk `chunk` from multiplicand `which`.
+
+    Dispatches on whether the access has an invariant base. Without one the
+    pre-R13 `_packed_load` runs unchanged (byte-for-byte identical output); with
+    one, the address temp built by the plan is used with a constant per-chunk
+    displacement."""
+    addr = plan.array_addr[which] if plan.array_addr else None
+    if addr is None:
+        return _packed_load(dest, plan.array_slots[which], chunk,
+                            plan.lanes, plan.eb, plan.signed)
+    import vector_compact_loop as _vcl_i
+    return _vcl_i.packed_load_at_imm(dest, addr, chunk * plan.lanes * plan.eb,
+                                     plan.lanes, plan.eb, plan.signed)
+
+
 def _packed_load(dest, slot, chunk, lanes, eb, signed):
     """A packed 64-bit load of `lanes` contiguous elements of chunk `chunk`."""
     base = _fresh('_vba')
@@ -303,6 +403,18 @@ def _acc_store(slot, value_temp, elem_bytes=8):
     base = _fresh('_vas')
     return [IRLoadAddr(base, slot),
             IRStore(base, Const(0), value_temp, elem_bytes)]
+
+
+def _is_dot_shaped(plan):
+    """Two multiplicand arrays feed the accumulator, so this lowers to $dot.
+
+    R13.0: emission used to branch on `plan.kind == 'dot-product'`, which sent
+    'matmul' -- a genuine two-operand dot -- down the ONE-operand $vreduce path
+    and produced wrong results (caught by the differential oracle, not shipped).
+    Branching on the operand count instead is behaviour-identical for the
+    pre-R13 kinds (dot-product has 2, sum-reduction has 1) and correct for any
+    future load*load reduction."""
+    return len(plan.array_slots) == 2
 
 
 def build_vector_body(plan):
@@ -334,6 +446,7 @@ def build_vector_body(plan):
     plan.acc_expand = exp is not None
 
     body = []
+    body += list(plan.array_base_pre or [])      # R13.0 row bases, computed once
     if exp is None:
         init, acc = _acc_addr_load(plan.acc_slot, plan.signed,
                                    elem_bytes=plan.acc_bytes)
@@ -345,10 +458,10 @@ def build_vector_body(plan):
 
     for c in range(plan.chunks):
         acc_in = acc if accs is None else accs[c % len(accs)]
-        if plan.kind == 'dot-product':
+        if _is_dot_shaped(plan):
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
-            body += _packed_load(aT, plan.array_slots[0], c, plan.lanes, plan.eb, plan.signed)
-            body += _packed_load(bT, plan.array_slots[1], c, plan.lanes, plan.eb, plan.signed)
+            body += _packed_load_any(aT, plan, 0, c)
+            body += _packed_load_any(bT, plan, 1, c)
             nxt = _fresh('_vacc') if accs is None else acc_in
             body.append(IRVecDot(nxt, aT, bT, '$' + plan.vtype,
                                  accumulate=True, accum=acc_in))
@@ -356,7 +469,7 @@ def build_vector_body(plan):
                 acc = nxt
         else:  # sum-reduction
             aT = _fresh('_vpa')
-            body += _packed_load(aT, plan.array_slots[0], c, plan.lanes, plan.eb, plan.signed)
+            body += _packed_load_any(aT, plan, 0, c)
             partial = _fresh('_vred')
             body.append(IRVecReduce(partial, aT, '$' + plan.vtype, '+'))
             if accs is None:
@@ -374,6 +487,15 @@ def build_vector_body(plan):
 
 
 def build_compact_body(plan):
+    # R13.0: the compact realisation addresses each chunk with a REGISTER offset
+    # derived from the loop's own counter, which carries no invariant row base.
+    # Emitting it for a based access would address row 0 on every row -- the
+    # exact shape of the R12.1 wrong-answer bug. Decline instead; `lower_kernel`
+    # then simply has one fewer candidate and the unrolled realisation is used.
+    # Compact support for based accesses is NOT part of R13.0.
+    if any(a is not None for a in (plan.array_addr or [])):
+        return None
+
     """R4.2.5: the body of ONE chunk of a compact vector loop, addressed by a
     register offset instead of a constant. The accumulator lives in its memory
     slot across the back edge (loaded at the top, stored at the bottom) exactly as
@@ -419,7 +541,7 @@ def build_compact_body(plan):
         init, acc = _vcl.slot_load(plan.acc_slot, plan.signed,
                                    elem_bytes=plan.acc_bytes)
         body += init
-        if plan.kind == 'dot-product':
+        if _is_dot_shaped(plan):
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
             body += _vcl.packed_load_at(aT, plan.array_slots[0], off,
                                         plan.lanes, plan.eb, plan.signed)
@@ -492,14 +614,17 @@ def lower_kernel(instrs, lo, hi, plan, global_base=0x400):
     compact_body = build_compact_body(plan)
     unrolled_body = build_vector_body(plan)
     plan.unrolled_len = len(unrolled_body)
-    compact = _splice_compact(instrs, plan, compact_body)
+    compact = (_splice_compact(instrs, plan, compact_body)
+               if compact_body is not None else None)
     unrolled = _splice_unrolled(instrs, plan, unrolled_body)
     # R4.2.7: with a remainder, the scalar tail loop can be PEELED away instead of
     # kept. Both realisations get a peeled variant; the selector decides. The
     # unrolled body starts at chunks*lanes (it does not count), the compact loop
     # counts up from 0 itself.
-    cands = [('unrolled', unrolled), ('compact', compact)]
-    if plan.remainder > 0:
+    cands = [('unrolled', unrolled)]
+    if compact is not None:
+        cands.append(('compact', compact))
+    if plan.remainder > 0 and compact_body is not None:
         cands.append(('unrolled+peeled',
                       splice_peeled(instrs, plan, unrolled_body,
                                     plan.chunks * plan.lanes)))

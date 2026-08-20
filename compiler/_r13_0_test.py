@@ -269,9 +269,10 @@ def test_plan_parity(base):
           len(par.supplied) + len(par.shared) + len(par.extensions)
           == len(matmul_access.DOT_PLAN_FIELDS),
           f"{len(par.supplied)}+{len(par.shared)}+{len(par.extensions)}")
-    # The existing planner still rejects it -- production behaviour unchanged.
-    check("existing dot planner still rejects (no production change)",
-          base.dot_plan_reason == 'array-bases-not-extracted',
+    # PHASE 5: the existing planner now ACCEPTS it (this is the whole point).
+    # Before Phase 5 this asserted the rejection 'array-bases-not-extracted'.
+    check("existing dot planner now ACCEPTS the matmul form",
+          base.dot_plan_reason is None,
           f"dot planner said {base.dot_plan_reason!r}")
 
 
@@ -289,6 +290,101 @@ def test_predicate_coverage():
     check("an accepted kernel evaluates all ten", len(names) == 10, str(names))
 
 
+# ── Phase 5: production lowering ───────────────────────────────────────────────
+
+def test_phase5_both_multiplicands():
+    """THE correctness guard for the `need` change.
+
+    `vector_lowering.py` used to compute `need = 2 if kind in ('dot-product',)
+    else 1`, which would have handed matmul ONE array slot and silently dropped
+    the second multiplicand -- a wrong-answer bug. `need` is now derived from
+    the reduction structure, and this test pins that both slots survive."""
+    print("\n[phase 5] both matmul multiplicands reach the lowering")
+    p = probe(mm())
+    if p is None or p.dot_plan is None or not p.dot_plan.ok:
+        check("matmul plans", False,
+              f"plan reason={p.dot_plan_reason if p else 'no probe'}")
+        return
+    pl = p.dot_plan
+    check("exactly two array slots", len(pl.array_slots) == 2,
+          f"array_slots={pl.array_slots}")
+    check("the two slots are DISTINCT arrays",
+          len(set(pl.array_slots)) == 2, f"array_slots={pl.array_slots}")
+    check("both carry an invariant row base",
+          len(pl.array_offs) == 2 and all(o is not None for o in pl.array_offs),
+          f"array_offs={pl.array_offs}")
+    check("both row-base address temps materialised",
+          len(pl.array_addr) == 2 and all(a is not None for a in pl.array_addr),
+          f"array_addr={pl.array_addr}")
+    check("a row-base prologue was emitted", len(pl.array_base_pre) > 0,
+          f"{len(pl.array_base_pre)} instrs")
+
+
+def test_phase5_existing_kinds_unchanged():
+    """The shared planner must treat the pre-R13 kinds exactly as before:
+    two operands for a dot product, one for a sum reduction, and NO invariant
+    base on either (their offsets are bare IV terms)."""
+    print("\n[phase 5] existing dot-product / sum-reduction plans unchanged")
+    dotp = """
+long long results[2];
+int main(void){ vi16_t a[64], b[64]; int i, s;
+  for(i=0;i<64;i++){ a[i]=(vi16_t)(i&7); b[i]=(vi16_t)((i+1)&7); }
+  s=0; for(i=0;i<64;i++) s += a[i]*b[i];
+  results[0]=s; return 0; }
+"""
+    redu = """
+long long results[2];
+int main(void){ vi16_t a[64]; int i, s;
+  for(i=0;i<64;i++) a[i]=(vi16_t)(i&7);
+  s=0; for(i=0;i<64;i++) s += a[i];
+  results[0]=s; return 0; }
+"""
+    for tag, src, want in (('dot-product', dotp, 2), ('sum-reduction', redu, 1)):
+        fd, path = tempfile.mkstemp(suffix='.c'); os.write(fd, src.encode()); os.close(fd)
+        try:
+            ps = matmul_probe.probe_source(path, kinds=None)
+        finally:
+            os.unlink(path)
+        sel = [x for x in ps if x.kind == tag and x.dot_plan is not None
+               and x.dot_plan.ok]
+        if not sel:
+            check(f"{tag} still plans", False, f"kinds seen: {[x.kind for x in ps]}")
+            continue
+        pl = sel[0].dot_plan
+        check(f"{tag}: {want} array slot(s), as before",
+              len(pl.array_slots) == want, f"array_slots={pl.array_slots}")
+        check(f"{tag}: no invariant base (bare IV form preserved)",
+              all(o is None for o in pl.array_offs), f"array_offs={pl.array_offs}")
+        check(f"{tag}: no row-base prologue emitted",
+              not pl.array_base_pre, f"{len(pl.array_base_pre)} instrs")
+
+
+def test_phase5_dot_is_emitted():
+    """MANDATORY: a positive case must emit real $dot in the mcode. A simulator
+    PASS with a scalar fallback is NOT acceptance."""
+    print("\n[phase 5] $dot actually reaches the emitted mcode")
+    import subprocess
+    here = os.path.dirname(os.path.abspath(__file__))
+    cases = [('vu8_t', 16, 8), ('vi16_t', 16, 4), ('vi8_t', 24, 8)]
+    for T, N, lanes in cases:
+        src = mm(T=T, K=N, M=N, N=N)
+        fd, path = tempfile.mkstemp(suffix='.c'); os.write(fd, src.encode()); os.close(fd)
+        out = path[:-2] + '.mcode'
+        try:
+            subprocess.run([sys.executable, os.path.join(here, 'compiler.py'),
+                            '--preprocess', path, '-o', out],
+                           capture_output=True, text=True, timeout=1800)
+            txt = open(out, errors='replace').read() if os.path.exists(out) else ''
+        finally:
+            for f in (path, out):
+                if os.path.exists(f):
+                    os.unlink(f)
+        n = txt.count('$dot')
+        check(f"{T} {N}x{N}: $dot emitted", n > 0, "zero $dot in mcode")
+        check(f"{T} {N}x{N}: one $dot per chunk ({N // lanes})",
+              n == N // lanes, f"found {n}, expected {N // lanes}")
+
+
 def main():
     print("=" * 74)
     print(" R13.0 Phases 1-4 -- structural matcher tests (analysis only)")
@@ -299,6 +395,9 @@ def main():
     test_negative_controls()
     test_plan_parity(base)
     test_predicate_coverage()
+    test_phase5_both_multiplicands()
+    test_phase5_existing_kinds_unchanged()
+    test_phase5_dot_is_emitted()
     print("\n" + "=" * 74)
     if FAILURES:
         print(f" RESULT: FAIL -- {len(FAILURES)} of {COUNT[0]} checks failed")
