@@ -6645,3 +6645,79 @@ Diagnosis: `R12_1_GEMM_VI32_UNROLL_BUG_ANALYSIS.md`. Delivery:
 - HONEST BOUND: M=32 is still far from vi16 (89.48 vs 19.51 ticks/output, vector
   IPB 2.562 vs 4.900). The cliff is substantially REDUCED, not removed; the
   residue is the 2-lane granularity of 32-bit elements.
+
+## R13.0 generic matmul -> $dot vector lowering — IN PROGRESS (Phase 0 done)
+
+Branch `feature/r13-matmul-dot`, off `main` (`b46aa63`). `r10-final`,
+`r11-verified` and `r12.1-verified` are untouched.
+
+**THE GAP, located precisely.** A hand-written `$dot` 16x16 matmul (309 ticks,
+1160 instrs, IPB 3.754, 46.9% occupancy) runs ~14x faster than the compiler's
+output. Writing the same algorithm in C -- B pre-transposed, `vu8_t`, inner loop
+as a dot product -- compiles CORRECTLY (256/256) but emits **zero** vector
+instructions. The compiler already:
+
+- detects the kernel as `kind = 'matmul'` (`kernel_detector.py:283`, a
+  `load * load` reduction at `depth >= 2`);
+- declares `'matmul' -> 'dot'` in the capability table (`vector_legality.py:44`);
+- rates it profitable: `Profit(matmul x8 lanes: ~8.0x, instr -88%, util 100%)`;
+- already owns a working `$dot`/`$vreduce` emitter (R4.1).
+
+It then DECLINES with `pattern:array-bases-not-extracted`
+(`vector_lowering.py:217`). Cause: `plan_lowering` requires every array load's
+offset to be a BARE IV term scaled by `elem_bytes`
+(`vector_lowering.py:201-209`). A matmul offset is `invariant_row_base +
+IV*elem_bytes`, so zero arrays are extracted and `need` is never met.
+
+**The missing capability is the ACCESS REPRESENTATION, not the `$dot`
+instruction.** `gemm_lowering.clone_offset` already rewrites exactly this
+`invariant + IV*eb` form (R9.3 built row-base hoisting on it); the two have
+simply never been combined.
+
+**R13.0 scope (Phase 7 tiling deferred to R13.1/R14).** "Configuration" here
+means source datatype x derived lanes x existing U={8,4,2,1} x existing
+compact/unrolled realisation. NO TM x TK x TN loop tiling -- the compiler has no
+tiling mechanism to plug candidates into, and adding one is a separate loop
+transformation.
+
+**Datatype is SEMANTIC and is never changed to win lanes.** `lanes =
+WORD_BITS/element_bits` is DERIVED (`vector_capability_db.py:168,174`) from the
+source marker (`ir_gen.py:44`): vu8/vi8 -> 8 lanes, vu16/vi16 -> 4, vu32/vi32
+-> 2. Matrix size only sets `trip`; `chunks = trip//lanes`, `remainder =
+trip%lanes` (`vector_lowering.py:179-180`). 16x16 does not imply 8-bit and
+4x4 does not imply scalar -- each is a separate legality/profitability outcome.
+
+### Phase 0 — probe separation (DONE)
+
+- REMOVED the probe-only `APARA_R13_MATMUL` acceptance in `dot_vectorizer.py`.
+  It made the dot client claim `'matmul'` with no lowering behind it, which is
+  exactly the half-enabled behaviour Phase 0 forbids shipping. The real client
+  arrives in Phase 5.
+- KEPT and documented one diagnostic in `compiler.py`, gated on
+  **`APARA_VEC_DEBUG`**: report `_vreps` when NOTHING is committed, and print
+  the traceback the bare `except Exception: pass` swallows. Diagnostic only, no
+  behaviour change. Without it a kernel that is detected, ruled legal and
+  predicted profitable but declined by the planner fails SILENTLY -- that is why
+  `pattern:array-bases-not-extracted` stayed hidden. Reproduce with
+  `APARA_VEC_DEBUG=1 APARA_VECTOR_REPORT=1 python3 compiler/compiler.py -v ...`.
+
+### Phase 19 regression gate — BASELINE CAPTURED (pre-change)
+
+`plan_lowering` is SHARED with the existing dot-product and sum-reduction paths,
+so the generalisation to `base + scaled_IV` must be proven inert for them.
+Baseline recorded in `compiler/r13_baseline/` on the unmodified compiler:
+
+| check | baseline |
+|---|---|
+| 38-program simulator suite | **38/38 PASS** (143.9s) |
+| negative controls | **3/3 rejected** |
+| `compiler/_r*_test.py` | **20/20 PASS** |
+| `loopopt/_*_test.py` | **25/25 PASS** |
+| `pipeline_crosscheck` | **124/124** IR + generated code + selected tier |
+
+NOTE: R10 reported "21/21 unit suites"; the tree actually holds 20
+`compiler/_r*_test.py` plus 25 `loopopt/_*_test.py`. Recording both counts
+rather than restating 21/21, so the R13 gate compares like with like.
+
+Next: Phase 1 (formalise the generic `invariant_base + IV*elem_bytes` access) and
+Phase 4 (structural matcher unit tests) BEFORE enabling production lowering.

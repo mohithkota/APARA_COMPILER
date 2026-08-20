@@ -605,7 +605,25 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
                 _ir0 = _vec_ir
                 if verbose:
                     print("[vectorize] " + format_reports(_vstats, _vreps))
+            elif os.environ.get('APARA_VEC_DEBUG'):
+                # R13.0 Phase 0: diagnostic only, no behaviour change.
+                # The success path above prints nothing when NOTHING is
+                # committed, and the `except` below swallows every error, so a
+                # kernel that is detected, ruled legal and predicted profitable
+                # but then declined by the planner used to fail SILENTLY -- the
+                # rollback reason existed in `_vreps` and was simply discarded.
+                # That is how `pattern:array-bases-not-extracted` stayed hidden.
+                print("[vectorize] NOT COMMITTED: "
+                      + format_reports(_vstats, _vreps))
+                for _r in _vreps:
+                    print("    report:", _r)
         except Exception:
+            # Vectorization must never break the build, so the error is
+            # swallowed -- but under APARA_VEC_DEBUG it is shown first,
+            # otherwise a crash here is indistinguishable from "not profitable".
+            if os.environ.get('APARA_VEC_DEBUG'):
+                import traceback
+                traceback.print_exc()
             pass                                # vectorization never breaks the build
 
     _no_iv = bool(os.environ.get('APARA_NO_IVSR'))          # A/B measurement knob

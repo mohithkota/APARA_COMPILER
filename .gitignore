@@ -99,3 +99,7 @@ compiler_support_documents/
 /*MTP*.docx
 /*thesis*.pdf
 /*Thesis*.pdf
+
+# R13.0 regression-gate baseline: large generated logs/CSV, reproducible by
+# re-running `python3 -m verification` and `python3 -m loopopt.pipeline_crosscheck`
+compiler/r13_baseline/
