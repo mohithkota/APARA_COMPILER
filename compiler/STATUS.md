@@ -7478,3 +7478,55 @@ register-held array bases (freeing the one register that makes 8-dot fit) AND
 the init loop, which R15.0 measured at **73% of whole-program ticks**. That is a
 **benchmark/methodology change, not a compiler optimization** -- the same
 conclusion R15.0 reached from a different direction.
+
+## R16.1 fixed-DMEM analysis — HYPOTHESIS REJECTED, analysis only
+
+Delivery: `R16_1_FIXED_DMEM_ANALYSIS.md`. **0 production `.py` changed.**
+
+**ANSWER: NO -- and the register question never arises.** Moving A/Bt/results
+from stack locals to globals **loses vectorization entirely**: `$dot` drops to
+**0** and the kernel goes scalar.
+
+| config (16x16 vu8, identical computation) | ticks | `$dot` | correct |
+|---|---|---|---|
+| **stack-local JT=4 (current)** | **4575** | 8 | 256/256 |
+| stack-local JT=8 | 7950 | 16 | 256/256 |
+| fixed-DMEM JT=4, no `--dmem-init` | -- | 0 | **FAILS, IMEM overflow, never halts** |
+| fixed-DMEM JT=4, `--dmem-init` | **37000** | **0** | 256/256 |
+| fixed-DMEM JT=8, `--dmem-init` | **19164** | **0** | 256/256 |
+| hand-written 8-dot | **241** | 32 | 256/256 |
+
+**CAUSE:** `vector_lowering.plan_lowering` accepts an array access only when its
+base is a **local `IRLoadAddr` stack slot**. Globals are GBASE-relative
+(`IRGlobalLoad`), so no array is extracted ->
+`pattern:array-bases-not-extracted` -> scalar fallback. This is the same
+predicate R13.0 generalised for the OFFSET form (`invariant_base + IV*eb`); the
+BASE form (stack slot vs global) was never generalised.
+
+**The R16.0 register hypothesis is therefore UNTESTABLE on this compiler** --
+vectorization is lost before registers become relevant. R16.0's reasoning was
+sound; a prior constraint fires first.
+
+**SECONDARY FINDING:** global initializers overflow IMEM. 512 bytes of
+initializers generate 531 init stores -> 1107 source -> **2651 aligned bundles**
+(vs 74 stack-local); the program never halts. **`--dmem-init` fixes exactly this
+(2651 -> 97 bundles, correct output)** -- the mechanism works as documented, it
+just cannot recover the lost `$dot`.
+
+**INIT vs KERNEL, cleanly separated** (R15.0 conflated these): fixed DMEM DOES
+deliver the predicted init saving -- **3331 -> ~0 ticks** -- but the kernel goes
+**1225 -> ~37000** because it is no longer vectorized. The init win is real and
+is SWAMPED by losing `$dot`.
+
+Memory map verified from the compiler's own report: gbase 0x400, A at 0x400,
+Bt at 0x500, results at 0x600; `data.map` word 0x80 = `0x030a00070e040b01` =
+A[0..7] = 3,10,0,7,14,4,11,1, matching the initializer (MSB-first). The preload
+is correct -- the arrays really are in fixed DMEM.
+
+Datatype/size sweep NOT run: with `$dot`=0 on the primary target the mechanism
+under test is absent, so a wider sweep would measure only scalar codegen.
+
+**IF RESUMED, the milestone to scope is:** generalise the vector lowering's
+array-base predicate from "local `IRLoadAddr` slot" to "local slot OR global
+address". Only after that does the R16.0 register hypothesis become measurable.
+That is a production compiler change, which R16.1's own Phase 13 forbids.
