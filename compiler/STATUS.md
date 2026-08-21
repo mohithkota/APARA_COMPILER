@@ -7316,3 +7316,52 @@ result pointer live across the row and advances it by a fixed stride per row
 (`+ $r29, $r29, 128`). That is STRENGTH REDUCTION on the store pointer -- an
 induction variable -- NOT loop-invariant code motion. The two have different
 legality conditions, so the distinction matters for any future milestone.
+
+## R14.10 result-pointer IVSR — STOPPED (IVSR abstraction gap), analysis only
+
+Delivery: `R14_10_RESULT_POINTER_IVSR.md`. **0 production `.py` changed.**
+
+**The pointer IS an induction variable** of the J-tile loop --
+`((i*N) + j) * element_size`, stepping by `J_TILE * element_size`. The
+transformation is legal in principle; the obstacle is ANALYSIS, not legality.
+
+**THE EXACT GAP, verified against `ivsr.py` source:**
+1. `_iv_term` recognises `iv * Const` only when the multiplied operand is
+   **directly** an IV load (`_is_iv_load_name(oth.name)`).
+2. `_decompose` handles only **`+` at the top level**; it returns None for a
+   multiply.
+The result address is a constant multiply applied to a **sum**, `((i*N)+j)*8`,
+so both fail and the access is never a candidate.
+3. Separately, candidates are restricted to `IRLoad`/`IRStore` with an INVARIANT
+   base and a Temp offset -- while R14.8 deliberately moved the varying part INTO
+   the base and left Const offsets, the exact complement.
+
+**TRIED AND REVERTED:** an additive `IRGlobalAddrOf` candidate kind (reduce the
+address-materialisation node itself, so the four stores keep their constant
+displacements and share one pointer). `APARA_IVSR_DEBUG=1` reported
+`loop @42 (fc_9): 0 candidate accesses` -- blocked by gap (2), which the
+extension did not touch; ticks unchanged at 4575. Reverted: shipping inert,
+never-exercised code in a delicate shared pass is worse than not shipping it.
+**Do not revive it.**
+
+**What-if (project's own bundler):** epilogue 12 instrs/**5 bundles** -> 9
+instrs/**3 bundles**; block 12 -> 10, ≈**2.8%** whole-program.
+
+**WHY NOT CLOSED:** making `_decompose` distribute a constant multiply over a sum
+requires scaling every part it returns, but `inv_parts` is a flat list of
+temps/constants that are ADDED -- it cannot express "this invariant temp, scaled
+by k". That needs new preheader multiplies and a richer representation in the
+core analysis every IVSR candidate in every program flows through. Too broad for
+2.8%.
+
+**Verification -- nothing changed:** 38/38 with **0 programs differing from
+R14.8**, 3/3 negative controls, crosscheck 124/124 (0 mismatches), compiler
+suites **29/29**, loopopt **25/25**, `_r14_10_test.py` 9/9.
+
+**PROCESS NOTE (worth keeping).** The outstanding suites were re-run ONE AT A
+TIME with a 300 s cap and a process check before and after each; all passed --
+15 compiler suites total ~266 s, 25 loopopt suites ~2 s. An earlier attempt
+chained all 40 into a single command with per-test `timeout` but no bound on the
+TOTAL, and with a tool timeout above the documented maximum; it ran 4h28m before
+being interrupted. **No test hangs** -- the fault was the invocation, not the
+suite. Run long verification serially, one command per test.
