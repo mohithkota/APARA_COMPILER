@@ -7365,3 +7365,66 @@ chained all 40 into a single command with per-test `timeout` but no bound on the
 TOTAL, and with a tool timeout above the documented maximum; it ran 4h28m before
 being interrupted. **No test hangs** -- the fault was the invocation, not the
 suite. Run long verification serially, one command per test.
+
+## R15.0 hand-written parity analysis — ANALYSIS ONLY, recommends FREEZE
+
+Delivery: `R15_0_HANDWRITTEN_PARITY_ANALYSIS.md`. **0 production `.py` changed.**
+
+**CORRECTION to an earlier figure.** The compiler was previously quoted at 3.00
+ticks/output "kernel-only"; that counted ONLY `fb_10` and ignored the
+loop-control blocks (`fc_9`, `fb_6`, `fe_12`, `fc_5` = 456 ticks). The matched
+figure is **4.79 ticks/output** and the gap is **3.96x**, not 2.5x.
+
+**Matched workload** (same inputs `(i*7+3)%17` / `(i*11+5)%19`, same 256 outputs,
+both 256/256 correct; the hand kernel gets data preloaded via data.map, so the
+compiler's init loop is excluded):
+
+| | hand-written | compiler (matmul nest) |
+|---|---|---|
+| ticks | **309** | **1225** |
+| ticks/output | **1.207** | **4.79** |
+| IPB | 3.754 | 3.667 (`fb_10`) |
+| spills | 0 | 0 |
+
+**ON IPB THEY ARE LEVEL (3.667 vs 3.754); ON SPEED THE COMPILER IS 3.96x
+BEHIND.** Same packing, ~4x the cycles -- the clearest demonstration yet that
+IPB is not the metric.
+
+**Where the 1225 goes** (attributed from the trace by bundle PC): `fb_10` 768
+(63%), `fc_9` **176** (14%, a 3-single-instruction-bundle loop test), `fb_6` 128
+(10%, row prologue), `fe_12` 96 (8%, accumulator write-back), `fc_5` 52.
+**37% of the matmul nest is loop control/bookkeeping outside the hot block.**
+Whole-program, init is **3331 of 4575 ticks (73%)**.
+
+**ROOT CAUSE:** the compiler produces **4 output columns per iteration where the
+hand kernel produces 16**, so per-iteration overhead is paid 4x as often -- and
+that overhead is structurally dearer (3-bundle loop test vs one folded
+auto-decrement branch; a row prologue; accumulator write-backs).
+
+**WIDENING J_TILE MEASURABLY REGRESSES:** JT=4 4575 ticks, JT=8 **7950**, JT=16
+**11287** -- all correct. The hot block per output improves (3.00 -> 2.25) but
+new blocks `fi_3` (768) and `fe_16` (704) appear and init grows 3331 -> 4868.
+**J_TILE=4 is the compiler's measured optimum.**
+
+**LOWER BOUNDS for `fb_10`:** memory-lane 3, issue-width 6, **RAW dependence
+height 9**, shipped 12 -> **slack 3**. The five 1-instruction bundles are address
+chains (B-row b3-b4, store base b9-b11) -- the latter already attacked and
+correctly stopped by R14.9 (LICM invalid) and R14.10 (IVSR blocked).
+**The hand kernel is NOT at a bound either** -- 8 dots/bundle takes it 309 ->
+**241** (R14.0), so it leaves ~22% on the table and parity is not a principled
+target.
+
+**SINGLE HIGHEST-VALUE OPPORTUNITY (not implemented):** collapse the counted-loop
+exit test from 3 bundles to 1. `fc_9` costs **176 ticks (14.4% of the nest)** for
+what the ISA expresses in one folded instruction (`? ($i16) $r31 > --1 $goto`,
+the auto-decrement the hand kernel uses). Generic to every counted loop.
+Estimated **~116 ticks = 9.5% of the nest, ~2.5% whole-program**.
+
+**RECOMMENDATION: FREEZE.** Not because 3.96x is small, but because every
+remaining lever is worth 2-4% whole-program; the matmul nest is only 27% of the
+program; the one structural lever (J_TILE) regresses; the largest slack was
+already analysed twice and stopped; and the reference is itself ~22% off its own
+optimum. **The largest whole-program lever is not an optimization at all:** init
+is 73% of ticks and `--dmem-init` already exists -- a measurement-methodology
+choice (globals with initializers instead of locals), worth more than anything
+above.
