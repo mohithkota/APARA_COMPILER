@@ -7117,3 +7117,46 @@ byte-identity re-verified.
 and accumulate.** A one-line guard (`if dest != acc:`) is available as its own
 milestone if wanted; worth ~2.3-2.5% on half the matmul configs plus a small win
 on four existing dot kernels. Not started.
+
+## R14.6 redundant `$dot $accumulate` self-copy removed — DONE
+
+Delivery: `R14_6_REDUNDANT_DOT_COPY_DELIVERY.md`. **One production file changed:
+`codegen.py`, one guard.**
+
+```
+-            self._emit(f"+ {dest} ($i64) {ZERO} {acc}")
++            if dest != acc:
++                self._emit(f"+ {dest} ($i64) {ZERO} {acc}")
+```
+
+**Safety argument does NOT involve values.** `$dot $accumulate` is
+read-modify-write on `dest`, so `dest` must hold the accumulator; when `dest`
+and `acc` name the SAME register the emitted text is `+ rX ($i64) $r0 rX`, i.e.
+`rX = 0 + rX` -- the identity for ANY contents of rX. The proof is about the
+emitted instruction, not what the register holds.
+
+**Diff attribution CLEAN** (compared instruction MULTISETS, since removing an
+instruction reshuffles bundle boundaries and `$null` padding): dot vi16 158->142,
+matmul vu8 JT=4 169->161, matmul vi16 JT=4 200->184 -- **self-copies removed
+16/8/16, other removed 0, added 0**. No other opcode changed.
+
+**Existing dot kernels improve** (bit-identity deliberately not required here):
+dot vi8 889->888, vu8 1017->1016, vi16 833->831, vu16 960->959; static bundles
+each -1; **no new spills**. The other 34 of 38 programs are unchanged.
+
+**Matmul -- reported honestly including the nulls.** All 78 identity self-copies
+gone in EVERY configuration, but ticks move in only three of five:
+vu8 16x16 JT=2 5663->**5535** (-2.3%); vi16 16x16 JT=4 5151->**5023** (-2.5%);
+vu8 32x32 JT=4 22687->**22175** (-2.3%); vu8 16x16 JT=4 and vi16 32x32 JT=4
+**unchanged** -- there the copies sat in bundles with spare slots, so removing
+them freed issue slots without removing a bundle.
+
+**TEST DESIGN NOTE:** every end-to-end source produces `dest == acc`, so
+compiling them NEVER reaches the `dest != acc` branch -- a suite built only from
+them would leave the preserved-copy path untested and still pass.
+`_r14_6_test.py` therefore drives `_gen_IRVecDot` DIRECTLY with two distinct
+accumulator temps and asserts both branches.
+
+Gate: 38/38 (4 improved, 34 identical), 3/3 negative controls, crosscheck
+124/124 (0 mismatches), compiler suites **26/26**, loopopt 25/25,
+`_r14_6_test.py` 17/17.

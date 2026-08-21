@@ -1455,7 +1455,21 @@ class CodeGen:
         rs2, b2   = self._operand_reg(ir.src2, protect=[d, rs1] + sn)
         if ir.accumulate and ir.accum is not None:
             acc, ba = self._operand_reg(ir.accum, protect=[d, rs1, rs2] + sn)
-            self._emit(f"+ {dest} ($i64) {ZERO} {acc}")
+            # `$dot $accumulate` is READ-MODIFY-WRITE on its destination, so
+            # `dest` must already hold the accumulator before it issues. When
+            # `acc` lives in a different register that requires a real copy.
+            #
+            # R14.6: when the allocator has bound BOTH to the same physical
+            # register -- which is what an in-place accumulation
+            # (`IRVecDot(acc, .., accum=acc)`, the R2.6 loop-register form)
+            # produces -- the emitted instruction would be
+            # `+ rX ($i64) $r0 rX`, i.e. `rX = 0 + rX`. That is the identity for
+            # ANY contents of rX, so skipping it cannot change behaviour: the
+            # argument is about the emitted instruction, not about what the
+            # register happens to hold. The R14.5 audit measured 78 of these,
+            # exactly one per emitted `$dot`.
+            if dest != acc:
+                self._emit(f"+ {dest} ($i64) {ZERO} {acc}")
             self._emit(f"$dot $accumulate {dest} ({ir.type_str}) {rs1} {rs2}")
             if ba: self._ra.unborrow(acc)
         else:
