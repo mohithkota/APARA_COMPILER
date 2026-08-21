@@ -7038,3 +7038,47 @@ Gate: 38/38 metrics **bit-for-bit identical** to the Phase-0 baseline (so R9.3 /
 GEMM / dot / reduction / conv / AXPY / elementwise all unchanged), 3/3 negative
 controls, crosscheck 124/124 (0 mismatches), compiler suites **24/24**, loopopt
 25/25, `_r14_2_test.py` 15/15 incl. six negative controls where no proof exists.
+
+## R14.3 base hoisting — STOPPED (premise disproved), analysis only
+
+Delivery: `R14_3_BASE_HOIST_DELIVERY.md`. **No production `.py` changed.**
+
+**The premise is measurably FALSE.** R14.3 assumed shared B bases are re-derived
+every K iteration. **There is no inner K loop** -- the chunk dimension is fully
+unrolled, so the vector body is straight-line: `fb_10` has exactly ONE control
+transfer (its own loop-back), every base is materialised exactly ONCE per block
+entry, and every packed load already reads `[reg + imm]` off ONE shared base
+register. R14.2 had already done the job. Nothing is hoistable.
+
+**Where the cost actually is** -- `fb_10` (16x16 vu8, J_TILE=4) splits in two:
+
+| part | bundles | instrs | 1-instr | IPB |
+|---|---|---|---|---|
+| b1-b8 vector work | 8 | 42 | 1 | **5.25** |
+| b9-b24 scalar epilogue | **16** | 21 | **14** | **1.31** |
+
+The vector work is ALREADY GOOD (IPB 5.25 against width 8; one bundle holds all
+four `[$r3 + 0/16/32/48]` loads, another holds 8 instructions). **Two thirds of
+the block is the `results[]` stores.** Same shape on vi16 16x16 (IPB 1.38) and
+vu8 32x32 (IPB 1.38) -- not a vu8 or 16x16 artifact.
+
+**Two compounding causes, both OUTSIDE the vector region:**
+1. the four store addresses differ by compile-time constants 0/8/16/24 -- exactly
+   what `constant_delta` proves for loads -- but they are the source's
+   `results[...] = s_t;` statements, which the vector lowering never sees and the
+   scalar optimizer does not collapse;
+2. register reuse serializes four INDEPENDENT chains (`$r3` written at b10/b11 is
+   rewritten at b13; same for `$r12`/`$r16`/`$r17`), forcing 16 bundles where
+   ~4-5 would do. **0 spills** -- allocation choice, not spilling.
+
+**Residual gap attribution** (kernel-only 6.00 bundles/output vs hand-written
+1.207): scalar epilogue **67%**, vector work 33%. NOT ISA-bound, NOT
+pressure-bound, NOT addressing-bound in the vector region.
+
+`_r14_3_test.py` **12/12** pins the finding (one control transfer, all loads
+`[reg+imm]` off ONE base, vector/epilogue IPB split on 3 datatype x size combos)
+so it cannot regress silently.
+
+NEXT LEVER (not started, per the milestone's own Phase 13): the scalar epilogue
+-- apply R14.2's constant-delta sharing to result stores, or give the independent
+store chains disjoint registers. Both are scalar-optimizer changes.
