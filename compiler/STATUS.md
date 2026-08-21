@@ -7215,3 +7215,56 @@ displacements. Upper bound if the epilogue reached ASAP: 24 -> ~11 bundles for
 vu8 16x16 (~54% of the block), worth roughly **16% of whole-program ticks**. It
 lives in the REGISTER ALLOCATOR / SCALAR OPTIMIZER, not the vector pipeline --
 which this audit shows is already at its dependence lower bound. Not implemented.
+
+## R14.8 scalar result-store parallelization — DONE
+
+Delivery: `R14_8_RESULT_STORE_PARALLELIZATION.md`. New pass
+`global_store_base_sharing.py` + one wiring point in `compiler.py`.
+
+**16x16 vu8 J_TILE=4: epilogue 16 -> 5 bundles, block 24 -> 12, ticks
+5343 -> 4575 (-14.4%), 0 spills.** The four result stores now issue in ONE
+bundle -- exactly the 4-per-bundle memory-lane limit.
+
+**CAUSE (from R14.7):** `codegen._gen_IRGlobalStore` materialises each computed
+store address into a **borrowed scratch register** (`_safe_borrow`) released
+straight after the store, so N stores became N sequential borrow/build/store
+chains. The bundler is a greedy forward pass that does not reorder, so it could
+not interleave them even though all four had identical ASAP.
+
+**FIX -- no new IR node, no codegen change.** A group of `IRGlobalStore` whose
+offsets are provably a compile-time constant apart is re-expressed with the
+EXISTING nodes: one `IRGlobalAddrOf` + N `IRStore(base, Const(d))`, because
+`_gen_IRStore` already lowers a Const offset in [-512,511] to a single
+`$st [base + imm]` with no borrow. The constant relation is proved by R14.2's
+`vector_affine.constant_delta` -- no second affine analysis. Nothing is
+reordered; each store stays put, so memory ordering and aliasing are untouched.
+Kill switch `APARA_NO_STORE_BASE_SHARE`.
+
+**PLACEMENT FOUND BY MEASUREMENT:** the pass MUST run before `strength_reduce`.
+SR rewrites `x * 8` into `x << 3` and `vector_affine._resolve` deliberately
+REJECTS shifts, so the constant relation becomes unprovable afterwards. Wired
+before the tier chain; the rewritten Const-offset stores then survive IVSR, SR,
+LICM, loop-reg, GVN, mem2reg and the final clean unchanged.
+
+**Results, all correct, 0 spills:** vu8 16 -14.4%, vu8 32 -13.9%, vi8 16 -15.1%,
+vi8 32 -14.5%, vu16 16 -14.5%, vu16 32 -13.1%, vi16 16 -15.3%, vi16 32 -12.3%.
+
+**Generic, not tied to four outputs:** J_TILE=1 -> 0 displaced stores, ticks
+UNCHANGED (nothing to share); J_TILE=2 -> 1 displaced, -9.3%; J_TILE=4 -> 3
+displaced, -14.4%. Reversed store order is recognised as the same group and
+emits NEGATIVE displacements (`[$r3 + -8/-16/-24]`) for identical ticks.
+
+Gate: 38/38 (4 changed, **0 slower** -- all from R14.6), 3/3 negative controls,
+crosscheck 124/124 (0 mismatches), compiler suites **27/27**, loopopt 25/25,
+`_r14_8_test.py` 24/24. **The R14.8 pass is INERT on the existing corpus** -- no
+suite program has a group of independent global stores a constant apart -- so
+GEMM/reduction/dot/conv/AXPY/elementwise are untouched by it.
+
+`_r14_3_test.py` was UPDATED deliberately: it pinned the epilogue bottleneck
+(IPB < 2, mostly 1-instruction bundles) that R14.8 has now removed, so those
+assertions are false BY DESIGN. Inverted to guard the new state (epilogue
+IPB > 2, <= 5 bundles, stores sharing one bundle) rather than deleted.
+
+REMAINING vs hand-written: the hand-written kernel keeps its result base live
+across the whole row; the compiler rebuilds it per j-tile (3 bundles, b9-b11).
+Hoisting that IS a genuine loop-invariance opportunity -- not pursued.

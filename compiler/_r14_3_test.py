@@ -100,8 +100,18 @@ def test_no_inner_k_loop():
 
 
 def test_cost_is_the_epilogue():
-    """Where the time actually goes: the scalar result stores, not addressing."""
-    print("\n[bottleneck] the remaining cost is the scalar epilogue")
+    """R14.3 measured the epilogue as the bottleneck: 16 bundles at IPB 1.31
+    with 14 of 16 holding a single instruction.
+
+    **R14.8 FIXED IT.** Independent result stores now share one base with
+    immediate displacements, so the epilogue is 5 bundles at IPB ~2.6 and the
+    four stores issue together. The assertions below were inverted accordingly
+    -- the ORIGINAL R14.3 thresholds (epilogue IPB < 2, mostly 1-instruction
+    bundles) are now FALSE, which is the intended outcome, not a regression.
+
+    What is still pinned: the vector head remains well packed, and the epilogue
+    must not drift back toward one instruction per bundle."""
+    print("\n[bottleneck] epilogue after R14.8 -- the R14.3 finding is FIXED")
     for T, n in (('vu8_t', 16), ('vi16_t', 16), ('vu8_t', 32)):
         bs, out = build(T, n)
         if bs is None:
@@ -116,10 +126,18 @@ def test_cost_is_the_epilogue():
         ones = sum(1 for x in epi if len(x['instrs']) == 1)
         check(f"{T} {n}x{n}: vector part packs well (IPB > 4)", vipb > 4,
               f"IPB {vipb:.2f}")
-        check(f"{T} {n}x{n}: epilogue packs badly (IPB < 2)", eipb < 2,
-              f"IPB {eipb:.2f}")
-        check(f"{T} {n}x{n}: epilogue is mostly 1-instruction bundles",
-              ones >= len(epi) * 0.75, f"{ones}/{len(epi)}")
+        # R14.8: was `eipb < 2` (the bottleneck). Now the epilogue must stay
+        # ABOVE that, i.e. it must not regress to one instruction per bundle.
+        check(f"{T} {n}x{n}: epilogue no longer packs badly (IPB > 2)",
+              eipb > 2, f"IPB {eipb:.2f}")
+        check(f"{T} {n}x{n}: epilogue is at most 5 bundles (was 16)",
+              len(epi) <= 5, f"{len(epi)} bundles")
+        check(f"{T} {n}x{n}: the result stores share ONE bundle",
+              any(sum(1 for j in x['instrs'] if j.startswith('$st')) >= 4
+                  for x in epi)
+              or sum(1 for x in epi for j in x['instrs']
+                     if j.startswith('$st')) <= 1,
+              "stores are still spread across bundles")
         print(f"       vector {len(vec)} bdl/{vi} ins IPB {vipb:.2f} | "
               f"epilogue {len(epi)} bdl/{ei} ins IPB {eipb:.2f}")
 

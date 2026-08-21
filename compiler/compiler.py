@@ -663,6 +663,27 @@ def compile_c_to_mcode(c_file, output_file=None, verbose=False,
             x = global_value_numbering(x)
         x = _clean(x)                      # copy-prop / coalesce / DCE clean the moves
         return x
+    # ── R14.8: share one base across independent global stores ────────────────
+    # Independent global stores whose addresses are provably a compile-time
+    # constant apart are re-expressed as one materialised base plus immediate
+    # displacements, using the EXISTING IRGlobalAddrOf + IRStore nodes (no new
+    # IR node, no codegen change) and R14.2's `constant_delta` for the proof.
+    #
+    # It must run HERE, before `strength_reduce`: SR rewrites `x * 8` into
+    # `x << 3`, and `vector_affine._resolve` deliberately rejects shifts, so the
+    # constant relation becomes unprovable afterwards. The rewritten stores
+    # carry Const offsets and pass through the rest of the pipeline unchanged.
+    # Kill switch APARA_NO_STORE_BASE_SHARE.
+    if not os.environ.get('APARA_NO_STORE_BASE_SHARE'):
+        try:
+            import global_store_base_sharing as _gsb
+            _gsb.reset()
+            _ir0 = _gsb.run(_ir0)[0]
+        except Exception:
+            if os.environ.get('APARA_GSB_DEBUG'):
+                import traceback
+                traceback.print_exc()
+
     _base = _sr(list(_ir0))                                 # SR-only, for fallbacks
     # IVSR appears in its own tiers WITHOUT LICM as well, so a program that
     # spills under LICM (extended invariant live ranges) can still keep IVSR.
