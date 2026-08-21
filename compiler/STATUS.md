@@ -7428,3 +7428,53 @@ optimum. **The largest whole-program lever is not an optimization at all:** init
 is 73% of ticks and `--dmem-init` already exists -- a measurement-methodology
 choice (globals with initializers instead of locals), worth more than anything
 above.
+
+## R16.0 J_TILE=8 register-pressure decomposition — ANALYSIS ONLY
+
+Delivery: `R16_0_JTILING_REGISTER_ANALYSIS.md`. **0 production `.py` changed.**
+
+**TWO PREMISE CORRECTIONS.** (1) The compiler's JT=8 is **SLOWER**, not faster:
+JT=4 4575, JT=8 **7950**, JT=16 11287 ticks, all 256/256 correct. The 241-tick
+figure is the HAND-WRITTEN 8-dot schedule. (2) "31 registers" is a
+DISTINCT-register count; the number that must fit a budget is **peak
+simultaneous liveness = 29**.
+
+**Full inventory of the 241-tick schedule** (31 distinct, peak live 29):
+18 packed operands `$r2-$r19` (A-row pair + 8 B-column pairs, `$u128` writes
+pairs), 8 accumulators `$r20-$r27`, 3 live bases/control (`$r28` B base, `$r29`
+C ptr, `$r31` row counter), plus `$r0`. JT=4->JT=8 delta is +8 operands and +4
+accumulators; **address/control state does NOT grow** -- R14.2/R14.8 already made
+addressing width-independent.
+
+**THE 8-DOT SCHEDULE FITS IN 28 -- PROVEN.** Deficit is exactly 1. `$r28` holds
+the constant B base (256) and every column offset is 0..240, so absolute
+addresses 256..496 fit the load immediate. Folding it in: peak live **29 -> 28**,
+still **241 ticks**, still **256/256 correct**.
+
+**BUT REGISTER PRESSURE IS NOT WHAT STOPS THE COMPILER.** Its JT=8 shows no
+classic spill traffic yet regresses 74%. Trace attribution: `fb_10` 1152,
+`fi_3` 768 (init increment split into its own 3-bundle block), **`fe_16` 704**.
+`fe_16` is the finding -- **R14.8 DID fire** (all 8 stores share `$r12` with
+immediates 0..56, addressing is correct); what serializes them is the VALUES.
+The hot block uses 30 registers, so the eight `int s0..s7` accumulators cannot
+stay resident and are **reloaded one at a time** in a perfect load/store ladder,
+8 stores across ~14 bundles instead of 2. At JT=4 they stay in registers and the
+4 stores pack into ONE bundle. The pressure is real; it manifests as accumulator
+memory round-trips, not as detectable spill code.
+
+**WHY THE COMPILER CANNOT USE THE ESCAPE:** the hand kernel's arrays are at FIXED
+DMEM addresses (0/256/512), which is what makes `[$r0 + absolute]` legal. The
+compiler's `A`/`Bt`/`C` are STACK LOCALS at FP-relative offsets beyond the
+immediate field, so each base must be register-held. Not an allocation-quality
+problem -- a data-placement one.
+
+**What the 241-tick schedule actually wins:** identical instruction count (1160),
+21 -> 17 bundles, IPB 3.754 -> 4.813. The 22% is PURELY `$dot` packing (8/bundle
+vs 4) -- not addressing, not loop amortisation, not accumulator parallelism.
+
+**RECOMMENDED NEXT TARGET (if resumed):** put the matrices at fixed DMEM
+addresses (globals + `--dmem-init`) instead of stack locals. It removes the
+register-held array bases (freeing the one register that makes 8-dot fit) AND
+the init loop, which R15.0 measured at **73% of whole-program ticks**. That is a
+**benchmark/methodology change, not a compiler optimization** -- the same
+conclusion R15.0 reached from a different direction.
