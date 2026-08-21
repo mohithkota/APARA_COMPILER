@@ -153,7 +153,7 @@ class ReductionPlan:
 
     __slots__ = ('acc_slot', 'acc_bytes', 'array_slots', 'array_offs',
                  'array_addr', 'array_base_pre', 'array_info', 'value',
-                 'array_key')
+                 'array_key', 'array_delta')
 
     def __init__(self):
         self.acc_slot = None
@@ -168,6 +168,9 @@ class ReductionPlan:
         # expression). Two reductions sharing a key read the same address, so
         # the base and the packed load are materialised once and shared.
         self.array_key = []
+        # R14.2: byte displacement from the SHARED base in `array_addr[i]`.
+        # 0 when this access owns its base.
+        self.array_delta = []
 
     def __repr__(self):
         return (f'<ReductionPlan acc={self.acc_slot} '
@@ -402,10 +405,13 @@ def plan_lowering(desc, instrs, kernel, legality):
     # address is re-derived per output column -- measured at 71 address
     # instructions for 8 dots, which is why the first multi-reduction build got
     # no faster despite emitting every stream.
+    _base_meta = {}          # key -> (prologue, addr temp, AffineAccess)
+    from rematerialization import FP_IMM_LO as _IMM_LO, FP_IMM_HI as _IMM_HI
     for _rp in p.reductions:
         _rp.array_addr = [None] * len(_rp.array_slots)
         _rp.array_base_pre = []
         _rp.array_key = [None] * len(_rp.array_slots)
+        _rp.array_delta = [0] * len(_rp.array_slots)
         for _i, _off in enumerate(_rp.array_offs):
             _rp.array_key[_i] = (_rp.array_slots[_i],
                                  _off.name if _off is not None else None)
@@ -420,6 +426,33 @@ def plan_lowering(desc, instrs, kernel, legality):
             _key = _rp.array_key[_i]
             if _key in p.shared_bases:
                 _rp.array_addr[_i] = p.shared_bases[_key][1]
+                _rp.array_delta[_i] = 0
+                continue
+            # R14.2: before materialising a base of its own, try to PROVE this
+            # access is an already-materialised one plus a compile-time
+            # constant. That is the R9.3 idea (one base, immediate
+            # displacements) applied ACROSS reductions instead of across chunks
+            # -- and it is decided by `vector_affine.constant_delta`, which
+            # knows nothing about matrices or columns. Without the proof the
+            # access materialises its own base; a guess here would be a
+            # wrong-address bug.
+            _acc_new = _va_r13.resolve_offset(_off, _actx)
+            _shared = None
+            for _okey, (_oblk, _oaddr, _oacc) in _base_meta.items():
+                if _okey[0] != _rp.array_slots[_i]:
+                    continue                    # different array object
+                _d = _va_r13.constant_delta(_oacc, _acc_new)
+                if _d is None:
+                    continue
+                _top = _d + (p.chunks - 1) * p.lanes * p.eb
+                if not (_IMM_LO <= min(_d, _top) and max(_d, _top) <= _IMM_HI):
+                    continue                    # outside the ISA immediate field
+                _shared = (_oaddr, _d)
+                break
+            if _shared is not None:
+                _rp.array_addr[_i] = _shared[0]
+                _rp.array_delta[_i] = _shared[1]
+                p.shared_bases[_key] = ([], _shared[0])
                 continue
             _pre, _off0 = _clone_offset(instrs, _dm, _rg, _off, p.iv_slot,
                                         Const(0))
@@ -430,8 +463,10 @@ def plan_lowering(desc, instrs, kernel, legality):
             _block = list(_pre) + [IRLoadAddr(_b, _rp.array_slots[_i]),
                                    _IRBinOp(_a, '+', _b, _off0)]
             p.shared_bases[_key] = (_block, _a)
+            _base_meta[_key] = (_block, _a, _acc_new)
             _rp.array_base_pre += _block
             _rp.array_addr[_i] = _a
+            _rp.array_delta[_i] = 0
 
     p.array_addr = [None] * len(p.array_slots)
     p.array_base_pre = []
@@ -519,7 +554,10 @@ def _packed_load_any(dest, plan, which, chunk, rp=None):
         return _packed_load(dest, src.array_slots[which], chunk,
                             plan.lanes, plan.eb, plan.signed)
     import vector_compact_loop as _vcl_i
-    return _vcl_i.packed_load_at_imm(dest, addr, chunk * plan.lanes * plan.eb,
+    delta = (src.array_delta[which]
+             if getattr(src, 'array_delta', None) else 0)
+    return _vcl_i.packed_load_at_imm(dest, addr,
+                                     chunk * plan.lanes * plan.eb + delta,
                                      plan.lanes, plan.eb, plan.signed)
 
 
@@ -652,10 +690,16 @@ def build_vector_body(plan):
                 bT, ib = operand(rp, 1)
                 body += ia
                 body += ib
-                nxt = _fresh('_vacc')
-                body.append(IRVecDot(nxt, aT, bT, '$' + plan.vtype,
-                                     accumulate=True, accum=accs_by_red[ri]))
-                accs_by_red[ri] = nxt
+                # Accumulate IN PLACE: destination IS the accumulator temp.
+                # Writing a fresh temp and reading the old one makes codegen
+                # emit a register COPY per chunk per reduction -- the same
+                # `+ rX, r0, rY` chain R13.1 removed for the single-reduction
+                # path, reintroduced here because R13.1's expansion is subsumed
+                # at N>1. Same-temp dest/accum is the R2.6 loop-register form
+                # the allocator already keeps live across the back edge.
+                acc = accs_by_red[ri]
+                body.append(IRVecDot(acc, aT, bT, '$' + plan.vtype,
+                                     accumulate=True, accum=acc))
         for ri, rp in enumerate(rplans):
             body += _acc_store(rp.acc_slot, accs_by_red[ri],
                                elem_bytes=rp.acc_bytes)

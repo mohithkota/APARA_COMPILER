@@ -93,10 +93,10 @@ class AffineAccess:
 
     `coeff` and `kind` are computed exactly as before -- this is additive."""
     __slots__ = ('ok', 'coeff', 'reason', 'kind', 'elem_bytes',
-                 'const_off', 'sym_div')
+                 'const_off', 'sym_div', 'sym')
 
     def __init__(self, ok, coeff=None, reason=None, kind=UNKNOWN, elem_bytes=None,
-                 const_off=None, sym_div=None):
+                 const_off=None, sym_div=None, sym=None):
         self.ok = ok
         self.coeff = coeff
         self.reason = reason
@@ -104,6 +104,13 @@ class AffineAccess:
         self.elem_bytes = elem_bytes
         self.const_off = const_off
         self.sym_div = sym_div
+        # R14.2: the SYMBOLIC part as {canonical_key: integer multiplier}.
+        # `sym_div` only ever recorded a divisor, which is enough to decide
+        # alignment but cannot decide whether two offsets differ by a constant.
+        # Keys are canonical VALUE identities, not temp names -- see `_sym_key`
+        # -- so two separately-computed expressions reading the same invariant
+        # slot compare equal.
+        self.sym = dict(sym) if sym else {}
 
     def __repr__(self):
         if not self.ok:
@@ -196,6 +203,40 @@ class LoopAffineContext:
         return any(self.varies(s, seen) for s in (src_names(ins) or []))
 
 
+def _sym_key(ins, name, ctx):
+    """A canonical identity for one symbolic (non-IV, non-constant) value.
+
+    Keyed on the VALUE's origin rather than the temp holding it: a load of a
+    stack slot the loop never writes yields the same value however many times
+    it is re-loaded, so all such loads share a key. That is what lets
+    `constant_delta` see `(j+0)*S + k` and `(j+1)*S + k` as differing by a
+    constant even though each statement computed its own `j` temp."""
+    if ins is None:
+        return ('outer', name)
+    c = _cname(ins)
+    if c in ('IRLoadAddr', 'IRGlobalAddrOf'):
+        return ('addr', getattr(ins, 'fp_offset', name))
+    if c == 'IRLoad':
+        base = getattr(ins, 'base', None)
+        slot = ctx.addr_slot.get(base.name) if isinstance(base, Temp) else None
+        off = getattr(ins, 'offset', None)
+        if slot is not None and isinstance(off, Const):
+            return ('slot', slot, off.value)
+    return ('opaque', name)
+
+
+def _sym_add(a, b, scale=1):
+    """a + scale*b over symbol maps, dropping cancelled terms."""
+    out = dict(a)
+    for k, v in b.items():
+        n = out.get(k, 0) + scale * v
+        if n:
+            out[k] = n
+        else:
+            out.pop(k, None)
+    return out
+
+
 def _const_value(expr, ctx):
     """The compile-time value of `expr`, or None."""
     if isinstance(expr, Const):
@@ -214,40 +255,45 @@ def _merge_div(a, b):
 
 
 def _resolve(expr, ctx, depth=0):
-    """(coeff, const, div, ok) for `expr` == coeff*IV + const + symbolic.
+    """(coeff, const, div, ok, sym) for `expr` == coeff*IV + const + symbolic.
 
     `coeff` is exactly what R4.2.8 computed. `const` and `div` additionally
     decompose the invariant remainder (see AffineAccess) so the alignment of the
     lowered address can be decided; they never influence `coeff` or `ok`."""
     if depth > _MAX_DEPTH:
-        return None, None, None, False
+        return None, None, None, False, {}
     if isinstance(expr, Const):
-        return 0, expr.value, 0, True
+        return 0, expr.value, 0, True, {}
     if not isinstance(expr, Temp):
-        return None, None, None, False
+        return None, None, None, False, {}
     if ctx.is_the_iv(expr.name):
-        return 1, 0, 0, True
+        return 1, 0, 0, True, {}
     d = ctx.def_map.get(expr.name)
     if d is None or d not in ctx.region:
-        return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
+        if ctx.varies(expr.name):
+            return None, None, None, False, {}
+        _k = _sym_key(ctx.instrs[d] if d is not None else None, expr.name, ctx)
+        return 0, 0, 1, True, {_k: 1}
     ins = ctx.instrs[d]
     c = _cname(ins)
     if c == 'IRAssign':
         return _resolve(ins.src, ctx, depth + 1)
     if c in ('IRLoadAddr', 'IRGlobalAddrOf'):
-        return 0, 0, 1, True
+        return 0, 0, 1, True, {_sym_key(ins, expr.name, ctx): 1}
     if c == 'IRLoad':
         # not the IV (checked above): invariant iff its slot is never written here
-        return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
+        if ctx.varies(expr.name):
+            return None, None, None, False, {}
+        return 0, 0, 1, True, {_sym_key(ins, expr.name, ctx): 1}
     if c == 'IRBinOp':
-        lc, lk, ld, lok = _resolve(ins.left, ctx, depth + 1)
-        rc, rk, rd, rok = _resolve(ins.right, ctx, depth + 1)
+        lc, lk, ld, lok, ls = _resolve(ins.left, ctx, depth + 1)
+        rc, rk, rd, rok, rs = _resolve(ins.right, ctx, depth + 1)
         if not (lok and rok):
-            return None, None, None, False
+            return None, None, None, False, {}
         if ins.op == '+':
-            return lc + rc, lk + rk, _merge_div(ld, rd), True
+            return lc + rc, lk + rk, _merge_div(ld, rd), True, _sym_add(ls, rs)
         if ins.op == '-':
-            return lc - rc, lk - rk, _merge_div(ld, rd), True
+            return lc - rc, lk - rk, _merge_div(ld, rd), True, _sym_add(ls, rs, -1)
         if ins.op == '*':
             # affine x affine is affine only when the IV-bearing side is scaled by
             # a COMPILE-TIME constant. A symbolic scale (a runtime row stride) is
@@ -255,26 +301,31 @@ def _resolve(expr, ctx, depth=0):
             # the constant part and the symbolic divisor by the same literal.
             k = _const_value(ins.left, ctx)
             if k is not None:
-                return k * rc, k * rk, (k * rd if rd else 0), True
+                return (k * rc, k * rk, (k * rd if rd else 0), True,
+                        _sym_add({}, rs, k))
             k = _const_value(ins.right, ctx)
             if k is not None:
-                return k * lc, k * lk, (k * ld if ld else 0), True
+                return (k * lc, k * lk, (k * ld if ld else 0), True,
+                        _sym_add({}, ls, k))
             if lc == 0 and rc == 0:
-                return 0, 0, 1, True         # invariant x invariant: no divisor
-            return None, None, None, False
-        return None, None, None, False       # '/', '%', shifts, ...: rejected
-    return (0, 0, 1, True) if not ctx.varies(expr.name) else (None, None, None, False)
+                # invariant x invariant: no divisor, and the PRODUCT is opaque
+                return 0, 0, 1, True, {('opaque', expr.name): 1}
+            return None, None, None, False, {}
+        return None, None, None, False, {}   # '/', '%', shifts, ...: rejected
+    if ctx.varies(expr.name):
+        return None, None, None, False, {}
+    return 0, 0, 1, True, {_sym_key(ins, expr.name, ctx): 1}
 
 
 def resolve_offset(offset, ctx):
     """Resolve one access offset. Returns AffineAccess (without an elem_bytes
     judgement -- use `classify_access` for that)."""
-    coeff, const, div, ok = _resolve(offset, ctx)
+    coeff, const, div, ok, sym = _resolve(offset, ctx)
     if not ok:
         return AffineAccess(False, reason='not-affine-in-the-loop-iv')
     kind = INVARIANT if coeff == 0 else STRIDED
     return AffineAccess(True, coeff=coeff, kind=kind,
-                        const_off=const, sym_div=div)
+                        const_off=const, sym_div=div, sym=sym)
 
 
 def word_aligned(acc, word=8):
@@ -339,3 +390,31 @@ def summarize_loop(desc, instrs):
         k = a.kind if a.ok else UNKNOWN
         counts[k] = counts.get(k, 0) + 1
     return counts
+
+
+def constant_delta(a, b):
+    """C such that access `b` == access `a` + C bytes, or None if unprovable.
+
+    R14.2. Two accesses differ by a compile-time constant exactly when they
+    advance with the induction variable at the SAME rate and have the SAME
+    symbolic part; whatever is left is the constant difference.
+
+    Deliberately generic: it knows nothing about matrices, columns or kernel
+    kinds. It answers a question about two affine expressions, so any vector
+    client can use it -- R9.3 shares a base across CHUNKS by exactly this
+    reasoning, hard-coded; this makes the same reasoning available between any
+    two accesses.
+
+    Returns None (never a guess) when either side is unresolved, the IV rates
+    differ, or any symbolic term differs -- sharing an address without the proof
+    would be a wrong-answer bug.
+    """
+    if not (a is not None and b is not None and a.ok and b.ok):
+        return None
+    if a.coeff != b.coeff:
+        return None                       # different rates along the IV
+    if a.const_off is None or b.const_off is None:
+        return None
+    if (a.sym or {}) != (b.sym or {}):
+        return None                       # different invariant parts
+    return b.const_off - a.const_off

@@ -6991,3 +6991,50 @@ identically.
 
 NOT done: automatic tiling (needs unroll-and-jam, R14.1b), multi-reduction
 remainder, compact realisation for N>1.
+
+## R14.2 cross-reduction affine address sharing — DONE
+
+Delivery: `R14_2_AFFINE_ADDRESS_SHARING.md`. On top of R14.1a (`8373740`).
+
+**Generic affine extension.** `AffineAccess` gains **`sym`** -- the symbolic part
+as `{canonical_key: multiplier}`, keyed on VALUE identity not temp name
+(`_sym_key`), so a load of a never-written slot has the same key however often it
+is re-loaded. That is what lets `(j+0)*S+k` and `(j+1)*S+k` compare equal though
+each statement computed its own `j` temp. `sym_div` alone could not: it is a
+divisor, not an identity.
+
+**`vector_affine.constant_delta(a, b)`** -> C with `b == a + C` bytes, or None:
+equal `coeff` AND equal `sym` => the remainder is the constant difference. It
+knows nothing about matmul -- R9.3 already shares a base across CHUNKS by this
+reasoning, hard-coded; this makes it available between ANY two accesses.
+Verified on real IR: the four B accesses give pairwise deltas 16/32/48.
+
+**Exploited** in `plan_lowering`: before materialising a base, try
+`constant_delta` against every base already materialised on the SAME array, and
+share when `delta + (chunks-1)*lanes*eb` fits the ISA immediate. No proof, no
+sharing. 16x16 vu8 J_TILE=4 now emits **2 bases for 8 accesses** --
+`[$r3 + 0/16/32/48]` in ONE bundle.
+
+**Second defect found while measuring:** the multi-reduction path wrote each
+`$dot $accumulate` to a FRESH temp, so codegen emitted a register copy per chunk
+per reduction -- the `+ rX, r0, rY` chain R13.1 removed, reintroduced because
+R13.1's expansion is subsumed at N>1. Accumulating IN PLACE (dest IS the
+accumulator, the R2.6 form) removed it.
+
+**16x16 vu8: J_TILE=4 went from WORST to BEST** -- 22.621 -> **20.871**
+ticks/output. Block 31 -> 24 bundles, 71 -> 63 instrs, address 50 -> 42,
+7.75 -> 6.00 bundles/output. J_TILE=4 is now best at EVERY size and datatype,
+consistently **-12% to -16%**, all correct, **0 spills**.
+
+**HONEST: this does NOT close the gap.** Kernel-only 6.00 bundles/output vs the
+hand-written 1.207 -- still ~5x. The block is 24 bundles of which **15 hold a
+single instruction**. Loads and dots now pack well; the surrounding scalar work
+does not: 4 accumulator slots cost an `IRLoadAddr` each per trip, and **the
+shared bases are re-derived every trip rather than hoisted out of the j-loop**
+(the hand-written kernel keeps `$r28` live across the whole row). That is LICM
+over vector-lowered IR, not a new addressing idea, and is the next lever.
+
+Gate: 38/38 metrics **bit-for-bit identical** to the Phase-0 baseline (so R9.3 /
+GEMM / dot / reduction / conv / AXPY / elementwise all unchanged), 3/3 negative
+controls, crosscheck 124/124 (0 mismatches), compiler suites **24/24**, loopopt
+25/25, `_r14_2_test.py` 15/15 incl. six negative controls where no proof exists.
