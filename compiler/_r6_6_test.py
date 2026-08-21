@@ -35,12 +35,21 @@ def check(n, c):
 
 
 class FakePlan:
-    """The four fields `plan_expansion` reads. Using a stand-in keeps the
-    eligibility tests independent of how a real LoweringPlan is built."""
+    """The fields `plan_expansion` reads. Using a stand-in keeps the
+    eligibility tests independent of how a real LoweringPlan is built.
+
+    R13.1 added `array_slots`: eligibility is now decided by the STRUCTURE of
+    the reduction (`vector_lowering.is_dot_shaped` -- two multiplicand arrays)
+    rather than by the kind string, so the stub has to carry the same field the
+    real LoweringPlan always sets. Defaulted from `kind` so every existing call
+    site keeps its original meaning and no assertion below changes:
+    a dot product has two operand arrays, a sum reduction one."""
 
     def __init__(self, kind='sum-reduction', vtype='vi32', acc_slot=-8,
-                 acc_bytes=8, signed=True):
+                 acc_bytes=8, signed=True, array_slots=None):
         self.kind = kind
+        self.array_slots = (list(array_slots) if array_slots is not None
+                            else ([-8, -16] if kind == 'dot-product' else [-8]))
         self.vtype = vtype
         self.acc_slot = acc_slot
         self.acc_bytes = acc_bytes

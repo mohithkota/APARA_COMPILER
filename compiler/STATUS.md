@@ -6876,3 +6876,59 @@ and no row-base prologue -- i.e. the pre-R13 path exactly.
 
 Not started: Phase 6+ (datatype/size coverage, adaptive U search, corpus sweep,
 performance comparison against the 309-tick hand-written reference).
+
+## R13.1 generic dot-shaped accumulator expansion — DONE
+
+Delivery: `R13_1_MATMUL_ACCUMULATOR_EXPANSION.md`. Branch
+`feature/r13-matmul-dot`, on top of R13.0 Phase 5. No tiling, no new scheduler,
+no second accumulator pass -- the EXISTING R6.6 machinery is reused unchanged.
+
+**The bottleneck R13.0 Phase 6 found:** matmul's chunks chained through ONE
+accumulator, emitting `dot -> copy -> dot -> copy`, four bundles at 1/8
+occupancy. Cause was two KIND-based gates: `vector_lowering.py:443`
+(`plan.kind == 'dot-product'`, so matmul got k=1) and
+`reduction_accumulator_expansion.eligible()` (`kind not in ('sum-reduction',
+'dot-product')`, so matmul was refused outright).
+
+**Fix: one shared STRUCTURAL predicate.** `vector_lowering.is_dot_shaped(plan)`
+-- two multiplicand arrays feed the accumulator -- replaces both kind checks.
+matmul qualifies because its reduction value is `load * load`; sum-reduction
+does NOT (one operand), so R8.1a's exclusion of the one-operand reduction from
+the fully-unrolled expansion survives exactly.
+
+**The k model was wrong, proven by measurement, and corrected structurally.**
+`best_accumulator_count` charged k=1 only `chunks`, tying with k=2 at chunks=2
+and losing the smaller-k tie-break -- so expansion was declined precisely where
+it helps. With ONE accumulator the lowering emits `IRVecDot(fresh, ..,
+accum=acc); acc = fresh`, which codegen realises as a **register copy per
+chunk**, so the real k=1 chain is 2 per chunk. Charging `2*chunks` changes k for
+**chunks=2 and 3 ONLY**; every other chunk count is untouched. New
+`APARA_ACC_COUNT` pins k for measurement (mirrors `APARA_VECTOR_UNROLL`).
+
+**Measured, k pinned** (ticks/output): vu8 16x16 k=1 25.00 -> k=2 **23.00**;
+vi16 32x32 k=1 36.53 -> k=2 28.53 -> k=4 **25.53** -> k=8 33.66 (k=8 REGRESSES
+32% on register pressure, which is why the smaller-k tie-break was NOT changed).
+
+**The chain really disappeared** -- vu8 16x16 `fb_10` 9 bundles/18 instrs/IPB
+2.00 -> **7 bundles/20 instrs/IPB 2.86**, with BOTH `$dot $accumulate` now in
+ONE bundle and the two register copies gone. Instructions ROSE and bundles
+FELL: the right trade, and why ticks fell rather than IPB merely rising.
+
+Production results, all **0 spills**: vi16 32x32 **-30.1%**, vu16 32x32 -29.3%,
+vi16 16x16 -14.3%, vi8 32x32 -14.0%, vu8 32x32 -13.6%, vi8 16x16 -8.3%,
+vu8 16x16 -8.0%, vi8 24x24 -7.5%, vu16 8x8 -7.6%.
+
+Gate: 38/38 with metrics CSV **bit-for-bit identical** to the Phase-0 baseline,
+3/3 negative controls, crosscheck 124/124 (0 mismatches), loopopt 25/25,
+compiler suites **22/22**, `_r13_1_test.py` 38/38.
+
+HONEST NOTES: (1) `_r6_6_test.py`'s `FakePlan` stub gained `array_slots` because
+the predicate reads it -- **no assertion changed**, dot-product still asserted
+eligible and saxpy still rejected; `is_dot_shaped` also made non-raising.
+(2) ~4% remains at chunks=4 from the smaller-k tie-break, kept deliberately.
+(3) k is chosen by a closed-form model, NOT a measured search; and U remains
+entirely nominal for matmul (U=8/4/2/1 give byte-identical mcode). Neither is
+called adaptive. (4) The residual gap to the hand-written kernel is NOT the
+accumulator chain -- that kernel keeps 8 output columns in flight while the
+compiler still computes one output element per inner trip. That needs
+j-dimension tiling, which is NOT started.

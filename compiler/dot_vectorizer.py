@@ -39,6 +39,12 @@ from vector_dynamic import model_realisation
 # backend and no matmul-specific lowering exists.
 _SUPPORTED = ('dot-product', 'sum-reduction', 'matmul')
 
+# R13.0 kill switch, same idiom as APARA_NO_ALIGN_BUNDLE (R9.5) and
+# APARA_NO_PROBE_RESCUE (R11): drop 'matmul' to reproduce the R12.1 behaviour
+# exactly, so an A/B is measured on ONE binary rather than across commits.
+if os.environ.get('APARA_NO_MATMUL_DOT', '') not in ('', '0'):
+    _SUPPORTED = ('dot-product', 'sum-reduction')
+
 
 class DotReductionTransform(VectorTransform):
     """Dot product and sum reduction over packed arrays (the R4.1 kernels)."""

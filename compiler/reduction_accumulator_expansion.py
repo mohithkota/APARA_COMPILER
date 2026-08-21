@@ -92,7 +92,14 @@ def eligible(plan, u):
     # R8.1: dot products chain `$dot $accumulate` exactly as reductions chain
     # `$vreduce` + add, and integer addition is associative either way, so the
     # same regrouping is exact for both kinds.
-    if plan.kind not in ('sum-reduction', 'dot-product'):
+    # R13.1: STRUCTURAL, not a kind list. Two accumulating shapes qualify --
+    # the one-operand sum reduction, and any DOT-SHAPED reduction (an
+    # accumulator fed by a product of two load-derived operands, which covers
+    # 'dot-product' and 'matmul' alike). Everything else -- elementwise, AXPY,
+    # vector-add -- has no accumulator slot and is rejected below anyway; this
+    # check keeps the intent explicit rather than relying on that.
+    from vector_lowering import is_dot_shaped as _dot_shaped
+    if not (_dot_shaped(plan) or plan.kind == 'sum-reduction'):
         return False, f'not-an-accumulating-kernel:{plan.kind}'
     if u < 2:
         return False, 'unroll-factor-1'
@@ -125,16 +132,42 @@ def best_accumulator_count(chunks, cap=8):
     """How many partial accumulators to use for a straight-line chain of
     `chunks` accumulating operations.
 
+    `APARA_ACC_COUNT` pins the result for MEASUREMENT, the same way
+    `APARA_VECTOR_UNROLL` pins the unroll factor. It exists so a candidate k can
+    be built and timed rather than trusted to the model below.
+
     With K accumulators the dependence chain is ceil(chunks/K) accumulates plus
     a ceil(log2(K))-deep fold, so the depth is minimised somewhere in the middle
     and grows again as K rises. Pick the K that minimises it, preferring the
     SMALLEST such K because every extra accumulator is another simultaneously
     live register -- and R7.0 established register pressure as this compiler's
     binding constraint."""
+    _pin = os.environ.get('APARA_ACC_COUNT', '')
+    if _pin:
+        try:
+            return max(1, min(int(_pin), chunks, cap))
+        except ValueError:
+            pass
     best, best_k = None, 1
     k = 1
     while k <= min(chunks, cap):
-        depth = -(-chunks // k) + (k - 1).bit_length()
+        if k == 1:
+            # R13.1 correction, measured. With ONE accumulator the lowering has
+            # no temp to accumulate in place: `build_vector_body` emits
+            # `IRVecDot(fresh, .., accum=acc); acc = fresh`, and codegen
+            # realises that as a REGISTER COPY after every chunk. The chain is
+            # therefore dot->copy->dot->copy, i.e. 2 per chunk, not 1. With
+            # k > 1 each copy owns its accumulator (dest IS the accumulator, the
+            # R2.6 form) and no copy is emitted.
+            #
+            # The old model charged k=1 only `chunks`, which made it tie with
+            # k=2 at chunks=2 and win on the smaller-k tie-break -- so the
+            # expansion was silently declined exactly where it helps. Measured
+            # on 16x16: vu8 25.00 -> 23.00 and vi8 24.00 -> 22.00 ticks/output
+            # once k=2 is actually chosen.
+            depth = 2 * chunks
+        else:
+            depth = -(-chunks // k) + (k - 1).bit_length()
         if best is None or depth < best:
             best, best_k = depth, k
         k *= 2

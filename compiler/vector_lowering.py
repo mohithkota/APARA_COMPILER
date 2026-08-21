@@ -405,8 +405,15 @@ def _acc_store(slot, value_temp, elem_bytes=8):
             IRStore(base, Const(0), value_temp, elem_bytes)]
 
 
-def _is_dot_shaped(plan):
+def is_dot_shaped(plan):
     """Two multiplicand arrays feed the accumulator, so this lowers to $dot.
+
+    R13.1 promotes this to the SHARED structural predicate for "dot-shaped"
+    reductions. It is deliberately about the reduction STRUCTURE -- an
+    accumulator fed by a product of two load-derived operands -- and never
+    about a kind string, a kernel name, a datatype or a matrix size. Both
+    'dot-product' and 'matmul' satisfy it; 'sum-reduction' (one operand) does
+    not, which is exactly the distinction R8.1a requires be preserved.
 
     R13.0: emission used to branch on `plan.kind == 'dot-product'`, which sent
     'matmul' -- a genuine two-operand dot -- down the ONE-operand $vreduce path
@@ -414,7 +421,7 @@ def _is_dot_shaped(plan):
     Branching on the operand count instead is behaviour-identical for the
     pre-R13 kinds (dot-product has 2, sum-reduction has 1) and correct for any
     future load*load reduction."""
-    return len(plan.array_slots) == 2
+    return len(getattr(plan, 'array_slots', ()) or ()) == 2
 
 
 def build_vector_body(plan):
@@ -439,8 +446,13 @@ def build_vector_body(plan):
     # expansion R6.6 gave it (626 -> 605 -> 626 ticks). Dot is where the chain
     # gap is extreme (28 bundles against a width bound of 9) and where the
     # measured gain is largest, so the transform is applied there only.
+    # R13.1: the expansion is offered to every DOT-SHAPED reduction, not to the
+    # 'dot-product' kind alone. R8.1a's restriction is preserved exactly -- it
+    # excluded the one-operand SUM-REDUCTION from the fully-unrolled expansion
+    # because it perturbed the R4.2.5 size probe, and `is_dot_shaped` still
+    # excludes it. matmul is a genuine two-operand dot and now qualifies.
     k = (_rae.best_accumulator_count(plan.chunks)
-         if plan.kind == 'dot-product' else 1)
+         if is_dot_shaped(plan) else 1)
     exp, plan.acc_expand_reason = _rae.plan_expansion(
         plan, k, load_fn=_acc_addr_load, store_fn=_acc_store)
     plan.acc_expand = exp is not None
@@ -458,7 +470,7 @@ def build_vector_body(plan):
 
     for c in range(plan.chunks):
         acc_in = acc if accs is None else accs[c % len(accs)]
-        if _is_dot_shaped(plan):
+        if is_dot_shaped(plan):
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
             body += _packed_load_any(aT, plan, 0, c)
             body += _packed_load_any(bT, plan, 1, c)
@@ -541,7 +553,7 @@ def build_compact_body(plan):
         init, acc = _vcl.slot_load(plan.acc_slot, plan.signed,
                                    elem_bytes=plan.acc_bytes)
         body += init
-        if _is_dot_shaped(plan):
+        if is_dot_shaped(plan):
             aT, bT = _fresh('_vpa'), _fresh('_vpb')
             body += _vcl.packed_load_at(aT, plan.array_slots[0], off,
                                         plan.lanes, plan.eb, plan.signed)
