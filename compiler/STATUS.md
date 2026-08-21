@@ -7082,3 +7082,38 @@ so it cannot regress silently.
 NEXT LEVER (not started, per the milestone's own Phase 13): the scalar epilogue
 -- apply R14.2's constant-delta sharing to result stores, or give the independent
 store chains disjoint registers. Both are scalar-optimizer changes.
+
+## R14.5 `$dot $accumulate` audit — ANALYSIS ONLY, no fix shipped
+
+Delivery: `R14_5_DOT_ACCUMULATE_AUDIT.md`. **0 production `.py` changed.**
+
+**ANSWER: YES -- the matmul path already fuses dot and accumulate everywhere.**
+Of **78** `$dot` inspected across 6 configurations: **A=78, B=0, C=0, D=0**.
+No dot->temp->accumulator pattern remains. Stop condition 1 applies.
+
+**But the audit found a DIFFERENT redundancy: 78 self-copies, exactly 1 per
+`$dot`.** Every `$dot $accumulate` is preceded by `+ rX ($i64) r0 rX`, i.e.
+`rX = 0 + rX` -- provably the identity. Cause is `codegen.py:1456-1459`, which
+emits the accumulator copy UNCONDITIONALLY. That copy is correct and NECESSARY
+when `dest != acc` (`$dot $accumulate` is read-modify-write on `dest`), but
+R14.2's in-place accumulation makes `dest == acc`, so it degenerates to a no-op.
+Obstacle is CODEGEN, not the IR or the lowering -- `IRVecDot` already carries
+`dest is accum`.
+
+**Measured cost (guard added, measured, then REVERTED):** bundle-visible in 3 of
+6 cases, free in the other 3 -- vu8 16x16 JT=2 14->13 bundles 5663->5535 ticks
+(-2.3%); vi16 16x16 JT=4 29->27, 5151->5023 (-2.5%); vu8 32x32 JT=4 28->26,
+22687->22175 (-2.3%); JT=1, vu8 JT=4 and vi16 32x32 unchanged.
+
+**WHY NOT SHIPPED:** the same guard fires on the EXISTING dot-product path
+(R13.1 expansion also yields `dest == acc`), changing **4 of 38** suite programs
+-- all IMPROVEMENTS, all PASS (dot vi8 1204->1196, vu8 1332->1324, vi16
+1388->1372, vu16 1516->1500). That trips stop condition 5 and would be the first
+break of bit-for-bit baseline identity since R13.0. Changing SHARED codegen and
+altering four shipped kernels is the owner's call, not an audit's -- reverted,
+byte-identity re-verified.
+
+**CONCLUSION: the R14.3 scalar-epilogue bottleneck is NOT caused by separated dot
+and accumulate.** A one-line guard (`if dest != acc:`) is available as its own
+milestone if wanted; worth ~2.3-2.5% on half the matmul configs plus a small win
+on four existing dot kernels. Not started.
