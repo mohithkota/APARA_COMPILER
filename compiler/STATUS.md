@@ -7268,3 +7268,51 @@ IPB > 2, <= 5 bundles, stores sharing one bundle) rather than deleted.
 REMAINING vs hand-written: the hand-written kernel keeps its result base live
 across the whole row; the compiler rebuilds it per j-tile (3 bundles, b9-b11).
 Hoisting that IS a genuine loop-invariance opportunity -- not pursued.
+
+## R14.9 result-base hoist — STOPPED (premise false), analysis only
+
+Delivery: `R14_9_RESULT_BASE_HOIST_DELIVERY.md`. **0 production `.py` changed.**
+
+**STOP CONDITION 1 FIRES: the result base is NOT loop-invariant in the J-tile
+loop.** The address is `&results[i*N + j + t]`, so the base offset is
+`(i*N + j) * 8` -- and `j` is the J-tile loop's OWN induction variable.
+
+Measured from IR, not assumed: the enclosing loop is `fc_9` with
+`primary_iv = slot -528 (j)`; the slots WRITTEN in that loop are
+{-568,-560,-552,-544,-536,**-528**}; the base's offset expression READS -528.
+Slot -520 (`i`) is NOT written there, so only the ROW part is invariant.
+
+**Why the specified structure cannot work:** successive tiles are `J_TILE*8`
+bytes apart, and that displacement GROWS with the tile index -- it is an
+induction variable, not a constant, so it cannot be folded into store immediates
+the way R14.8's within-tile deltas (0/8/16/24) are. Reusing one base with a
+constant delta across tiles would write every tile to the same addresses -- a
+wrong-answer bug.
+
+Distinct from R14.3: there the premise failed because no inner K loop existed at
+all. Here the loop exists and the analysis is well-formed; the expression simply
+is not invariant in it.
+
+**What IS invariant is worth ~1 bundle.** Hoisting `GBASE + i*N*8` shortens the
+per-tile chain 3 -> 2 instructions. What-if with the project's own bundler:
+epilogue 12 instrs/**5 bundles** -> 11 instrs/**4 bundles**. Block 12 -> 11; at 64
+executions 768 -> 704 weighted ticks = **~1.4% whole-program**. NOT pursued: it
+is a DIFFERENT transformation from the one specified (hoisting a sub-expression,
+not the base), and the milestone forbids inventing another optimization when a
+stop condition fires.
+
+Baseline re-measured fresh at `a8fede2`: 16x16 vu8 J_TILE=4 = 4575 ticks, 17.87
+ticks/output, 12 bundles (vector 7/31 instrs, epilogue 5/13 instrs), 23 address
+instructions, **0 spills**, 256/256 correct.
+
+Verified unchanged: 38/38, **0 programs differ from R14.8**, 3/3 negative
+controls, crosscheck 124/124 (0 mismatches), `_r14_9_test.py` 7/7. That test pins
+the finding structurally (the J-tile loop writes its own IV slot; the base reads
+it) so the premise cannot be silently re-adopted, and guards R14.8's three
+immediate-displaced stores.
+
+**RESIDUAL vs hand-written, named correctly:** the hand-written kernel keeps ONE
+result pointer live across the row and advances it by a fixed stride per row
+(`+ $r29, $r29, 128`). That is STRENGTH REDUCTION on the store pointer -- an
+induction variable -- NOT loop-invariant code motion. The two have different
+legality conditions, so the distinction matters for any future milestone.
