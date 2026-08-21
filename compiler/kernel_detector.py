@@ -41,6 +41,7 @@ class KernelCandidate:
     """A recognised (not transformed) vectorizable-kernel candidate."""
     __slots__ = ('func', 'header', 'label', 'kind', 'trip', 'nested',
                  'ivs', 'reduction_slot', 'reduction_op', 'reduction_value',
+                 'reductions',
                  'loads', 'stores', 'affine_loads', 'affine_stores',
                  'elem_bytes', 'signed', 'vtype', 'notes')
 
@@ -55,6 +56,11 @@ class KernelCandidate:
         self.reduction_slot = None
         self.reduction_op = None
         self.reduction_value = None       # 'dot' | 'load' | 'scaled' | ...
+        # R14.1a: EVERY independent reduction in this loop, in program order of
+        # their accumulator stores. The three singular fields above are kept as
+        # aliases of `reductions[0]`, so every pre-R14.1a consumer keeps working
+        # unchanged and a one-reduction kernel is described identically.
+        self.reductions = []
         self.loads = 0
         self.stores = 0
         self.affine_loads = 0
@@ -69,6 +75,30 @@ class KernelCandidate:
             return f"Kernel({self.func}@B{self.header} '{self.label}' none)"
         return (f"Kernel({self.func}@B{self.header} '{self.label}' {self.kind}"
                 f" trip={self.trip} elem={self.elem_bytes}B vtype={self.vtype})")
+
+
+class Reduction:
+    """One accumulating recurrence found in a loop body (R14.1a).
+
+    Structural, never positional: `slot` is the accumulator's stack slot,
+    `update_index` the `IRBinOp '+'` that updates it, `store_index` the store
+    back to the slot, and `value_expr` the accumulated VALUE (the operand of the
+    update that is not the carried reload). `value` is that expression's
+    classification -- 'dot' for load*load, 'load'/'scaled' for one operand."""
+
+    __slots__ = ('slot', 'op', 'value', 'store_index', 'update_index',
+                 'value_expr')
+
+    def __init__(self, slot, op, value, store_index, update_index, value_expr):
+        self.slot = slot
+        self.op = op
+        self.value = value
+        self.store_index = store_index
+        self.update_index = update_index
+        self.value_expr = value_expr
+
+    def __repr__(self):
+        return f'<Reduction slot={self.slot} {self.op} value={self.value}>'
 
 
 def _cname(x):
@@ -191,11 +221,22 @@ def _detect_loop(desc, instrs):
             V = L
         else:
             continue
-        k.reduction_slot = slot
-        k.reduction_op = '+'
-        # classify V: product of two loads (dot) vs single load (sum)
-        k.reduction_value = _classify_reduction_value(V, instrs, def_map)
-        break
+        # R14.1a: record EVERY reduction, not just the first. `break` here was
+        # the root of the single-reduction invariant -- a j-tiled matmul has one
+        # reduction per output column and all but the first were invisible.
+        k.reductions.append(Reduction(
+            slot=slot, op='+',
+            value=_classify_reduction_value(V, instrs, def_map),
+            store_index=sites[0], update_index=d, value_expr=V))
+
+    # Deterministic order: by the position of each accumulator's store, so the
+    # description does not depend on dict iteration order.
+    k.reductions.sort(key=lambda r: r.store_index)
+    if k.reductions:
+        first = k.reductions[0]
+        k.reduction_slot = first.slot
+        k.reduction_op = first.op
+        k.reduction_value = first.value
 
     _classify_kind(k, desc, instrs, def_map, region)
     return k

@@ -6932,3 +6932,62 @@ called adaptive. (4) The residual gap to the hand-written kernel is NOT the
 accumulator chain -- that kernel keeps 8 output columns in flight while the
 compiler still computes one output element per inner trip. That needs
 j-dimension tiling, which is NOT started.
+
+## R14.1a generic multi-reduction vectorization — DONE (correctness), PARTIAL (performance)
+
+Delivery: `R14_1A_MULTI_REDUCTION_DELIVERY.md`. On top of R14.0 (`3e42e98`).
+
+**Why:** R14.1's J-tiling attempt found the real blocker was not aliasing but a
+SINGLE-REDUCTION invariant threaded through detector / legality / plan /
+lowering / peel. Forcing the alias oracle to accept still gave
+`differential:mismatch`, because the lowering emitted one reduction and dropped
+the other output column.
+
+**Built:** `kernel_detector.Reduction` + `kernel.reductions` (the `break` after
+the first reduction is gone); `vector_lowering.ReductionPlan` +
+`plan.reductions`. Singular fields alias `reductions[0]`, so every pre-R14.1a
+consumer is untouched. Operands are attributed STRUCTURALLY by walking each
+reduction's own `value_expr` -- scanning every load in the body cannot tell two
+reductions' operands apart. `need` is enforced per reduction. Accesses are keyed
+`(slot, offset expr)` so the A row shared by all output columns is materialised
+and loaded ONCE.
+
+**Order was load-bearing:** legality's `clean_slots` was widened to all
+accumulator slots ONLY AFTER lowering could emit N streams. Widening first is
+what makes legality accept loops whose extra outputs get silently dropped.
+
+**Safety rails, all reject rather than mis-emit:** compact declines N>1 (it
+threads one accumulator); peeled remainder with N>1 rejected (`PeelTemplate` has
+one dest); explicit post-lowering invariant `reduction-streams-lost:G-of-W`.
+R13.1 inner-K expansion is SUBSUMED at N>1 (`subsumed-by-multi-reduction`) -- no
+`k x J_TILE` explosion.
+
+**Correctness: every reduction preserved**, `$dot` == chunks x J_TILE for
+vu8/vi8/vu16/vi16 at J_TILE=1/2/4, all 256/256, 0 errors, **0 spills**.
+
+**HONEST PERFORMANCE: the win is small and J_TILE=4 is WORSE than J_TILE=2.**
+16x16 vu8: J_TILE=1 23.996 -> J_TILE=2 **22.121** (-7.8%) -> J_TILE=4 22.621.
+The R14.0 hand-written what-if was 6.520 -> 1.207 ticks/output (5.4x); this
+delivers a fraction of it.
+
+**Measured cause -- the cost MOVED to address generation.** J_TILE=4 block is
+31 bundles / 71 instrs for 4 outputs, of which **+ = 42 and << = 8, i.e. 50 of
+71 instructions are address arithmetic for 8 dots**. Each column's B row base
+`(j+t)*N+k` is cloned independently. The hand-written kernel uses ONE base plus
+compile-time immediates. Operand sharing (added here) cut loads 21 -> 8 but
+cannot fix the addresses.
+
+**NEXT (most likely to unlock the 5.4x):** columns `j+t` differ by a COMPILE-TIME
+CONSTANT `t*N*elem_bytes`, so they should share one base with an immediate --
+R9.3's trick applied ACROSS REDUCTIONS instead of across chunks. Needs
+`vector_affine` to expose an offset's symbolic part so two accesses can be proven
+to differ by a constant; today it exposes only `const_off` and `sym_div`.
+
+Gate: 38/38 with metrics CSV **bit-for-bit identical** to the Phase-0 baseline
+(re-verified after EACH step, not just at the end), 3/3 negative controls,
+crosscheck 124/124 (0 mismatches), compiler suites **23/23**, loopopt 25/25,
+`_r14_1a_test.py` 43/43. Anti-bias: renamed/re-parenthesised sources classify
+identically.
+
+NOT done: automatic tiling (needs unroll-and-jam, R14.1b), multi-reduction
+remainder, compact realisation for N>1.

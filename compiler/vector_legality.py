@@ -162,6 +162,20 @@ def _aliasing_ok(desc, graph, kernel):
     reject. (R2.2 already prunes false array edges, so a clean kernel has none.)"""
     opset = set(_body_indices(desc))
     clean_slots = set(desc.basic_ivs.keys())
+    # R14.1a: EVERY accumulator slot the detector proved to be a clean scalar
+    # recurrence, not just the first. The rule itself is unchanged -- a carried
+    # dependence on a clean scalar stack slot is a reduction, not array
+    # aliasing -- it simply now sees all of them. Each entry in
+    # `kernel.reductions` was established structurally (single store site, the
+    # stored value is `load(slot) + V`), which is precisely the property this
+    # exemption has always relied on.
+    #
+    # ORDER MATTERS: this is deliberately widened only AFTER the lowering can
+    # emit N reduction streams. Widening it first makes legality accept loops
+    # whose extra outputs the lowering would silently drop.
+    for _r in (kernel.reductions or []):
+        if _r.slot is not None:
+            clean_slots.add(_r.slot)
     if kernel.reduction_slot is not None:
         clean_slots.add(kernel.reduction_slot)
     for e in graph.edges:
