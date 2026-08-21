@@ -7160,3 +7160,58 @@ accumulator temps and asserts both branches.
 Gate: 38/38 (4 improved, 34 identical), 3/3 negative controls, crosscheck
 124/124 (0 mismatches), compiler suites **26/26**, loopopt 25/25,
 `_r14_6_test.py` 17/17.
+
+## R14.7 final instruction-level bundle audit — ANALYSIS ONLY
+
+Delivery: `R14_7_FINAL_BUNDLE_AUDIT.md`. **0 production `.py` changed.**
+
+**THE HOT BLOCK IS TWO POPULATIONS THAT BEHAVE OPPOSITELY.**
+
+*Vector head (B1-B8) is AT the dependence lower bound* -- every `$dot` sits
+exactly at its ASAP position (slack 0); the only slack is 1 bundle on four loads,
+used to fill an already-open bundle. 8 bundles / 42 instrs = **5.25 instrs per
+bundle**.
+
+*Scalar epilogue (B9-B24) is NOT dependence-blocked at all* -- ASAP 2-9 but
+placed in bundles 9-24, **up to 18 bundles of slack on one instruction**.
+16 bundles / 13 instrs = **0.81 per bundle**.
+
+**Dependence height 9, shipped 24, SLACK 15 -- 62% of the block.** Slack is
+15/15/15/24 across vu8 16, vu8 32, vi16 16, vi16 32.
+
+**Split reasons from the bundler's OWN instrumentation** (`APARA_BUNDLE_STATS`):
+fb_10 is **87.5% / 90.0% / 90.9% / 97.4% RAW**, remainder is the entry Label.
+**ZERO MemLane, ZERO FUnit, ZERO BundleFull, ZERO MemAlias, ZERO WAW** -- no
+hardware limit is ever reached in the hot block.
+
+**CAUSE, measured not inferred.** The four result stores have IDENTICAL ASAP = 9
+and are genuinely independent, yet finish 12 bundles apart. Each chain's address
+register is immediately reused by the next: `$r3` in bundles 10-14, `$r12` 14-18,
+`$r16` 18-22, `$r17` 22-24. The bundler is a **greedy forward pass that does not
+reorder** and has **no WAR rule** (its reasons are RAW/WAW/MemAlias/MemPhase/
+MemLane/FUnit/Control/Call/Label/BundleFull), so the serialization is imposed
+BEFORE it, by instruction order plus allocation. **Register-allocation artifact,
+not a true dependence.**
+
+Each store rebuilds its address (`<<`, copy, `+gbase`) although the four differ
+by the compile-time constants 0/8/16/24 -- exactly what `constant_delta` already
+proves for loads. R9.3/R14.2 are fully active on the LOADS (one base, eight
+immediates, one bundle) but never reach the stores, which are source-level
+statements outside the vector region.
+
+Instruction mix (vu8 16x16, 55 instrs): **scalar-arith/addr 34 (62%)**, vector
+load 8, `$dot` 8, result store 4, control 1.
+
+Frequency-weighted: block is 29-34% of whole-program ticks across the four
+kernels; the epilogue is 67% of the block.
+
+**CLASSIFICATION: D (register-allocation artifact)** compounded by **C
+(unnecessary scalar instructions)**. NOT A (vector head already optimal), NOT E
+(zero MemAlias), NOT F (no ISA limit reached), NOT G (1 control instr in 55).
+
+**ONE RECOMMENDED NEXT STEP -- not FREEZE.** Give the independent result-store
+chains disjoint address registers and/or share one base with constant
+displacements. Upper bound if the epilogue reached ASAP: 24 -> ~11 bundles for
+vu8 16x16 (~54% of the block), worth roughly **16% of whole-program ticks**. It
+lives in the REGISTER ALLOCATOR / SCALAR OPTIMIZER, not the vector pipeline --
+which this audit shows is already at its dependence lower bound. Not implemented.
