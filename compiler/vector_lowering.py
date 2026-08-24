@@ -26,7 +26,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import (Const, Temp, IRLoad, IRStore, IRLoadAddr, IRVecDot, IRVecReduce)
+from ir import (Const, Temp, IRLoad, IRStore, IRLoadAddr, IRVecDot,
+                IRVecReduce, ArrayBase, emit_array_base)
 from ir_utils import func_slices, src_names as _ir_src_names
 from analysis import DefUse
 from loopopt.analysis_iv import annotate_induction_vars, TripCount
@@ -244,8 +245,8 @@ def _operand_loads_of(red, instrs, def_map, region):
         if d is None or d not in region:
             continue
         ins = instrs[d]
-        if _cname(ins) == 'IRLoad':
-            found.add(d)
+        if _cname(ins) in ('IRLoad', 'IRGlobalLoad'):
+            found.add(d)          # R16.2: a global load is an operand too
             continue
         for nm in (_ir_src_names(ins) or []):
             stack.append(Temp(nm))
@@ -306,23 +307,33 @@ def plan_lowering(desc, instrs, kernel, legality):
         rp.value = red.value
         for i in _operand_loads_of(red, instrs, _dm_all, _region_set):
             ins = instrs[i]
-            base = getattr(ins, 'base', None)
+            kind = _cname(ins)
             off = getattr(ins, 'offset', None)
-            if not isinstance(off, Temp) or not isinstance(base, Temp):
+            if not isinstance(off, Temp):
                 continue
-            if base.name not in addr_off:
-                continue
-            if addr_off[base.name] in (desc.primary_iv, red.slot):
-                continue                # the IV's own slot / this accumulator
+            # R16.2: an array's base may live on the stack OR at a fixed DMEM
+            # address. Both carry the same `invariant_base + IV*eb` offset; only
+            # where the base comes from differs, so both are described by an
+            # ArrayBase and everything downstream is unchanged.
+            if kind == 'IRGlobalLoad':
+                abase = ArrayBase.glob(ins.dmem_addr)
+            else:
+                base = getattr(ins, 'base', None)
+                if not isinstance(base, Temp) or base.name not in addr_off:
+                    continue
+                slot = addr_off[base.name]
+                if slot in (desc.primary_iv, red.slot):
+                    continue            # the IV's own slot / this accumulator
+                abase = ArrayBase.stack(slot)
             acc = _va_r13.classify_access(ins, _actx)
             if not acc.ok or acc.kind == _va_r13.INVARIANT:
                 continue                # not an array walk (scalar operand)
             if acc.kind != _va_r13.CONTIGUOUS or acc.coeff != kernel.elem_bytes:
                 return None, 'unpacked-array-stride'
             bare_iv = (acc.const_off == 0 and (acc.sym_div or 0) == 0)
-            rp.array_slots.append(addr_off[base.name])
+            rp.array_slots.append(abase)
             rp.array_offs.append(None if bare_iv else off)
-            rp.array_info.append((addr_off[base.name], ins.elem_bytes,
+            rp.array_info.append((abase, ins.elem_bytes,
                                   bool(getattr(ins, 'unsigned', False))))
         return rp, None
 
@@ -460,7 +471,7 @@ def plan_lowering(desc, instrs, kernel, legality):
                 p.reason = f'row-base-not-clonable:{_off0}'
                 return p
             _b, _a = _fresh('_vrb'), _fresh('_vra')
-            _block = list(_pre) + [IRLoadAddr(_b, _rp.array_slots[_i]),
+            _block = list(_pre) + [emit_array_base(_b, _rp.array_slots[_i]),
                                    _IRBinOp(_a, '+', _b, _off0)]
             p.shared_bases[_key] = (_block, _a)
             _base_meta[_key] = (_block, _a, _acc_new)
@@ -487,7 +498,7 @@ def plan_lowering(desc, instrs, kernel, legality):
                 return p
             _b, _a = _fresh('_vrb'), _fresh('_vra')
             p.array_base_pre += list(_pre) + [
-                IRLoadAddr(_b, p.array_slots[_i]),
+                emit_array_base(_b, p.array_slots[_i]),
                 _IRBinOp(_a, '+', _b, _off0)]
             p.array_addr[_i] = _a
 
@@ -564,7 +575,7 @@ def _packed_load_any(dest, plan, which, chunk, rp=None):
 def _packed_load(dest, slot, chunk, lanes, eb, signed):
     """A packed 64-bit load of `lanes` contiguous elements of chunk `chunk`."""
     base = _fresh('_vba')
-    la = IRLoadAddr(base, slot)
+    la = emit_array_base(base, slot)
     byte_off = chunk * lanes * eb
     ld = IRLoad(dest, base, Const(byte_off), elem_bytes=8, unsigned=(not signed))
     ld._vec_pack = (lanes, eb)

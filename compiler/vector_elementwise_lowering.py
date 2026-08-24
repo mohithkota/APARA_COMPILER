@@ -35,7 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import Const, Temp, IRLoad, IRStore, IRLoadAddr, IRVecArith
+from ir import Const, Temp, IRLoad, IRStore, IRLoadAddr, IRVecArith, emit_array_base
 from analysis import DefUse
 from vector_capability import VectorCapability
 from vector_capability_db import ELEMENT_TYPES
@@ -351,7 +351,7 @@ def plan_elementwise(desc, instrs, kernel, legality):
 def _packed_store(slot, chunk, value, lanes, eb):
     """Store one packed 64-bit result back into `lanes` contiguous elements."""
     base = _fresh('_vbs')
-    la = IRLoadAddr(base, slot)
+    la = emit_array_base(base, slot)
     st = IRStore(base, Const(chunk * lanes * eb), value, 8)
     st._vec_pack = (lanes, eb)
     return [la, st]

@@ -43,7 +43,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import Const, Temp, IRAssign, IRLoad, IRStore, IRLoadAddr, IRBinOp
+from ir import Const, Temp, IRAssign, IRLoad, IRStore, IRLoadAddr, IRBinOp, emit_array_base
 from vector_lowering import _fresh
 
 
@@ -90,14 +90,14 @@ class PeelTemplate:
 def _load_at(slot, offset, elem_bytes, unsigned):
     base = _fresh('_vrpb')
     dest = _fresh('_vrpv')
-    return [IRLoadAddr(base, slot),
+    return [emit_array_base(base, slot),
             IRLoad(dest, base, offset, elem_bytes=elem_bytes,
                    unsigned=unsigned)], dest
 
 
 def _store_at(slot, offset, value, elem_bytes):
     base = _fresh('_vrps')
-    return [IRLoadAddr(base, slot), IRStore(base, offset, value, elem_bytes)]
+    return [emit_array_base(base, slot), IRStore(base, offset, value, elem_bytes)]
 
 
 def build_peeled_tail(plan):

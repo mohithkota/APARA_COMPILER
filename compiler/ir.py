@@ -132,6 +132,72 @@ class IRGlobalStore:
         self.src = src; self.elem_bytes = elem_bytes
     def __repr__(self): return f"DMEM[0x{self.dmem_addr:x}+{self.offset}] = {self.src}"
 
+class ArrayBase:
+    """Where a vectorizable array lives (R16.2).
+
+    The vector lowering used to identify an array by its stack slot alone -- an
+    `fp_offset` int that every use site turned back into an address with
+    `IRLoadAddr`. That hard-codes ONE storage class, which is why a matrix in
+    fixed DMEM produced `pattern:array-bases-not-extracted` and fell back to
+    scalar.
+
+    This carries the same information polymorphically: `kind` is 'stack' or
+    'global', and `emit(temp)` materialises the base address into `temp` with
+    whichever node that storage class needs. Everything else in the lowering --
+    contiguity, constant deltas, immediates, store grouping -- is unchanged,
+    because they all operate on the OFFSET, not on where the base came from.
+
+    Compares and hashes by (kind, value) so it can be used as a dict key and
+    compared for identity exactly as the bare int was.
+    """
+
+    __slots__ = ('kind', 'value')
+
+    def __init__(self, kind, value):
+        assert kind in ('stack', 'global')
+        self.kind = kind
+        self.value = value
+
+    @staticmethod
+    def stack(fp_offset):
+        return ArrayBase('stack', fp_offset)
+
+    @staticmethod
+    def glob(dmem_addr):
+        return ArrayBase('global', dmem_addr)
+
+    def emit(self, temp):
+        """The IR instruction that puts this base address into `temp`."""
+        if self.kind == 'stack':
+            return IRLoadAddr(temp, self.value)
+        return IRGlobalAddrOf(temp, self.value, Const(0))
+
+    def __eq__(self, other):
+        if isinstance(other, ArrayBase):
+            return (self.kind, self.value) == (other.kind, other.value)
+        # a bare int still means a stack slot, so pre-R16.2 comparisons hold
+        return self.kind == 'stack' and self.value == other
+
+    def __hash__(self):
+        return hash((self.kind, self.value))
+
+    def __repr__(self):
+        return (f"stack[{self.value}]" if self.kind == 'stack'
+                else f"DMEM[0x{self.value:x}]")
+
+
+def emit_array_base(temp, base):
+    """Materialise an array base into `temp`.
+
+    Accepts an `ArrayBase` or a bare int (a stack `fp_offset`), so every
+    pre-R16.2 caller keeps working unchanged while global-backed arrays become
+    expressible.
+    """
+    if isinstance(base, ArrayBase):
+        return base.emit(temp)
+    return IRLoadAddr(temp, base)
+
+
 class IRGlobalAddrOf:
     """dest = address of global (dmem_addr + optional offset)"""
     def __init__(self, dest, dmem_addr, offset=None):

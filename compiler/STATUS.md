@@ -7530,3 +7530,82 @@ under test is absent, so a wider sweep would measure only scalar codegen.
 array-base predicate from "local `IRLoadAddr` slot" to "local slot OR global
 address". Only after that does the R16.0 register hypothesis become measurable.
 That is a production compiler change, which R16.1's own Phase 13 forbids.
+
+## R16.2 generic array-base support (global / fixed-DMEM) — **COMPLETE**
+
+Delivery: `R16_2_GLOBAL_ARRAY_BASE_DELIVERY.md`. Compiler at `32395a5` (R16.1)
+before this milestone; committed on branch `feature/r13-matmul-dot`. **PRODUCTION CHANGE** —
+6 `.py` files, +106/−27. Not pushed; `r10-final`/`r11-verified`/`r12.1-verified`
+untouched.
+
+**R16.1's "fixed-DMEM loses vectorization" was a MISSING COMPILER CAPABILITY,
+not a property of fixed DMEM.** `plan_lowering` identified an array by its
+**stack slot** — `_operand_loads_of` collected only `IRLoad`, and `addr_off`
+holds only `IRLoadAddr` (FP+off) defs — so a GBASE-relative `IRGlobalLoad` was
+never seen, `need` was never met, and every global-array kernel was declined
+`pattern:array-bases-not-extracted` and ran scalar. **The R16.0 data-placement
+hypothesis was VALID; it was untestable, not false.**
+
+FIX = one abstraction, not a second path. `ir.py` gains `ArrayBase`
+(`kind` ∈ stack|global, `emit()` → `IRLoadAddr` or `IRGlobalAddrOf`) and
+`emit_array_base()`, which still accepts a bare int so every pre-R16.2 caller
+keeps working. `ArrayBase` compares/hashes on `(kind, value)` with
+`ArrayBase.stack(x) == x`. Everything downstream (contiguity, deltas, chunk
+immediates, R14.2 sharing, R14.8 store grouping) is UNCHANGED because it all
+operates on the OFFSET, never on where the base came from.
+
+**FIXED-DMEM SWEEP** (16×16 `vu8`, R16.1's own sources, `--dmem-init`; each built
+against a worktree at `32395a5` and against R16.2 — R16.1's numbers reproduce
+exactly):
+
+| config | R16.1 ticks / `$dot` | R16.2 ticks / `$dot` | correct |
+|---|---:|---:|:--:|
+| fixed-DMEM JT=1 | 37324 / 0 | **2763** / 2 | 256/256 |
+| fixed-DMEM JT=2 | 19148 / 0 | **1611** / 4 | 256/256 |
+| **fixed-DMEM JT=4** | 37000 / 0 | **987** / 8 | 256/256 |
+| fixed-DMEM JT=8 | 19164 / 0 | **1015** / 16 | 256/256 |
+| stack-local JT=4 | 4575 / 8 | **4575** / 8 (unchanged) | 256/256 |
+| stack-local JT=8 | 7950 / 16 | **7950** / 16 (unchanged) | 256/256 |
+| hand-written 8-dot | 241 / 32 | — | 256/256 |
+
+**HEADLINE 4575 → 987 ticks = −78.4%** vs the previous best build of the same
+workload. **DO NOT attribute all of it to compilation:** ~3331 ticks (73% of the
+baseline, ~73 points) is the `--dmem-init` INITIALIZATION saving — a
+data-placement/methodology effect that already existed; the KERNEL itself goes
+~1225 → ~987 (**≈ −19%**, ~5 points), and that is R16.2's own contribution. What
+R16.2 changes is that the init win is no longer cancelled by losing `$dot`.
+
+**J_TILE (R16.0's question, finally measurable):** JT=4 987 vs JT=8 1015 — the
+JT=8 penalty collapses from **+73.8%** (7950 vs 4575) to **+2.8%**. This
+supports R16.0's attribution (array-base registers were crowding out the 8
+accumulators) but **register pressure is NOT solved: JT=8 still loses to JT=4,
+and JT=4 remains the right tile.** The residual 2.8% is unattributed.
+
+**vs HAND-WRITTEN:** 987 vs 241 = **~4.1× slower**, now like-for-like (both
+preloaded). Per R16.0 the hand kernel's edge is `$dot` PACKING DENSITY (8/bundle
+vs 4) — a scheduling/allocation question, to be scoped as such.
+
+**TESTS** — `_r16_2_test.py` **41/41** (7 unit, 8 positive-global, 3
+storage-not-a-legality-input, 7 tile-scaling, 3 anti-bias, 8 negative controls,
+2 unsupported-width, 3 R14.2/R14.8 composition). Verification suite **38/38 +
+3/3 negative controls**, and the before/after CSVs are **BIT-IDENTICAL across
+all 14 metric columns** (suite total 67684 ticks both) — R16.2 is provably
+additive. `pipeline_crosscheck` **124/124** (0 IR / 0 code / 0 tier mismatch, 0
+verifier failures, 0 rollbacks). 25 loopopt suites + 29 compiler suites (R3.1 →
+R14.10) all green.
+
+**SUPERSEDES R15.0's FREEZE RECOMMENDATION.** R15.0 recommended freezing because
+"every remaining lever is worth 2–4% whole-program". That premise is now false:
+this lever is worth **78.4%** on the same workload, and it was invisible to
+R15.0 because the capability it needed did not exist.
+
+**REMAINING LIMITATIONS:** (1) only the reduction/`$dot` path builds global
+bases — `plan_elementwise` still resolves bases through `addr_off`, so global
+elementwise/axpy/conv3 kernels still go scalar (their emit side is already
+polymorphic; only recognition is not); (2) packed STORES are not global-aware;
+(3) JT=8 still unprofitable; (4) global initializers still overflow IMEM without
+`--dmem-init` (R16.1's secondary finding stands — it is mandatory here, not
+optional); (5) the end-to-end sweep is `vu8` only (`vi8`/`vu16`/`vi16` covered
+structurally by the unit tests).
+
+**DO NOT start R16.3 automatically.**

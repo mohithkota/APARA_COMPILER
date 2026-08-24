@@ -25,7 +25,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ir import Const as IRConst, IRAssign, IRLoad, IRStore, IRLoadAddr, IRBinOp, IRVecArith
+from ir import (Const as IRConst, IRAssign, IRLoad, IRStore, IRLoadAddr,
+                IRBinOp, IRVecArith, emit_array_base)
 from vector_lowering import _fresh
 import expression_tree as et
 
@@ -46,7 +47,7 @@ def lower_vector(node, vtype, load_array, prefix='_ve'):
         return [IRAssign(t, IRConst(node.value))], t, True
     if isinstance(node, et.ScalarRef):
         b, t = _fresh(prefix + 'b'), _fresh(prefix + 's')
-        return ([IRLoadAddr(b, node.slot),
+        return ([emit_array_base(b, node.slot),
                  IRLoad(t, b, IRConst(0), elem_bytes=node.elem_bytes,
                         unsigned=node.unsigned)], t, True)
     if isinstance(node, et.ArrayRef):
@@ -93,13 +94,13 @@ def lower_scalar(node, idx, prefix='_vrp'):
         return [IRAssign(t, IRConst(node.value))], t
     if isinstance(node, et.ScalarRef):
         b, t = _fresh(prefix + 'b'), _fresh(prefix + 'v')
-        return [IRLoadAddr(b, node.slot),
+        return [emit_array_base(b, node.slot),
                 IRLoad(t, b, IRConst(0), elem_bytes=node.elem_bytes,
                        unsigned=node.unsigned)], t
     if isinstance(node, et.ArrayRef):
         pre, off = node.address(idx)
         b, t = _fresh(prefix + 'b'), _fresh(prefix + 'v')
-        return list(pre) + [IRLoadAddr(b, node.slot),
+        return list(pre) + [emit_array_base(b, node.slot),
                             IRLoad(t, b, off, elem_bytes=node.elem_bytes,
                                    unsigned=node.unsigned)], t
     if not isinstance(node, et.BinOp):

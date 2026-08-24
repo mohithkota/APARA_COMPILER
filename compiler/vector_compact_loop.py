@@ -55,6 +55,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ir import (Const, Temp, IRLoad, IRStore, IRLoadAddr, IRLabel, IRJump,
+                emit_array_base,
                 IRCondJump, IRBinOp, IRAssign)
 from vector_lowering import _fresh
 
@@ -80,7 +81,7 @@ def _fresh_label(kind):
 def packed_load_at(dest, slot, off_temp, lanes, eb, signed):
     """A packed 64-bit load of `lanes` contiguous elements at a register offset."""
     base = _fresh('_vcb')
-    la = IRLoadAddr(base, slot)
+    la = emit_array_base(base, slot)
     ld = IRLoad(dest, base, off_temp, elem_bytes=8, unsigned=(not signed))
     ld._vec_pack = (lanes, eb)
     return [la, ld]
@@ -123,7 +124,7 @@ def aligned_pair_at(slot, off_temp, shift_bytes, lanes, eb):
     chunk instead of once per tap."""
     base = _fresh('_vwb'); aoff2 = _fresh('_vwc')
     w0 = _fresh('_vw0'); w1 = _fresh('_vw1')
-    out = [IRLoadAddr(base, slot)]
+    out = [emit_array_base(base, slot)]
     # R6.3.2 Phase 3: emit the final affine address directly. When the pair is
     # keyed on a tap that already starts at the word boundary the correction is
     # zero, and `off - 0` is a wasted instruction in the steady-state body.
@@ -158,7 +159,7 @@ def packed_window_load_at(dest, slot, off_temp, shift_bytes, lanes, eb, signed):
     base = _fresh('_vwb'); aoff = _fresh('_vwa'); aoff2 = _fresh('_vwc')
     w0 = _fresh('_vw0'); w1 = _fresh('_vw1')
     hi = _fresh('_vwh'); lo = _fresh('_vwl')
-    out = [IRLoadAddr(base, slot),
+    out = [emit_array_base(base, slot),
            IRBinOp(aoff, '-', off_temp, Const(shift_bytes)),
            IRBinOp(aoff2, '+', aoff, Const(8))]
     ld0 = IRLoad(w0, base, aoff, elem_bytes=8, unsigned=True)
@@ -174,7 +175,7 @@ def packed_window_load_at(dest, slot, off_temp, shift_bytes, lanes, eb, signed):
 def packed_store_at(slot, off_temp, value, lanes, eb):
     """Store one packed 64-bit result back at a register offset."""
     base = _fresh('_vcs')
-    la = IRLoadAddr(base, slot)
+    la = emit_array_base(base, slot)
     st = IRStore(base, off_temp, value, 8)
     st._vec_pack = (lanes, eb)
     return [la, st]
