@@ -7786,3 +7786,67 @@ and matrix show zero regressions. Filed for a future scheduling milestone.
 elimination (measured −48 ticks), `$u128` wide loads, scheduler/allocator work.
 
 **DO NOT start R17.2 automatically.**
+
+---
+
+## R17.2 `$u128` wide loads — **STOPPED (analysis only, production unchanged)**
+
+Delivery: `R17_2_WIDE_LOAD_DELIVERY.md`. **No production `.py` changed.**
+
+**LEGAL — R8.0's blocker really has expired.** R8.0 stopped wide memory because
+`SP = 0x7FF8` and `0x7FF8 mod 16 = 8`, so no *stack* object can ever be 16-byte
+aligned. R16.2 moved these arrays to fixed DMEM: `gbase = 0x400`, `A = 0x400`,
+`Bt = 0x500`, and `$r7 = Bt + j*16`, so every candidate pair `(16t, 16t+8)` is
+16-byte aligned. A hand-built what-if issuing 8 `$ld ($u128)` per iteration
+**executed correctly, 256/256** — the alignment half of the hypothesis is
+confirmed by execution, not argument. 18 narrow loads → 9 wide is structurally
+available (8 B rows + the A row), on every datatype and both matrix sizes.
+
+**NOT PROFITABLE — measured 699 → 891 ticks (+27.5%) while executing 256 FEWER
+instructions.** Bundles 54 → 60, IPB 3.884 → 2.760, `$dot`/bundle unchanged at 4,
+zero spills, 256/256 correct. This is stop condition #6 exactly: fewer
+instructions, more bundles and ticks.
+
+**Three independent reasons, each measured or proved:**
+
+1. **Wide loads relax a constraint that is not binding.** `fb_6` ships **12
+   bundles / 57 instructions** against an issue-width bound of ⌈57/8⌉ = **8** and
+   a memory-lane bound of ⌈24/4⌉ = **6**. It is dependence-bound — three bundles
+   still hold one instruction each (R16.3's serial result-address chain). Halving
+   loads moves a bound from 8 to 7 while the code sits at 12. This argument is
+   schedule-independent.
+2. **The existing schedule already hides its loads for free.** Twelve of the
+   sixteen narrow loads are co-issued with `$dot`s in full 8-slot bundles
+   (`4 $ld + 4 $dot`). Wide loads *remove* that co-issue opportunity and force
+   dedicated load bundles.
+3. **The register budget cannot reach 8-wide `$dot` issue.** It needs 8
+   accumulators + 8 B pairs (16) + an A pair (2) + 4 control = **30**; the pool is
+   **28** (`$r0`/FP/SP/GBASE reserved). The hand-written kernel reserves only
+   `$r0`, has **31**, and uses **30**. **Short by exactly two — FP and SP.** Wide
+   loads are a consequence of that headroom, not a substitute for it.
+
+**Separately, the existing facility costs 3 instructions, not 1.**
+`codegen._gen_IRLoadWide` borrows an even-aligned pair, loads, then copies both
+halves into ordinary registers — *after* register allocation, so no IR-level
+copy-prop can remove them. Verified by building `__ld128`. A direct substitution
+turns 16 load instructions into 8 loads + 16 copies = 24.
+
+**CORRECTS R17.0.** R17.0 ranked `$u128` as the largest remaining structural
+lever at a **projected** 64–96 ticks. Measured: **−192 ticks**. The projection
+counted instructions removed without checking whether they occupied bundles.
+They did not.
+
+Stop conditions fired: **#6**, **#8** (paying for it needs vector
+legality/lowering to own register-pair lifetimes end to end — a redesign), **#9**.
+
+**TESTS** — `_r17_2_test.py` **13/13** (`--unit` 7/7, no toolchain). It guards the
+three facts the stop rests on, so the conclusion is re-checked rather than
+trusted if any changes: the 3-instruction wide-load cost, the 28-register pool
+with FP/SP/GBASE reserved, `ISSUE_WIDTH = 8` with the 4-per-bundle memory-lane
+cap, and the 16-byte alignment that made wide loads legal.
+
+**The remaining gap to the hand-written 241 is not addressable by load width** —
+it is the 28-vs-31 register budget and the serial address chains, and those
+chains were already attempted and correctly stopped by R14.9 and R14.10.
+
+**DO NOT start R17.3 automatically.**
