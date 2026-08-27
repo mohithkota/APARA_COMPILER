@@ -7609,3 +7609,86 @@ optional); (5) the end-to-end sweep is `vu8` only (`vi8`/`vu16`/`vi16` covered
 structurally by the unit tests).
 
 **DO NOT start R16.3 automatically.**
+
+---
+
+## R16.5 direct accumulator promotion — **COMPLETE**
+
+Delivery: `R16_5_ACCUMULATOR_DIRECT_LOWERING.md`. Compiler at `09e67c0` (R16.2),
+following R16.4's diagnosis. **One production file changed** —
+`compiler/loop_reg.py` (+1 predicate, 3 call sites) — plus one re-baselined
+assertion in `_r14_3_test.py`. No scheduler, bundler, register-allocator,
+vectorizer or codegen change; no register-budget or spill-policy change.
+
+**PREMISE CORRECTED.** R16.4 recommended fixing this in the *vector lowering*,
+"when the accumulator already has a promoted loop register". That condition is
+never true there: vectorization runs at `compiler.py:598`, `promote_loop_counters`
+at `:691` — **after** it. Dumping the IR on both sides shows the vector lowering
+emitting the correct memory form and `loop_reg` manufacturing the copies. The fix
+belongs in the pass that EMITS them.
+
+**THE CHANGE.** `_promote_one` always minted a fresh vreg and bridged it to the
+body with a move at each end. When a slot's loop traffic is a **closed round
+trip** — one load into a temp `T`, in-place updates, one store of that same `T` —
+the promoted register now *is* `T`, so neither move is ever emitted. Three
+structural conditions, none of them naming a kernel, datatype, tile or size:
+(a) the store's value temp **is** the load's destination — this preserves the
+**R14.6 `dest != accum`** distinction, since a store of a different temp is a
+real copy and is kept; (b) `T` occurs nowhere in the function outside the span;
+(c) no other access to that slot falls strictly inside the span. Kill switch
+`APARA_NO_ACC_DIRECT=1`.
+
+Neither move was reachable before: `coalesce.py` excludes `IRVecDot` from its
+coalesceable producers (`$dot $accumulate` reads its own destination), and the
+copy-in's source has other users.
+
+**RESULT — fixed-DMEM 16×16 `vu8`.** JT=4 **987 → 861 (−12.8%)**, JT=8
+**1015 → 795 (−21.7%)**, and **JT=8 now beats JT=4 (795 vs 861, −7.7%)** — the
+tile ordering reverses, at every datatype and size measured. 16 registers for 8
+accumulators → 8. Executed register moves **515 → 3**. `$dot`/bundle at JT=8
+**3 → 4**. The JT=8 j-body collapses from **three basic blocks (21 bundles/iter)
+to one (15)** — `fe_12` and `fi_7` are gone from the emitted code; the superblock
+merge succeeds on its own, with no gate relaxed. **Zero spills**; peak live rises
+18 → 25 of 28, which is the point: freeing 8 registers is what lets 8 B-operand
+loads be in flight. Every R16.4 what-if figure reproduced to the tick (795/861
+ticks, 2827/3019 instrs, IPB 3.556/3.506, 3 moves, 4 dots/bundle, 15 bundles/iter);
+only static aligned bundles differ (projected 54, emitted 57).
+
+Gap to the hand-written 8-dot kernel closes **4.21× → 3.30×** (795 vs 241). The
+residual is instruction count (2827 vs 1160), not packing.
+
+**TESTS** — `_r16_5_test.py`, three tiers: `--unit` (6 checks, no simulator,
+instant), default (emission / single-reduction / genericity / matrix subset /
+remainder), `--full` (4 datatypes × 2 sizes × 4 tiles, all 32 correct).
+Verification suite **38/38 + 3/3 negative controls**, and the before/after CSVs
+are **BIT-IDENTICAL across all 14 metric columns** (67684 ticks both) — as with
+R16.2, that suite is blind to this lever. `pipeline_crosscheck` **124/124**
+(0 IR / 0 code / 0 tier mismatch). All 30 R-series compiler suites green,
+including **R14.6 17/17** and **R16.2 41/41**.
+
+`_r14_3_test.py` re-baselined: its `epilogue IPB > 2` check now reads 1.80,
+because the epilogue loses exactly J_TILE copy-outs (13 → 9 instrs at JT=4)
+**without losing bundles** — those copies rode in the spare slots of R16.3's
+serial address chain. The epilogue is strictly cheaper (same or fewer bundles,
+ticks equal or better: `vu8` 16×16 4575 → 4447). IPB is a density ratio, not a
+performance metric. The assertion now pins "the epilogue must not grow", and
+**passes on both the R16.2 and R16.5 compilers**.
+
+**DEFECT SURFACED (pre-existing, not R16.5):** a 256-element **statically
+initialized LOCAL array** miscompiles — 256/256 PostConditions fail on a 16×16
+`vu8` matmul built without `--dmem-init`. Identical with `APARA_NO_ACC_DIRECT=1`
+(1272 ticks, 8 `$dot`, 256 wrong both ways), so it reproduces on R16.2. A
+4-element local static initializer is fine, and the same kernel with a runtime
+init loop is correct, so it is scale-related — 1272 ticks leaves no room for the
+512 initializer stores, suggesting they are dropped or truncated. Filed, not
+fixed (outside this milestone).
+
+**REMAINING LIMITATIONS:** (1) R16.3's serial result-address chain is untouched
+and now fully exposed as four 1-instruction bundles per epilogue — the
+next-largest j-body term; (2) single-reduction dot/sum kernels are byte-identical
+(their fresh-temp chaining declines condition (a)) and would need a *lowering*
+change, not a promotion change; (3) the 38-program suite contains no j-tiled
+multi-reduction matmul, so it cannot see this class of win at all — worth fixing
+before it is relied on as a performance gate.
+
+**DO NOT start R16.6 automatically.**

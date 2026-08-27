@@ -34,7 +34,10 @@ Correctness still cannot regress: the result is rerun through codegen and kept
 only if it introduces no spilling and does not crash (see compiler.py), exactly
 like LICM. This file uses only existing IR nodes (no codegen changes).
 """
+import os
+
 from ir import *
+from ir_utils import dest_names, src_names
 from licm import _find_loops, _jump_targets
 
 
@@ -71,6 +74,81 @@ def _build_addr_temp_uses(instrs):
             role = 'clean' if sn == clean_base else 'other'
             uses.setdefault(sn, []).append(role)
     return uses
+
+
+def _closed_roundtrip_temp(instrs, d, s, e, fa, fb):
+    """R16.5: pick the slot's OWN value temp as the promoted register.
+
+    The default promotion mints a fresh vreg and bridges it to the loop body
+    with a move at each end -- `T = vreg` where the load was, `vreg = T` where
+    the store was. When a slot's loop-carried value is built by loading it into
+    a temp T, updating T in place, and storing that same T back, those two moves
+    are a closed round trip: T and the vreg hold the same value in two
+    registers for the whole span.
+
+    Nothing downstream removes them. The copy-out's producer can be an
+    `IRVecDot`, which `coalesce.py` deliberately excludes from
+    `_COALESCEABLE_PRODUCERS` because `$dot $accumulate` reads its own
+    destination and so cannot be retargeted by a plain producer rewrite; and
+    the copy-in's source has other users (the copy-out, and the slot's other
+    accesses), which fails that pass's third condition. A vectorized
+    multi-reduction pays this per accumulator -- at J_TILE=8, sixteen registers
+    for eight accumulators (R16.4 Phase 6/7).
+
+    Promoting into T itself emits no move at either end: the preheader load
+    defines T, the body updates it in place, the write-back stores it.
+
+    This pass already maintains "the vreg holds the slot's current value
+    everywhere in the region", so every OTHER access to the slot stays a move
+    against T and needs no further condition. What choosing T does require is
+    that T's own occurrences keep their meaning:
+
+      (a) T is what the load defines and what the store writes back, in that
+          order -- a genuine self-update.  A store whose value temp DIFFERS
+          from the load's destination is the R14.6 dest-vs-accum case: the move
+          is real, and this returns None so both moves are kept.
+      (b) T occurs nowhere in the function outside that span.  The promoted
+          register is written every iteration and lives across the back edge, so
+          an outside reader of T would see the accumulation where the original
+          gave it one iteration's value.
+      (c) no other access to this slot falls strictly inside the span.  One
+          that did would be rewritten into a move that overwrites T mid-flight,
+          where the original left T alone and died into the closing store.
+
+    Returns T, plus the two instruction indices to drop, or None.
+    """
+    if os.environ.get('APARA_NO_ACC_DIRECT'):    # A/B measurement knob
+        return None
+    ld, st = d['loads'], d['stores']
+    pair = None
+    for (_, ld_idx, v, _, _) in ld:
+        if not isinstance(v, Temp):
+            continue
+        for (_, st_idx, sval, _) in st:
+            if (isinstance(sval, Temp) and sval.name == v.name
+                    and s <= ld_idx < st_idx <= e):
+                pair = (v, ld_idx, st_idx)
+                break
+        if pair:
+            break
+    if pair is None:
+        return None                          # (a)
+    v, ld_idx, st_idx = pair
+
+    for k in range(fa, fb + 1):              # (b)
+        if ld_idx <= k <= st_idx:
+            continue
+        ins = instrs[k]
+        if v.name in dest_names(ins) or v.name in src_names(ins):
+            return None
+
+    for (_, k, _, _, _) in ld:               # (c)
+        if ld_idx < k < st_idx:
+            return None
+    for (_, k, _, _) in st:
+        if ld_idx < k < st_idx:
+            return None
+    return v, ld_idx, st_idx
 
 
 def _promote_one(instrs, s, e, promoted_offsets, fa, fb, fkey):
@@ -180,8 +258,14 @@ def _promote_one(instrs, s, e, promoted_offsets, fa, fb, fkey):
     off_for_vreg = {}   # off -> fresh vreg Temp
     eb_for_off = {}
     uns_for_off = {}
+    roundtrip = set()                       # R16.5: indices of the dropped pair
     for off, d in promote.items():
-        vreg = _new_temp()
+        rt = _closed_roundtrip_temp(instrs, d, s, e, fa, fb)
+        if rt is not None:                  # promote into the value itself
+            vreg, ld_idx, st_idx = rt
+            roundtrip.update((ld_idx, st_idx))
+        else:
+            vreg = _new_temp()
         off_for_vreg[off] = vreg
         eb_for_off[off] = next(iter(d['ebs']))
         uns_for_off[off] = any(uns for (_, _, _, _, uns) in d['loads'])
@@ -215,6 +299,8 @@ def _promote_one(instrs, s, e, promoted_offsets, fa, fb, fkey):
         if k in dead_loadaddr:
             continue
         ins = instrs[k]
+        if k in roundtrip:                  # R16.5: `T = T`, never emitted
+            continue
         if k in load_rewrite:
             off = addr_off[ins.base.name]
             new_region.append(IRAssign(load_rewrite[k], off_for_vreg[off]))

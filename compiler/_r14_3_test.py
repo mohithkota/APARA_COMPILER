@@ -126,10 +126,21 @@ def test_cost_is_the_epilogue():
         ones = sum(1 for x in epi if len(x['instrs']) == 1)
         check(f"{T} {n}x{n}: vector part packs well (IPB > 4)", vipb > 4,
               f"IPB {vipb:.2f}")
-        # R14.8: was `eipb < 2` (the bottleneck). Now the epilogue must stay
-        # ABOVE that, i.e. it must not regress to one instruction per bundle.
-        check(f"{T} {n}x{n}: epilogue no longer packs badly (IPB > 2)",
-              eipb > 2, f"IPB {eipb:.2f}")
+        # R14.8: was `eipb < 2` (the bottleneck), then `eipb > 2`.
+        # R16.5 RE-BASELINED IT AGAIN, and density is the wrong pin here.
+        # Removing the accumulator shadow-copy round trip deletes exactly
+        # J_TILE copy-outs from this epilogue (13 -> 9 instructions at JT=4)
+        # WITHOUT changing its bundle count, because those copies were riding
+        # in the spare slots of the serial result-address chain that R16.3
+        # identified and that R16.5 does not touch. The ratio therefore falls
+        # (2.60 -> 1.80) while the epilogue gets strictly cheaper: same or
+        # fewer bundles, four fewer instructions, ticks equal or better
+        # (mm vu8 16x16 4575 -> 4447). IPB is a density ratio, not a
+        # performance metric.
+        # What is actually load-bearing -- the epilogue must not GROW -- is
+        # pinned directly, alongside the bundle and store-packing checks below.
+        check(f"{T} {n}x{n}: epilogue does not grow (<= 13 instructions)",
+              ei <= 13, f"{ei} instructions")
         check(f"{T} {n}x{n}: epilogue is at most 5 bundles (was 16)",
               len(epi) <= 5, f"{len(epi)} bundles")
         check(f"{T} {n}x{n}: the result stores share ONE bundle",
