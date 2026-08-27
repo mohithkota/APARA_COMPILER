@@ -8,6 +8,11 @@ into cheap shifts / masks, on the flat IR list before code generation:
     x /  2^n   ->  x >> n          (ONLY when unsigned / non-negative)
     x %  2^n   ->  x &  (2^n - 1)   (ONLY when unsigned / non-negative)
 
+R17.1 adds the ADDITIVE IDENTITY, which this file's own `_pow2_exp` docstring
+already assumed was "handled elsewhere" -- it was not, anywhere:
+
+    x +  0     ->  x               (either operand; integer only)
+
 Why this matters here: the compiler's own 2D-array address lowering emits an
 `index * stride` multiply for every subscript and, for sub-word/byte accesses,
 `/`(quotient) + `%`(remainder) by a power-of-two stride -- recomputed every
@@ -30,7 +35,9 @@ Float ops (ftype set) are never touched. A negative or non-power-of-two
 constant divisor is left exactly as-is.
 """
 
-from ir import IRBinOp, Const
+import os
+
+from ir import IRAssign, IRBinOp, Const
 
 
 def _pow2_exp(v):
@@ -45,15 +52,41 @@ def _pow2_exp(v):
 
 
 def _reduce_one(ins):
-    """Return a NEW reduced IRBinOp if `ins` matches, else None. Never mutates
-    `ins` -- the caller keeps the original object so any other list holding it
-    (e.g. the pristine IR used for verification) is unaffected."""
+    """Return a NEW reduced instruction if `ins` matches, else None -- an
+    IRBinOp for the strength reductions, an IRAssign for the R17.1 additive
+    identity. Never mutates `ins`: the caller keeps the original object so any
+    other list holding it (e.g. the pristine IR used for verification) is
+    unaffected."""
     if not isinstance(ins, IRBinOp):
         return None
     if ins.ftype is not None:            # never touch float arithmetic
         return None
 
     op = ins.op
+
+    # ── R17.1: additive identity ────────────────────────────────────────────
+    # `x + 0` is x for EVERY integer width and signedness this ISA has: an
+    # integer IRBinOp always lowers to a full-width `($i64)`/`($u64)` ALU op
+    # (codegen._gen_IRBinOp) and IRAssign lowers to `+ d ($i64) $r0 x`, so both
+    # are 64-bit register copies and no truncation or re-extension is involved.
+    # Folding to a copy lets the EXISTING copy-propagation / coalescing / DCE
+    # erase it -- this pass deliberately does not try to delete anything itself.
+    #
+    # Float is excluded by the `ftype` guard above and must stay excluded:
+    # `x + 0.0` is NOT x for x = -0.0, and it silences a signalling NaN.
+    #
+    # Why it mattered: the compiler had NO algebraic identity simplification at
+    # all. `sccp.py` folds only `const OP const` (`_is_const(l) and
+    # _is_const(r)`), so an `x + 0` with a variable x survived every pass into
+    # codegen as a real instruction. `vector_lowering`'s row-base cloning
+    # (`_clone_offset(..., Const(0))`) re-emits the loop's own address
+    # expression with the IV substituted by 0 and leaves exactly this residue,
+    # twice, in the middle of a SERIAL address chain -- so each one cost a
+    # whole bundle of latency, not just a slot (R17.0 Phase 11).
+    if op == '+' and not os.environ.get('APARA_NO_IDENTITY_FOLD'):
+        for zero_side, val_side in ((ins.right, ins.left), (ins.left, ins.right)):
+            if isinstance(zero_side, Const) and zero_side.value == 0:
+                return IRAssign(ins.dest, val_side)
 
     def _new(new_op, left, right):
         return IRBinOp(ins.dest, new_op, left, right,

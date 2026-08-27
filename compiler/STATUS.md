@@ -7692,3 +7692,97 @@ multi-reduction matmul, so it cannot see this class of win at all — worth fixi
 before it is relied on as a performance gate.
 
 **DO NOT start R16.6 automatically.**
+
+---
+
+## R17.0 hand-written parity analysis — **COMPLETE (analysis only)**
+
+Delivery: `R17_0_FINAL_HANDWRITTEN_PARITY_ANALYSIS.md`. **No production file
+changed.** On the matched fixed-DMEM 16×16 `vu8` JT=8 kernel (inputs decoded from
+the hand-written `data.map`, so both sides compute identical values), **73% of
+the compiler's dynamic instruction count is not arithmetic**: address/bookkeeping
+732, loads 690 (vs 289), accumulator zero-init 274, dead write-back 162, against
+512 `$dot` + 257 result stores of genuinely necessary work. Not IPB, not the
+scheduler, not registers (25/28, zero spills).
+
+**Two premises corrected by measurement.** (1) The 241-tick reference **did not
+exist as an artifact** — the tree's hand-written kernel measures **309**; R17.0
+built R14.0's projected 8-wide variant and measured **241 / 17 bundles / IPB
+4.813**, also proving 8 `$dot` in one bundle is legal ISA. (2) **R8.0's
+wide-memory blocker has expired**: it stopped because `0x7FF8 mod 16 = 8` so no
+*stack* object can be 16-byte aligned, but R16.2's global arrays sit at
+`gbase=0x400`, `A=0x400`, `Bt=0x500` — all 16-byte aligned. `IRLoadWide` and
+`IRVecDot128` already exist and codegen already emits `$ld ($u128)`; only vector
+legality/lowering/profitability/oracle are missing.
+
+**`$dot`/bundle is a consequence, not a lever**: the compiler's dot bundles hold
+4 `$dot` + 4 `$ld` = 8 = full issue width. It cannot go 8-wide because it has 16
+loads to co-issue where the hand-written kernel has 8 (`$ld ($u64)` vs `$u128`).
+
+Measured what-ifs on emitted mcode: folding `x+0` **795 → 731**, removing the
+dead accumulator write-back **795 → 747**, both **795 → 683**, all 256/256.
+**J_TILE=16 measures 823 — worse than JT=8's 795, so tiling is exhausted.**
+
+## R17.1 generic additive-identity folding — **COMPLETE**
+
+Delivery: `R17_1_IDENTITY_FOLD_DELIVERY.md`. **One production file changed** —
+`compiler/strength_reduce.py`, +32/−1 lines.
+
+**THE COMPILER HAD NO ALGEBRAIC IDENTITY SIMPLIFICATION AT ALL.** `sccp.py:137`
+folds only `const OP const` (`_is_const(l) and _is_const(r)`), so `x + 0` with a
+variable `x` reached codegen as a real instruction in every program.
+`vector_lowering`'s row-base cloning (`_clone_offset(..., Const(0))`) re-emits
+the loop's own address expression with the IV substituted by `0` and leaves
+exactly that residue **in the middle of a serial address chain**, where one
+instruction costs a whole bundle rather than a slot.
+
+The rule — `x + 0 → x`, `0 + x → x`, integer only, either operand order — went
+into `strength_reduce.py`, the existing generic `IRBinOp` algebraic layer whose
+own docstring already assumed identities were "handled elsewhere". It rewrites to
+`IRAssign` and deletes nothing itself; the existing copy-prop/coalesce/DCE erase
+the copy. Exact at every width because an integer `IRBinOp` always lowers to
+full-width `($i64)`/`($u64)` and `IRAssign` to `+ d ($i64) $r0 x` — both 64-bit
+copies, no truncation. Float stays excluded by the pre-existing `ftype` guard
+(`x + 0.0` is not x for `-0.0`). Kill switch `APARA_NO_IDENTITY_FOLD`.
+
+**RESULT — fixed-DMEM 16×16 `vu8` JT=8: 795 → 699 ticks (−12.1%)**, bundles
+57 → 54, executed instrs 2827 → 2715, IPB 3.556 → 3.884, peak live 25/28, **zero
+spills**, 256/256. R17.0's what-if predicted 731; production beats it because the
+pass removes **four** identity copies where the hand edit removed two.
+
+**All 96 ticks come from `fb_6`**: 15 → 12 bundles × 32 iterations. Three
+instructions removed there each vacated a bundle **of its own** (a serial-chain
+link); the fourth, in `fb_2`, freed only a slot and bought nothing. Removing an
+instruction from a serial chain removes a bundle; removing one from a full bundle
+removes nothing.
+
+**32-configuration fixed-DMEM matrix: 149916 → 126616 ticks, −15.54%**, every
+config improving 8.5–19.6%, all correct. Largest gains at **JT=1** (−16 to
+−19.6%), confirming the transform is about the address chain, not tiling. Static
+identity copies fall 5 → 1 everywhere; the survivor is codegen's GBASE
+materialisation in `main` (not an `IRBinOp`, executed once).
+
+**Verification suite 38/38 + 3/3 negative controls, total −2.32%.** Exactly **6
+of 38** programs changed — **all six GEMM, all faster** (−4.97% to −6.22%, each
+−272 executed instructions), none regressed; the other 32 are bit-identical
+because dot/reduction/conv3/axpy/elementwise never clone a row base.
+`pipeline_crosscheck` **124/124**. `_r17_1_test.py` 24/24 unit.
+
+**ATTRIBUTION** (register numbers erased, since removing instructions reshuffles
+allocation): 136 → 132 static instructions, **4 removed, all of shape
+`+ $r ($i64) $r 0`, 0 added, no unrelated opcode changed.**
+
+**LATENT FINDING (not a regression, not R17.1's to fix):** a source-level
+`results[i] = (long long)(A[i] + 0)` compiled to **540** ticks with the fold off
+but the semantically identical `results[i] = (long long)A[i]` compiles to **668**
+— at R16.5 as well. The redundant add gave the scheduler a spare independent
+instruction that let it interleave the operand- and result-address chains
+two-per-bundle; without it the chains serialize. With the fold on, `A[i] + 0`
+compiles **byte-identically** to `A[i]`, which is exactly correct. The 540 was
+the accident. Needs a source-level `+ 0`, which no real program writes — suite
+and matrix show zero regressions. Filed for a future scheduling milestone.
+
+**NOT DONE HERE** (separate milestones, per R17.0): dead accumulator write-back
+elimination (measured −48 ticks), `$u128` wide loads, scheduler/allocator work.
+
+**DO NOT start R17.2 automatically.**
