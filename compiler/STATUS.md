@@ -7910,3 +7910,64 @@ stopped), measured counter-productive (J_TILE=16 = 823; wide loads = 891), or
 worth zero because the hot loop has 41% free slots.
 
 **DO NOT start R17.4 automatically.**
+
+---
+
+## R17.4 dead accumulator write-back — **STOPPED (implemented, measured, reverted)**
+
+Delivery: `R17_4_DEAD_ACC_WRITEBACK_DELIVERY.md`. **Production unchanged at
+R17.1.** The transformation works, is correct and is generic; it is not shipped
+because **stop condition #4 fired**.
+
+**MEASURED — primary fixed-DMEM 16×16 `vu8` JT=8: 699 → 648 ticks (−7.3%)**,
+bundles 54 → 48, instrs 2715 → 2425, peak live 25/28, **0 spills**, 256/256
+correct. `fe_8` collapsed 4 bundles / 20 instrs / 64 ticks → **1 bundle / 2
+instrs / 16 ticks**, beating R17.3's 651-tick what-if. Suite **38/38 + 3/3**
+negative controls.
+
+**WHY IT WAS STOPPED:** suite total 66116 → 66565 (**+0.68%**). 18 programs
+improve, 11 regress, and **`gemm vu32` + `gemm vi32` alone cost +482** while the
+other 36 net **−33**. Mechanism, verified in the compiler's own source mcode (not
+alignment padding): `gemm vi32`'s innermost loop `fb_10` keeps the **identical 48
+instructions** but goes **9 bundles → 10** (`[7,4,3,4,6,8,7,6,3]` →
+`[7,4,4,4,7,7,6,5,2,2]`), costing +256 ticks over 256 trips. Removing dead code
+in an OUTER block shifted register allocation, which changed hazards in an
+unrelated INNER loop, which packed one bundle worse. **The transformation is
+sound; the bundler is sensitive to register-assignment changes it should be
+indifferent to.** That is a bundler milestone, not this one.
+
+**IMPLEMENTATION (reverted, recorded to rebuild):** `_slots_dead_at_exits()` —
+real backward liveness over the function CFG with the **stack slots as
+variables**. `gen` = an `IRLoad` at any width; `kill` = an `IRStore` **only at
+the exact promoted width** (a narrower store leaves old bits a wider load would
+see — the R6.2C/D2 hazard); `IRCall` gens everything; an unknown exit label keeps
+all write-backs. Exact because `_promote_one` has already proved every candidate
+offset **clean function-wide**, so the accesses found are the complete set. Runs
+on the **pre-insertion** list, so the promotion's own preheader load cannot make
+its own slot look live — load-bearing, since analysing the post-insertion list
+makes every slot look live and removes nothing. 103 lines, one file, no
+scheduler/bundler/allocator/codegen change. Knob `APARA_NO_DEAD_WRITEBACK`.
+
+**NEGATIVE CASES PASSED:** with the accumulator read after the loop, feeding a
+second loop, or returned, the **only** write-back removed was the loop counter at
+FP−8 (genuinely dead); the accumulators at FP−16/FP−24 kept theirs. Verified by
+register-invariant instruction-shape multisets, not text diffs.
+
+---
+
+# CAMPAIGN FROZEN AT R17.1
+
+**Final production state** — fixed-DMEM 16×16 `vu8` JT=8: **699 ticks, 54
+bundles, 2715 instructions, IPB 3.884, 25/28 peak live, 0 spills, 256/256
+correct.** Verification suite **38/38 + 3/3** negative controls;
+`pipeline_crosscheck` **124/124**; all R-series suites green.
+
+**Remaining gap to the hand-written 8-dot kernel: 699 − 241 = 458 ticks.** Per
+R17.3, **96% of it is overhead the hand-written kernel never executes**, and its
+advantage rests on an ABI with no FP/SP/GBASE — 31 registers against 28. Every
+remaining lever is now either **attempted and correctly stopped** (R14.9, R14.10
+address chains), **measured counter-productive** (J_TILE=16 = 823; `$u128` wide
+loads = 891; this milestone = +0.68% suite), or **worth zero** because the hot
+loop carries 41% free slots.
+
+**DO NOT start R17.5 or R18.**
