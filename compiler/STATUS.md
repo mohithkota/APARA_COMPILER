@@ -7850,3 +7850,63 @@ it is the 28-vs-31 register budget and the serial address chains, and those
 chains were already attempted and correctly stopped by R14.9 and R14.10.
 
 **DO NOT start R17.3 automatically.**
+
+---
+
+## R17.3 final live-state analysis — **COMPLETE (analysis only)**
+
+Delivery: `R17_3_FINAL_LIVE_STATE_ANALYSIS.md`. **No production `.py` changed.**
+
+**The gap is 458 ticks, not 554** (554 was pre-R17.1: 795−241). Compiler 699 /
+54 bundles / 2715 instrs / IPB 3.884 / peak live **19**; hand-written 241 / 17 /
+1160 / 4.813 / peak live **22**.
+
+**WHAT MAKES THE HAND-WRITTEN KERNEL TIGHTER IS LIFETIME DISJOINTNESS, NOT
+REGISTER COUNT** — it holds MORE live state at peak (22 vs 19). Its accumulators
+are live in 6 of 14 bundles and **never during its load phase**, because its
+*first* `$dot` per chain is a plain `$dot` that DEFINES the accumulator. The
+compiler emits `$dot $accumulate` for every chunk, so it must zero-init all
+eight, and they stay live in 9 of 12 bundles — occupying exactly the 8 registers
+the hand-written kernel spends on 8 wide B pairs.
+
+**MOST COMPILER-ONLY INSTRUCTIONS ARE FREE.** `fb_6` is 12 bundles / 57
+instructions / 96 slots — **41% of slots are empty**. Measured: removing the 8
+accumulator zero-inits changes `fb_6` occupancy `[8,2,…]` → `[1,1,…]` and saves
+**0 bundles** (`<< $r2` → `+ $r7=$r6+$r2` is a serial RAW pair that can never
+merge). Same phenomenon as R17.2's loads, 12 of 16 of which ride free beside
+`$dot`s in full bundles.
+
+**WHY NOT 8 `$dot`/BUNDLE — it is the memory-lane cap, not registers.** A bundle
+cannot hold 4 loads + 8 dots (12 > `ISSUE_WIDTH` 8). With narrow loads: 4 load
+bundles + 2 dot bundles = **6**, worse than today's co-issued **5**. The
+compiler's 4-wide schedule is OPTIMAL for narrow loads; 8-wide needs wide loads.
+
+**CORRECTS R17.2.** R17.2 claimed the schedule needs "8 acc + 16 B + 2 A + 4
+control = 30 > 28, short by FP and SP". That summed classes that are never
+simultaneously live — the hand-written peak is **22**. The corrected statement:
+the register block is real but **conditional on the compiler's own zero-init
+lowering**, not on the ABI — with zero-init 30 > 28, without it 22 ≤ 28.
+R17.2's *conclusion* stands (wide loads measured 891 vs 699); only its third
+reason was misattributed.
+
+**GAP DECOMPOSITION:** productive load/dot/store bundles 224 vs 204 (+20);
+result-address chain +96; j-loop control +112; B-row address chain +64;
+accumulator write-back +64; row prologue +63; i-loop +17; padding +22.
+**96% of the gap (438 of 458) is overhead the hand-written kernel never
+executes.**
+
+**ONE JUSTIFIED REMAINING OPTIMIZATION — dead accumulator write-back
+elimination: measured 699 → 651 ticks (−6.9%), 256/256 correct**, `fe_8`
+collapsing 4 bundles → 1. It qualifies precisely because it **removes bundles**,
+where the zero-inits (8 instrs) and wide loads (256 instrs) removed none and
+−192 respectively. `loop_reg` writes `j` and `s0..s7` back to stack slots at
+every j-loop exit; the accumulator slots are never read again. Generic (every
+promoted accumulator in every reduction kernel), unattempted (R14.9/R14.10
+attacked the address chain). It needs real post-loop liveness for promoted
+slots — a dataflow addition, not a peephole.
+
+**AFTER THAT, FREEZE at ~651.** Everything else is blocked (R14.9/R14.10
+stopped), measured counter-productive (J_TILE=16 = 823; wide loads = 891), or
+worth zero because the hot loop has 41% free slots.
+
+**DO NOT start R17.4 automatically.**
