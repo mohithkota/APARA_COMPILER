@@ -2,6 +2,73 @@
 
 ---
 
+# FINAL FROZEN STATE — R17.1 (2026-08-27)
+
+**The optimization campaign is FROZEN at R17.1.** This block is the authoritative
+current state; everything below it is the chronological milestone log, oldest
+first. Two later sections are superseded and say so: "FINAL STATE — compiler
+frozen" (the R10-era freeze) and R15.0's freeze recommendation.
+
+| | |
+|---|---|
+| **branch** | `feature/r13-matmul-dot` @ `4250ada`, pushed to `origin` |
+| **`main`** | `b46aa63` — **not merged**, campaign is branch-only by decision |
+| **last shipped optimization** | **R17.1** — generic additive-identity folding (`x + 0 → x`) |
+
+## Primary workload — fixed-DMEM 16×16 `vu8`, J_TILE=8
+
+| metric | value |
+|---|---|
+| **ticks** | **699** |
+| ticks / output | 2.730 |
+| static bundles (aligned) | 54 |
+| executed instructions | 2715 |
+| dynamic IPB | 3.884 |
+| `$dot` per bundle | 4 |
+| **peak live registers** | **25 / 28** |
+| **spills** | **0** |
+| **correctness** | **256/256** gcc-verified PostConditions |
+
+Campaign arc on this workload: R16.1 **37000** → R16.2 **987** → R16.5 **795** →
+R17.1 **699**.
+
+## Gates, all green on `4250ada`
+
+| gate | result |
+|---|---|
+| verification suite | **38/38 PASS** |
+| negative controls | **3/3 rejected** |
+| `pipeline_crosscheck` | **124/124** — 0 IR, 0 code, 0 selected-tier mismatch |
+| R-series compiler suites | all green (32 files) |
+| suite total ticks | **66116** |
+
+## Distance to the hand-written reference, and why it stops here
+
+Hand-written 8-dot kernel: **241 ticks / 17 bundles / 1160 instructions /
+IPB 4.813 / 256-256**. **Remaining gap: 458 ticks.** Per R17.3, **96% of it
+(438 ticks) is overhead the hand-written kernel never executes**, and its
+advantage rests on an ABI with no FP/SP/GBASE — **31 registers against the
+compiler's 28**.
+
+**Every remaining lever is closed by measurement, not opinion:**
+
+| lever | verdict | evidence |
+|---|---|---|
+| result/B-row address chains (+160 ticks) | **attempted, stopped** | R14.9 (LICM premise invalid), R14.10 (IVSR blocked by `_decompose`) |
+| j-loop control (+112) | **measured worse** | J_TILE=16 = **823** vs JT=8's 795 (R17.0) |
+| `$u128` wide loads | **measured worse** | **891** vs 699 — legal now (R8.0's alignment blocker expired), but relaxes a non-binding constraint (R17.2) |
+| dead accumulator write-back (+64) | **works, not shipped** | 699 → **648** (−7.3%) but suite **+0.68%**; two scalar GEMMs cost +482 via a bundler ripple (R17.4) |
+| accumulator zero-init (274 instrs) | **worth zero** | removing all 8 saves **0 bundles** — they ride in free slots (R17.3) |
+
+The hot loop `fb_6` carries **41% free slots**, which is why instruction-count
+reductions there buy nothing. The binding constraint is dependence height, not
+issue width or memory lanes.
+
+**DO NOT start R17.5 or R18.** Any future work should begin by re-measuring, not
+by trusting the numbers above.
+
+---
+
 ## C FEATURE COVERAGE (reference table — updated 2026-07-17)
 
 Backed by tests verified against gcc (`testing/feature_sweep/`, `testing/universal/`).
@@ -6302,7 +6369,11 @@ predecessor.** Suite **136261 (R6.8) / 136222 (R8.1) -> 136206 (R8.1a)**, with
 - **COST:** `reduction vi8` loses its R8.1 IPB gain (5.22 -> 2.60). Accepted --
   it was worth 5 ticks and cost 21 elsewhere.
 
-## FINAL STATE — compiler frozen
+## FINAL STATE — compiler frozen  — **SUPERSEDED (R10-era freeze)**
+
+> **This freeze is historical.** The campaign continued through R11–R17 and is
+> now frozen at **R17.1** — see **FINAL FROZEN STATE** at the top of this file.
+> The IPB caution below still holds and is still worth reading.
 
 **Vector-region IPB:** gemm vi16 6.13, reduction vi32 6.00, conv3 vi8 5.73,
 dot vi16 4.79, elementwise vi8 4.32, dot vi8 3.90, reduction vi8 2.60,
@@ -7366,7 +7437,13 @@ TOTAL, and with a tool timeout above the documented maximum; it ran 4h28m before
 being interrupted. **No test hangs** -- the fault was the invocation, not the
 suite. Run long verification serially, one command per test.
 
-## R15.0 hand-written parity analysis — ANALYSIS ONLY, recommends FREEZE
+## R15.0 hand-written parity analysis — ANALYSIS ONLY  — **FREEZE RECOMMENDATION SUPERSEDED**
+
+> **R15.0's "freeze" call was disproved by measurement.** It rested on
+> "every remaining lever is worth 2-4% whole-program"; R16.2 then delivered
+> **78.4%** on the same workload with a capability that did not exist when
+> R15.0 was written. The campaign ran on to R17.1 — see **FINAL FROZEN
+> STATE** at the top of this file. The parity analysis below is still valid.
 
 Delivery: `R15_0_HANDWRITTEN_PARITY_ANALYSIS.md`. **0 production `.py` changed.**
 
